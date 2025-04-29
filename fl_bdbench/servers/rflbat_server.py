@@ -22,19 +22,19 @@ class RFLBATServer(UnweightedFedAvgServer):
     """
     
     def __init__(self, 
-                 server_lr, 
+                 server_config, 
                  server_type="rflbat",
                  eps1=10.0,  # First-stage filtering threshold
                  eps2=4.0,   # Second-stage filtering threshold
                  save_plots=True):
-        super(RFLBATServer, self).__init__(server_lr, server_type)
+        super(RFLBATServer, self).__init__(server_config, server_type)
         self.eps1 = eps1
         self.eps2 = eps2
         self.save_plots = save_plots
         
         # Create directory for plots if needed
         if self.save_plots:
-            self.plot_dir = os.path.join(server_lr.output_dir, "rflbat_plots")
+            self.plot_dir = os.path.join(server_config.output_dir, "rflbat_plots")
             os.makedirs(self.plot_dir, exist_ok=True)
 
     def _flatten_model_updates(self, updates: StateDict) -> np.ndarray:

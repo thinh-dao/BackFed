@@ -19,15 +19,15 @@ class CoordinateMedianServer(BaseServer):
     making it robust against extreme values from malicious clients.
     """
 
-    def __init__(self, server_lr, server_type="coordinate_median"):
+    def __init__(self, server_config, server_type="coordinate_median"):
         """
         Initialize the coordinate-wise median server.
 
         Args:
-            server_lr: Dictionary containing configuration
+            server_config: Dictionary containing configuration
             server_type: Type of server
         """
-        super(CoordinateMedianServer, self).__init__(server_lr, server_type)
+        super(CoordinateMedianServer, self).__init__(server_config, server_type)
         log(INFO, f"Initialized Coordinate-wise Median server")
 
     def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> bool:
@@ -65,15 +65,15 @@ class GeometricMedianServer(BaseServer):
     making it robust against Byzantine attacks.
     """
 
-    def __init__(self, config, server_type="geometric_median"):
+    def __init__(self, server_config, server_type="geometric_median"):
         """
         Initialize the geometric median server.
 
         Args:
-            config: Dictionary containing configuration
+            server_config: Dictionary containing configuration
             server_type: Type of server
         """
-        super(GeometricMedianServer, self).__init__(config, server_type)
+        super(GeometricMedianServer, self).__init__(server_config, server_type)
         log(INFO, f"Initialized Geometric Median server")
 
     def _geometric_median_objective(self, median_candidate: np.ndarray, points: np.ndarray) -> float:
@@ -169,4 +169,3 @@ class GeometricMedianServer(BaseServer):
             ))
 
         return True
-

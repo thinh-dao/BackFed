@@ -15,8 +15,8 @@ class FoolsGoldServer(BaseServer):
     """
     FoolsGold server that uses cosine similarity to detect and defend against sybil attacks.
     """
-    def __init__(self, server_lr, server_type="foolsgold", eta=0.1, confidence=1):
-        super(FoolsGoldServer, self).__init__(server_lr, server_type)
+    def __init__(self, server_config, server_type="foolsgold", eta=0.1, confidence=1):
+        super(FoolsGoldServer, self).__init__(server_config, server_type)
         self.eta = eta
         self.confidence = confidence
         self.update_history: Dict[int, np.ndarray] = {}  # client_id -> update_vector
