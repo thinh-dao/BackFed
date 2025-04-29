@@ -8,9 +8,6 @@ import csv
 
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.pretty import Pretty
-from omegaconf import DictConfig
-
 
 class FLLogger:
     """Logger for FL in distributed and serial modes."""

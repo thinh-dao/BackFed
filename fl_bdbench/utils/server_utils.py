@@ -53,72 +53,72 @@ def clip_updates(delta_weights_per_client: Dict[str, torch.Tensor], clipping_nor
 
     return clipped_delta_weights_per_client
 
-def cos_sim(client_model: nn.Module, global_params: Dict[str, torch.Tensor]):
+def cos_sim(client_params: Dict[str, torch.Tensor], global_params: Dict[str, torch.Tensor]):
     """ 
-    Calculate the cosine similarity between the weight vectors of the client model and the global model.
+    Calculate the cosine similarity between the weight vectors of the client and global parameters.
     Args:
-        client_model: the client model (nn.Module)
-        global_params: the global model parameters (Dict[str, torch.Tensor])
+        client_params: the client parameters (Dict[str, torch.Tensor])
+        global_params: the global parameters (Dict[str, torch.Tensor])
     Returns:
-        sim: the cosine similarity between the client model and the global model (torch.tensor)
+        sim: the cosine similarity between the client and global parameters (torch.tensor)
     """
-    client_params_tensor = torch.cat([param.flatten() for param in client_model.parameters()])
+    client_params_tensor = torch.cat([param.flatten() for name, param in client_params.items() 
+                                    if "weight" in name or "bias" in name])
     global_params_tensor = torch.cat([param.flatten() for name, param in global_params.items() 
                                     if "weight" in name or "bias" in name])
     
     return F.cosine_similarity(client_params_tensor, global_params_tensor, dim=0)
 
-def cos_sim_layer(client_model: nn.Module, global_params: Dict[str, torch.Tensor]):
+def cos_sim_layer(client_params: Dict[str, torch.Tensor], global_params: Dict[str, torch.Tensor]):
     """ 
-    Calculate the cosine similarity between the client model and the global model layer by layer.
+    Calculate the cosine similarity between client and global parameters layer by layer.
     Args:
-        client_model: the client model (nn.Module)
-        global_params: the global model parameters (Dict[str, torch.Tensor])
+        client_params: the client parameters (Dict[str, torch.Tensor])
+        global_params: the global parameters (Dict[str, torch.Tensor])
     Returns:
-        sim: the cosine similarity between the client model and the global model (torch.tensor)
+        sim: the cosine similarity between the client and global parameters (torch.tensor)
     """
     sim = torch.tensor(0.0, device="cuda")
     sim_count = 0
     
-    for (name, client_param), (_, global_param) in zip(
-        client_model.named_parameters(), 
-        ((n, p) for n, p in global_params.items() if "weight" in n or "bias" in n)
-    ):
-        sim += F.cosine_similarity(client_param.flatten(), global_param.flatten(), dim=0)
-        sim_count += 1
+    for name, client_param in client_params.items():
+        if "weight" in name or "bias" in name:
+            global_param = global_params[name]
+            sim += F.cosine_similarity(client_param.flatten(), global_param.flatten(), dim=0)
+            sim_count += 1
 
     return sim / sim_count
 
-def model_dist(client_model: nn.Module, global_params: Dict[str, torch.Tensor]):
+def model_dist(client_params: Dict[str, torch.Tensor], global_params: Dict[str, torch.Tensor]):
     """
-    Calculate the l2 distance between client model and global model layer by layer.
+    Calculate the l2 distance between client and global parameters.
     Args:
-        client_model: the client model (nn.Module)
-        global_params: the global model parameters (Dict[str, torch.Tensor])
+        client_params: the client parameters (Dict[str, torch.Tensor])
+        global_params: the global parameters (Dict[str, torch.Tensor])
     Returns:
-        dist: the distance between the client model and the global model (torch.tensor)
+        dist: the distance between the client and global parameters (torch.tensor)
     """
-    client_params_tensor = torch.cat([param.flatten() for param in client_model.parameters()])
+    client_params_tensor = torch.cat([param.flatten() for name, param in client_params.items() 
+                                    if "weight" in name or "bias" in name])
     global_params_tensor = torch.cat([param.flatten() for name, param in global_params.items() 
                                     if "weight" in name or "bias" in name])
     
     return torch.norm(client_params_tensor - global_params_tensor, p=2)
 
-def model_dist_layer(client_model: nn.Module, global_params: Dict[str, torch.Tensor]):
+def model_dist_layer(client_params: Dict[str, torch.Tensor], global_params: Dict[str, torch.Tensor]):
     """
-    Calculate the l2 distance between client model and global model layer by layer.
+    Calculate the l2 distance between client and global parameters layer by layer.
     Args:
-        client_model: the client model (nn.Module)
-        global_params: the global model parameters (Dict[str, torch.Tensor])
+        client_params: the client parameters (Dict[str, torch.Tensor])
+        global_params: the global parameters (Dict[str, torch.Tensor])
     Returns:
-        dist: the distance between the client model and the global model (torch.tensor)
+        dist: the distance between the client and global parameters (torch.tensor)
     """
     dist = torch.tensor(0.0, device="cuda")
     
-    for (name, client_param), (_, global_param) in zip(
-        client_model.named_parameters(), 
-        ((n, p) for n, p in global_params.items() if "weight" in name or "bias" in name)
-    ):
-        dist += torch.norm((client_param - global_param).flatten(), p=2)
+    for name, client_param in client_params.items():
+        if "weight" in name or "bias" in name:
+            global_param = global_params[name]
+            dist += torch.norm((client_param - global_param).flatten(), p=2)
 
     return dist

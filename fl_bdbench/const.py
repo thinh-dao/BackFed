@@ -3,7 +3,7 @@ Useful Constants and Typings.
 """
 
 import torch
-from typing import Dict, Tuple
+from typing import Dict, Any
 
 NUM_CLASSES = {
     "CIFAR10": 10,
@@ -29,5 +29,3 @@ IMG_SIZE = {
 
 Metrics = Dict[str, float]
 StateDict = Dict[str, torch.Tensor]
-ClientTrainPackage = Tuple[int, StateDict, Metrics]
-ClientEvalPackage = Tuple[int, Metrics]

@@ -102,7 +102,9 @@ class ChameleonClient(MaliciousClient):
 
             self.supcon_scheduler.step()
             backdoor_loss, backdoor_accuracy = self.poison.poison_test(self.model, self.train_loader)
-            log(INFO, f"Epoch {internal_round}, Contrastive loss: {contrastive_loss.item()}, Backdoor loss: {backdoor_loss}, Backdoor accuracy: {backdoor_accuracy}")
+            
+            if self.verbose and self.atk_config["poisoned_supcon_retrain_no_times"] % (self.atk_config["poisoned_supcon_retrain_no_times"] // 5) == 0:
+                log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {train_package['server_round']} - Epoch {internal_round} | Contrastive loss: {contrastive_loss.item()} | Backdoor loss: {backdoor_loss} | Backdoor accuracy: {backdoor_accuracy}")
 
         # Transfer the trained weights of encoder to the local model and freeze the encoder
         self.transfer_params(source_model=self.contrastive_model, target_model=self.model)

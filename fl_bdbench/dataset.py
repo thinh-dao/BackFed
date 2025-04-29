@@ -193,7 +193,7 @@ class FL_DataLoader:
             indices = list(range(len(self.trainset)))  # Sample all the indices
 
         log(INFO, f"Sampling train dataset ({len(indices)} samples) for {no_participants} partitions with Dirichlet distribution (alpha={self.config.alpha}).")
-        
+
         class_indices = {}
         for ind in indices:
             label = self.trainset.targets[ind]
@@ -221,7 +221,6 @@ class FL_DataLoader:
                 class_indices[class_idx] = class_indices[class_idx][no_imgs:]
 
         return per_participant_list
-
 
     def _sample_uniform(self, no_participants, indices=None) -> Dict[int, List[int]]:
         """

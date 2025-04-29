@@ -1,5 +1,5 @@
 """
-Benign client implementation for FL.
+Base benign client implementation for FL.
 """
 
 import torch
@@ -45,14 +45,18 @@ class BenignClient(BaseClient):
         Args:
             train_package: Data package received from server to train the model (e.g., global model weights, learning rate, etc.)
             
-        Returns:
-            Dictionary containing training metrics
+        Returns: 
+            num_examples (int): number of examples in the training dataset
+            state_dict (StateDict): updated model parameters
+            training_metrics (Dict[str, float]): training metrics
         """
-        required_keys = ["global_model_params", "server_round"]
-        for key in required_keys:
-            assert key in train_package, f"{key} not found in train_package for benign client"
-        
+        # Check if the required keys are present in the train_package
+        self._check_required_keys(train_package, required_keys=["global_model_params", "server_round"])
+
+        # Load the global model parameters
         self.model.load_state_dict(train_package["global_model_params"])
+
+        # Get normalization function
         normalization = train_package.get("normalization", None)
 
         self.model.train()
@@ -61,8 +65,6 @@ class BenignClient(BaseClient):
         # Reset GPU memory tracking if using CUDA
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
-
-        log(INFO, f"Client [{self.client_id}] ({self.client_type}) - Training model")
         
         if train_package.get('proximal_mu', None) is not None:
             proximal_mu = train_package['proximal_mu']
@@ -111,16 +113,16 @@ class BenignClient(BaseClient):
         self.training_time = time.time() - start_time
 
         if self.verbose:
-            log(INFO, f"Client [{self.client_id}] ({self.client_type}) - Train Loss: {epoch_loss:.4f}, Train Accuracy: {epoch_accuracy:.4f}")
+            log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {train_package['server_round']} - Train Loss: {epoch_loss:.4f} | Train Accuracy: {epoch_accuracy:.4f}")
         
-        num_examples = len(self.train_dataset)
-        submitted_parameters = self.get_model_parameters()
-        metrics = {
+        state_dict = self.get_model_parameters()
+
+        training_metrics = {
             "train_loss": epoch_loss,
             "train_accuracy": epoch_accuracy,
         }
         
-        return num_examples, submitted_parameters, metrics
+        return len(self.train_dataset), state_dict, training_metrics
     
     def evaluate(self, test_package: Dict[str, Any]) -> Tuple[int, Metrics]:
         """
@@ -130,7 +132,8 @@ class BenignClient(BaseClient):
             test_package: Data package received from server to evaluate the model (e.g., global model weights, learning rate, etc.)
             
         Returns:
-            Tuple of (num_examples, metrics_dict)
+            num_examples (int): number of examples in the test dataset
+            evaluation_metrics (Dict[str, float]): evaluation metrics
         """
         if self.val_loader is None:
             raise Exception("There is no validation data for this client")
@@ -153,7 +156,7 @@ class BenignClient(BaseClient):
             "val_clean_acc": accuracy,
         }
         
-        return len(self.val_loader.dataset), metrics
+        return len(self.val_dataset), metrics
     
     @staticmethod
     def get_client_type():
