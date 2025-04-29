@@ -82,3 +82,17 @@ def test(net, test_loader, device, loss_fn=torch.nn.CrossEntropyLoss(), normaliz
     accuracy = correct / total_samples
     loss = loss / len(test_loader)
     return loss, accuracy
+
+def format_time_hms(seconds: float) -> str:
+    """
+    Format time in seconds to hours, minutes, seconds string.
+    
+    Args:
+        seconds: Time in seconds
+    Returns:
+        Formatted string in the format "XXh YYm ZZs"
+    """
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = seconds % 60
+    return f"{hours:02d}h {minutes:02d}m {seconds:02.0f}s"

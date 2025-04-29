@@ -14,7 +14,17 @@ from rich.progress import track
 from hydra.utils import instantiate
 from fl_bdbench.client_manager import ClientManager
 from fl_bdbench.dataset import FL_DataLoader
-from fl_bdbench.utils import pool_size_from_resources, log, get_model, get_normalization, init_wandb, init_csv_logger, CSVLogger, test, save_model_to_wandb_artifact
+from fl_bdbench.utils import (
+    pool_size_from_resources,
+    log,
+    get_model,
+    get_normalization,
+    init_wandb,
+    init_csv_logger,
+    CSVLogger,
+    test,
+    save_model_to_wandb_artifact,
+)
 from fl_bdbench.context_actor import ContextActor
 from fl_bdbench.clients import ClientApp, BenignClient, MaliciousClient
 from fl_bdbench.poisons import Poison
@@ -23,6 +33,7 @@ from logging import INFO, WARNING
 from typing import Dict, Any, List, Tuple, Callable, Optional
 from collections import deque
 from fl_bdbench.utils.logging_utils import FLLogger
+from fl_bdbench.utils.misc_utils import format_time_hms
 
 class BaseServer:
     """
@@ -264,36 +275,40 @@ class BaseServer:
         Returns:
             aggregated_metrics: Dict of aggregated metrics from clients training
         """
-        time_start = time.time()
+        train_time_start = time.time()
         client_packages = self.trainer.train(clients_mapping)
-        time_end = time.time()
-        time_train = time_end - time_start
-        log(INFO, f"Server training time: {time_train:.2f} seconds")
+        train_time_end = time.time()
+        train_time = train_time_end - train_time_start
+        log(INFO, f"Clients training time: {train_time:.2f} seconds")
 
         client_metrics = []
         client_updates = []
-        for client_id, (num_examples, model_updates, metrics) in client_packages.items():
+        num_failures = 0
+
+        for client_id, package in client_packages.items():
+            if isinstance(package, dict) and package.get("status") == "failure":
+                num_failures += 1
+                log(WARNING, f"Client [{client_id}] failed during training ({package['error']})")
+                continue
+
+            num_examples, model_updates, metrics = package
             client_metrics.append((client_id, num_examples, metrics))
             client_updates.append((client_id, num_examples, model_updates))
 
-        time_start = time.time()
+        aggregate_time_start = time.time()
 
+        if num_failures > 0:
+            log(WARNING, f"Number of failures: {num_failures}")
+            
         if self.aggregate_client_updates(client_updates):
             self.global_model.load_state_dict(self.global_model_params, strict=True)
+            aggregated_metrics = self.aggregate_client_metrics(client_metrics)
         else:
             log(WARNING, "No client updates to aggregate. Global model parameters are not updated.")
         
-        time_end = time.time()
-
-        time_aggregate = time_end - time_start
-        log(INFO, f"Server aggregate time: {time_aggregate:.2f} seconds")
-
-        metrics_time_start = time.time()
-        aggregated_metrics = self.aggregate_client_metrics(client_metrics)
-        metrics_time_end = time.time()
-
-        metrics_time = metrics_time_end - metrics_time_start
-        log(INFO, f"Server metrics aggregation time: {metrics_time:.2f} seconds")
+        aggregate_time_end = time.time()
+        aggregate_time = aggregate_time_end - aggregate_time_start
+        log(INFO, f"Server aggregate time: {aggregate_time:.2f} seconds")
 
         return aggregated_metrics
 
@@ -355,27 +370,31 @@ class BaseServer:
         
         log(INFO, f"Server fit time: {time_fit:.2f} seconds")
 
+        client_eval_time_start = time.time()
         if self.config.federated_evaluation:
             client_evaluation_metrics = self.evaluate_round(clients_mapping)
         else:
             client_evaluation_metrics = None
+        client_eval_time_end = time.time()
+        client_eval_time = client_eval_time_end - client_eval_time_start
+        log(INFO, f"Clients evaluation time: {client_eval_time:.2f} seconds")
 
-        time_start = time.time()
+        server_eval_time_start = time.time()
         server_evaluation_metrics = self.server_evaluate(round)
-        time_end = time.time()
-        time_eval = time_end - time_start
-        log(INFO, f"Server evaluation time: {time_eval:.2f} seconds")
+        server_eval_time_end = time.time()
+        server_eval_time = server_eval_time_end - server_eval_time_start
+        log(INFO, f"Server evaluation time: {server_eval_time:.2f} seconds")
         return server_evaluation_metrics, client_fit_metrics, client_evaluation_metrics
 
     def run_experiment(self):
-        """Run the full FL experiment loop."""        
+        """Run the full FL experiment loop."""   
+        experiment_start_time = time.time()
         train_progress_bar = track(
             range(self.current_round, self.current_round + self.config.num_rounds),
             "[bold green]Training...",
             console=FLLogger.get_console(),
         )
 
-        total_time = 0
         self.best_metrics = {}
         self.best_model_state = self.best_model_state = {name: param.clone().detach() for name, param in self.global_model.state_dict().items()}
 
@@ -392,10 +411,9 @@ class BaseServer:
                 self.best_model_state = {name: param.clone().detach() for name, param in self.global_model.state_dict().items()}
 
             end = time.time()
-            fit_time = end - begin
-            total_time += fit_time
+            round_time = end - begin
 
-            log(INFO, f"Round {self.current_round + 1} completed in {fit_time:.2f} seconds")
+            log(INFO, f"Round {self.current_round + 1} completed in {round_time:.2f} seconds")
 
             # Use separate log calls for better formatting
             log(INFO, "[bold magenta]═══ Centralized Metrics ═══[/bold magenta]")
@@ -444,8 +462,10 @@ class BaseServer:
                 and self.current_round == self.config.wandb.save_model_round:
                 save_model_to_wandb_artifact(self.config, self.best_model_state, self.current_round, server_metrics)
         
+        experiment_end_time = time.time()
+        experiment_time = experiment_end_time - experiment_start_time
+        log(INFO, f"Experiment time: {format_time_hms(experiment_time)}")
         log(INFO, f"{separator} TRAINING COMPLETED {separator}")
-        log(INFO, f"Experiment time: {total_time:.2f} seconds")
 
     def train_package(self, client_type: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """

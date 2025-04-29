@@ -7,13 +7,14 @@ import torch
 import torch.nn as nn
 import time
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Tuple, List, Optional
 from torch.utils.data import DataLoader, Subset, Dataset
 from omegaconf import DictConfig
-from fl_bdbench.utils import set_random_seed, with_timeout, log
-from fl_bdbench.const import StateDict, Metrics
+from fl_bdbench.utils import set_random_seed, log
+from fl_bdbench.const import StateDict, Metrics, ClientUpdates
 from hydra.utils import instantiate
-from logging import INFO
+from logging import INFO, WARNING
 
 class BaseClient:
     """
@@ -50,16 +51,12 @@ class BaseClient:
         self.current_memory = 0.0
         self.max_memory = 0.0
 
+        # Set random seed
         set_random_seed(seed=self.client_config.seed, deterministic=True)
-
-        # Wrap the train method with timeout if a timeout is specified
-        if self.client_config.timeout is not None:
-            self.train = with_timeout(self.train, self.client_config.timeout)
 
         # Reset peak memory stats to track memory usage of this client
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
-
 
     def _set_optimizer(self):
         """
@@ -92,19 +89,24 @@ class BaseClient:
             self.train_dataset = Subset(dataset, indices)
             self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["train_batch_size"], shuffle=True, pin_memory=True)
 
-    def get_model_parameters(self) -> StateDict:
+    def _check_required_keys(self, train_package: Dict[str, Any], required_keys: List[str] = ["global_model_params", "server_round"]):
         """
-        Get the global model parameters.
+        Check if the required keys are present in the train_package.
         """
-        return {name: param.cpu() for name, param in self.model.state_dict().items()}
+        for key in required_keys:
+            assert key in train_package, f"{key} not found in train_package for {self.client_type} client"
     
-    def train(self, train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
+    def train(self, train_package: Dict[str, Any]) -> Tuple[int, ClientUpdates, Metrics]:
         """
         Train the model for a number of epochs.
+        
         Args:
             train_package: Data package received from server to train the model (e.g., global model weights, learning rate, etc.)
-        Returns:
-            (num_examples, state_dict, metrics). The return state_dict must be on cpu.
+            
+        Returns: 
+            num_examples (int): number of examples in the training dataset
+            state_dict (StateDict): updated model parameters
+            training_metrics (Dict[str, float]): training metrics
         """
         raise NotImplementedError("Train method must be implemented by subclasses")
 
@@ -113,11 +115,18 @@ class BaseClient:
         Evaluate the model on test data.
         Args:
             test_package: Data package received from server to evaluate the model (e.g., global model weights, learning rate, etc.)
-        Returns:
-            (num_examples, metrics).
+        Returns: 
+            num_examples (int): number of examples in the test dataset
+            evaluation_metrics (Dict[str, float]): evaluation metrics
         """
         raise NotImplementedError("Evaluate method must be implemented by subclasses")
 
+    def get_model_parameters(self) -> StateDict:
+        """
+        Move the global model parameters to cpu.
+        """
+        return {name: param.cpu() for name, param in self.model.state_dict().items()}
+    
     def get_resource_metrics(self):
         """
         Get resource usage metrics.
@@ -182,6 +191,11 @@ class ClientApp:
         self.client_config = client_config
         self.client : Optional[BaseClient] = None
 
+        if self.client_config.timeout is not None:
+            self.pool = ThreadPoolExecutor(max_workers=1) # Only one worker for timeout
+        else:
+            self.pool = None
+
     def _load_client(self, client_cls, client_id: int, **init_args) -> BaseClient:
         """
         Load appropriate client based on client_id, using the preloaded model.
@@ -205,40 +219,76 @@ class ClientApp:
             **init_args
         )
 
-    def train(self, client_cls: BaseClient, client_id: int, init_args: Optional[Dict[str, Any]] = None, train_package: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def train(self, client_cls: BaseClient, client_id: int, init_args: Dict[str, Any], train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
         """
         Train the client with preloaded model.
         Args:
             client_cls: Client class to be loaded
             client_id: Unique identifier for the client
-            init_args: Additional keyword arguments for client initialization
+            init_args: Keyword arguments for client initialization
             train_package: Data package received from server to train the model (e.g., global model weights, learning rate, etc.)
-        Returns:
-            Dictionary containing training metrics
+        Returns: 
+            num_examples (int): number of examples in the training dataset
+            state_dict (StateDict): updated model parameters
+            training_metrics (Dict[str, float]): training metrics
         """
-        time_start = time.time()
         self.client = self._load_client(client_cls, client_id, **init_args)
-        time_end = time.time()
-        time_load = time_end - time_start
-        log(INFO, f"Client loading time: {time_load:.2f} seconds")
-       
-        time_start = time.time()
-        results = self.client.train(train_package)
-        time_end = time.time()
-        time_train = time_end - time_start
-        log(INFO, f"Client training time: {time_train:.2f} seconds")
+
+        train_time_start = time.time()
+        timeout = self.client.client_config.timeout
+        try:
+            if timeout is not None:
+                if self.pool is None:
+                    raise ValueError("Pool is not initialized")
+                
+                future = self.pool.submit(self.client.train, train_package)
+                results = future.result(timeout=timeout)
+            else:
+                results = self.client.train(train_package)
+        except Exception as e:
+            log(WARNING, f"Client [{self.client.client_id}] failed during training: {e}")
+            return {
+                "status": "failure",
+                "error": str(e)
+            }
+        
+        train_time_end = time.time()
+        train_time = train_time_end - train_time_start
+        log(INFO, f"Client [{self.client.client_id}] ({self.client.client_type}) - Training time: {train_time:.2f} seconds")
+        
         return results
 
-    def evaluate(self, test_package: Dict[str, Any]) -> Dict[str, Any]:
+    def evaluate(self, test_package: Dict[str, Any]) -> Tuple[int, Metrics]:
         """
         Evaluate the client with preloaded model.
         Args:
             test_package: Data package received from server to evaluate the model (e.g., global model weights, learning rate, etc.)
         Returns:
-            Dictionary containing evaluation metrics
+            num_examples (int): number of examples in the test dataset
+            evaluation_metrics (Dict[str, float]): evaluation metrics
         """
         assert self.client is not None, "Only initialized client (after training) can be evaluated"
-        return self.client.evaluate(test_package)
+        
+        timeout = self.client.client_config.timeout
+        
+        if timeout is not None:
+            if self.pool is None:
+                raise ValueError("Pool is not initialized")
+            
+            future = self.pool.submit(self.client.evaluate, test_package)
+            try:
+                results = future.result(timeout=timeout)
+            except TimeoutError:
+                future.cancel()
+                return {
+                    "status": "timeout",
+                    "client_id": self.client.client_id,
+                    "timeout": timeout
+                }
+        else:
+            results = self.client.evaluate(test_package)
+            
+        return results
 
     def __getattr__(self, name: str) -> Any:
         """

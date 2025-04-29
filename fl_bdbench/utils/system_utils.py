@@ -65,9 +65,6 @@ def ray_init(num_gpus: int, num_cpus: int, namespace: str):
             namespace=namespace,
             num_cpus=num_cpus,
             num_gpus=num_gpus,
-            include_dashboard=True,
-            dashboard_host="0.0.0.0",
-            dashboard_port=8265,
             ignore_reinit_error=True,
         )
     except ValueError:
@@ -75,9 +72,6 @@ def ray_init(num_gpus: int, num_cpus: int, namespace: str):
         ray.init(
             address="auto",
             namespace=namespace,
-            include_dashboard=True,
-            dashboard_host="0.0.0.0",
-            dashboard_port=8265,
             ignore_reinit_error=True,
         )
 

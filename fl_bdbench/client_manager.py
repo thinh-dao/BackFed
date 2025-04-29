@@ -40,6 +40,7 @@ class ClientManager:
         else:
             self.malicious_clients = self.atk_config.malicious_clients
             self.benign_clients = [i for i in range(self.config.num_clients) if i not in self.malicious_clients]
+            
             # Initialize malicious and benign client classes for rounds_selection
             model_poison_method = self.atk_config["model_poison_method"]
             self.malicious_client_class = get_class(self.atk_config.model_poison_config[model_poison_method]._target_)

@@ -57,5 +57,7 @@ __all__ = [
     # Server utilities
     'weighted_average', 'get_evalulate_fn', 'test', 'clip_updates_inplace', 'clip_updates', 'model_dist_layer',
     # Clustering utilities
-    'gap_statistics', 'compute_wk', 'generate_reference_data'
+    'gap_statistics', 'compute_wk', 'generate_reference_data',
+    # Misc utilities
+    'format_time_hms'
 ]
