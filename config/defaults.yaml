@@ -1,0 +1,202 @@
+---
+# *Default configuration to simplify experiment setup
+defaults:
+  - _self_
+  - atk_config: multishot
+
+# *Aggregator
+aggregator: unweighted_fedavg
+
+# *Specify if the attack is enabled
+no_attack: False
+
+# *Training mode
+mode: parallel # Choose from [parallel, sequential]
+
+# *Debug mode
+debug: False
+debug_fraction_data: 0.1 # Only use a portion of the data in debug mode
+
+# *Resource configuration for each client
+cuda_visible_devices: 1,2,4,5,6
+num_cpus: 2
+num_gpus: 0.5
+
+# *Reproducibility
+seed: 123456
+deterministic: False
+
+# *Simulation configuration 
+num_rounds: 500
+num_clients: 100
+fraction_fit: 0.1
+federated_evaluation: False # Whether to perform federated evaluation (evaluate global model on client's validation set)
+federated_val_split: 0.0 # Validation split for each client's dataset (should be > 0 if federated evaluation is True)
+
+# *Dataset distribution configuration
+dataset: CIFAR10 # CIFAR10, CIFAR100, TinyImageNet, MNIST
+datapath: data
+partitioner: dirichlet # Choose from [uniform, dirichlet]
+alpha: 0.5 # Dirichlet distribution parameter
+normalize: True # Normalize the dataset
+
+# Model configuration
+model: ResNet18
+pretrain_model_path: Null # A weight path (.pth) | "IMAGENET1K_V2" | Null. This model_path is loaded only if checkpoint is Null.
+num_classes: ??? # This will be set in runtime when loading the dataset
+
+# *Default local training configuration (passed to clients during training)
+client_config:
+  # Training configuration
+  local_epochs: 2
+  train_batch_size: 64
+  val_batch_size: 512
+  mixed_precision: True   # Use mixed precision and grad scaling during training
+  timeout: Null # Timeout for each client training (in seconds)
+  optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
+  val_split: ${federated_val_split} # split of the training data to be used for validation
+  seed: ${seed}  # Reproducibility
+  deterministic: ${deterministic}
+
+# *Setting to resume model training (weight and other parameters are loaded). 
+# *See the full list of parameters in the save_best_model function in server.py
+# *Note: If checkpoint is "wandb", the weight will be loaded from wandb
+
+#* Save checkpoints
+save_model: False # Save the model to run directory in outputs folder
+save_checkpoint: False # Save the model as checkpoints in checkpoints folder (corresponding to Dataset, Model, and Strategy)
+save_model_rounds: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000] # Save the model at the specified rounds
+
+# *Resume from checkpoint
+# There are 3 ways to resume:
+# 1. checkpoint is a round number, the weight will be loaded from the checkpoints folder corresponding to Dataset, Model, and Strategy
+# E.g: checkpoint: 200, the weight will be loaded from the path ./checkpoints/CIFAR10_ResNet18_unweighted_fedavg/model_200.pth
+# 2. checkpoint is "wandb", the weight will be loaded from wandb
+# 3. checkpoint is a weight path (.pth), the weight will be loaded from the path
+# If checkpoint is Null, the weight will not be loaded
+checkpoint: Null # A weight path (.pth) | "wandb" (load from wandb) | Null
+
+# *Logging configuration
+save_logging: None # Choose from [wandb, csv (save to table), both (wandb & csv), Null (no save logging)]
+# Add a name tag to the run name --> Final run name: {name}_{name_tag}
+name_tag: "" 
+# Add a directory tag to csv file and log file --> Final path: {dir_tag}/{dir_path}
+dir_tag: ${dataset}_${aggregator}_${atk_config.data_poison_method}_${atk_config.model_poison_method} 
+
+wandb:
+  entity: dthinh-forwork-vinuniversity
+  project: paper_exp
+  mode: online
+  name: ??? # Automatically set during runtime with the format <dataset_strategy_attack_partition>
+  save_model: False # Whether to save the model to wandb
+  save_model_round: -1 # Default: Save model at last round
+
+plot_data_distribution: False
+plot_client_selection: False
+
+########################################################
+# *Aggregator configuration
+aggregator_config:
+  fedavg:
+    _target_: fl_bdbench.servers.FedAvgServer
+
+  fedprox:
+    _target_: fl_bdbench.servers.FedProxServer
+    proximal_mu: 0.01
+
+  flame:
+    _target_: fl_bdbench.servers.FlameServer
+    lamda: 0.001
+
+  foolsgold:
+    _target_: fl_bdbench.servers.FoolsGoldServer
+    eta: 1e-1
+    confidence: 1
+
+  coordinate_median:
+    _target_: fl_bdbench.servers.CoordinateMedianServer
+
+  geometric_median:
+    _target_: fl_bdbench.servers.GeometricMedianServer
+
+  multi_krum:
+    _target_: fl_bdbench.servers.MultiKrumServer
+    num_malicious_clients: 5
+    num_clients_to_keep: 5
+    oracle: True # If true, we will set num_malicious_clients to the true number in runtime
+    eta: 0.1 # Replace 10% of global model with updates from clients in the next round
+  
+  norm_clipping:
+    _target_: fl_bdbench.servers.NormClippingServer
+    clipping_norm: 5
+
+  weighted_fedavg:
+    _target_: fl_bdbench.servers.WeightedFedAvgServer
+    eta: 1
+
+  unweighted_fedavg:
+    _target_: fl_bdbench.servers.UnweightedFedAvgServer
+    eta: 1e-1
+  
+  trimmed_mean:
+    _target_: fl_bdbench.servers.TrimmedMeanServer
+    beta: 0.2
+
+  weakdp:
+    _target_: fl_bdbench.servers.WeakDPServer
+    strategy: unweighted_fedavg
+    std_dev: 0.025 # Following Edge-case backdoor attacks
+    clipping_norm: 5
+
+  deepsight:
+    _target_: fl_bdbench.servers.DeepSightServer
+    num_seeds: 3
+    num_samples: 20000
+    deepsight_batch_size: 1000
+    deepsight_tau: 0.3333
+
+  rflbat:
+    _target_: fl_bdbench.servers.RFLBATServer
+    eps1: 10.0
+    eps2: 4.0
+    save_plots: true
+
+  fldetector:
+    _target_: fl_bdbench.servers.FLDetectorServer
+    window_size: 10  # Size of sliding window for detection
+
+  fltrust:
+    _target_: fl_bdbench.servers.FLTrustServer
+    server_lr: 1.0
+
+  flare:
+    _target_: fl_bdbench.servers.FlareServer
+    voting_threshold: 0.5
+
+########################################################
+# *Optimizer configuration
+client_optimizer_config:
+  sgd:
+    _target_: torch.optim.SGD
+    lr: 0.1
+    momentum: 0.9
+    weight_decay: 5e-4
+    nesterov: false
+  adam:
+    _target_: torch.optim.Adam
+    lr: 0.1
+    betas: [0.9, 0.999]
+    eps: 1e-08
+    weight_decay: 5e-4
+    amsgrad: false
+
+########################################################
+# *Hydra configuration
+hydra:
+  job:
+    chdir: False  # Prevent Hydra from changing working directory
+  run:
+    dir: ./out/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
+  sweep:
+    dir: ./out/multirun/${now:%Y-%m-%d-%H-%M-%S}/${hydra.job.override_dirname}
+    subdir: ${hydra.job.num}
