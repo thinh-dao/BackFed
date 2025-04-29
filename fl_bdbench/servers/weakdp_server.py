@@ -13,15 +13,14 @@ class NormClippingServer(BaseServer):
     """
     Server that clips the norm of client updates to defend against poisoning attacks.
     """
-    def __init__(self, server_lr, server_type="norm_clipping", clipping_norm=5.0, eta=0.1):
+    def __init__(self, server_config, server_type="norm_clipping", clipping_norm=5.0, eta=0.1):
         """
         Args:
-            server_lr: Configuration for the server.
             server_type: Type of server.
             clipping_norm: Clipping norm for the norm clipping.
             eta: Learning rate for the server.
         """
-        super(NormClippingServer, self).__init__(server_lr, server_type)
+        super(NormClippingServer, self).__init__(server_config, server_type)
         self.clipping_norm = clipping_norm
         self.eta = eta
         log(INFO, f"Initialized NormClipping server with clipping_norm={clipping_norm}, eta={eta}")
@@ -78,18 +77,18 @@ class WeakDPServer(NormClippingServer):
     """
     Server that implements differential privacy with fixed clipping and Gaussian noise.
     """
-    def __init__(self, server_lr, server_type="weakdp", strategy="unweighted_fedavg", 
+    def __init__(self, server_config, server_type="weakdp", strategy="unweighted_fedavg", 
                  std_dev=0.025, clipping_norm=5.0):
         
         """
         Args:
-            server_lr: Configuration for the server.
+            server_config: Configuration for the server.
             server_type: Type of server.
             strategy: Strategy for the server.
             std_dev: Standard deviation for the Gaussian noise.
             clipping_norm: Clipping norm for the Gaussian noise.
         """
-        super(WeakDPServer, self).__init__(server_lr, server_type)
+        super(WeakDPServer, self).__init__(server_config, server_type)
         
         if std_dev < 0:
             raise ValueError("The std_dev should be a non-negative value.")

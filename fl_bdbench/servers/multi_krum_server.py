@@ -30,19 +30,19 @@ class MultiKrumServer(UnweightedFedAvgServer):
     5. Aggregating the updates from these selected clients
     """
 
-    def __init__(self, server_lr, server_type="multi_krum", num_malicious_clients=None, num_clients_to_keep=None, oracle=True, eta=0.1):
+    def __init__(self, server_config, server_type="multi_krum", num_malicious_clients=None, num_clients_to_keep=None, oracle=True, eta=0.1):
         """
         Initialize the Multi-Krum server.
 
         Args:
-            server_lr: Dictionary containing configuration
+            server_config: Dictionary containing configuration
             server_type: Type of server
             num_malicious_clients: Number of malicious clients (f)
             num_clients_to_keep: Number of clients to keep for aggregation (k)
             oracle: If True, use the actual number of malicious clients from the configuration
             eta: Learning rate for applying the aggregated updates
         """
-        super(MultiKrumServer, self).__init__(server_lr, server_type)
+        super(MultiKrumServer, self).__init__(server_config, server_type)
         
         # If oracle mode is enabled, use the actual number of malicious clients from config
         if oracle:

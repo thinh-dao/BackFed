@@ -9,53 +9,6 @@ from fl_bdbench.utils.logging_utils import log
 from fl_bdbench.const import StateDict
 from logging import INFO
 
-def trimmed_mean(
-    client_updates: List[Tuple[int, int, StateDict]], 
-    global_model_state: StateDict,
-    trim_ratio: float = 0.2
-) -> StateDict:
-    """
-    Aggregate client updates using trimmed mean.
-
-    Args:
-        client_updates: List of tuples (client_id, num_examples, model_update)
-        global_model_state: Current global model state dict
-        trim_ratio: Percentage of clients to trim from each end (default: 0.2)
-    Returns:
-        The global model state dict after aggregation
-    """
-    if len(client_updates) == 0:
-        return global_model_state
-
-    # Extract client parameters
-    client_params = [params for _, _, params in client_updates]
-    num_clients = len(client_params)
-
-    # Calculate number of clients to trim
-    num_trim = int(num_clients * trim_ratio)
-
-    # Create a new state dict for the aggregated model
-    aggregated_state_dict = {}
-
-    # Process each layer separately
-    for name in global_model_state.keys():
-        # Stack parameters from all clients for this layer
-        layer_params = torch.stack([client_param[name] for client_param in client_params])
-
-        # Sort values along client dimension
-        sorted_values, _ = torch.sort(layer_params, dim=0)
-
-        # Trim the smallest and largest values
-        if num_trim > 0:
-            trimmed_values = sorted_values[num_trim:-num_trim]
-        else:
-            trimmed_values = sorted_values
-
-        # Average the remaining values
-        aggregated_state_dict[name] = torch.mean(trimmed_values, dim=0)
-
-    return aggregated_state_dict
-
 class TrimmedMeanServer(BaseServer):
     """
     Server that implements trimmed mean aggregation to mitigate the impact of malicious clients.
@@ -64,16 +17,16 @@ class TrimmedMeanServer(BaseServer):
     computing the mean, making it robust against extreme values from malicious clients.
     """
 
-    def __init__(self, server_lr, server_type="trimmed_mean", trim_ratio=0.2):
+    def __init__(self, server_config, server_type="trimmed_mean", trim_ratio=0.2):
         """
         Initialize the trimmed mean server.
 
         Args:
-            server_lr: Dictionary containing configuration
+            server_config: Dictionary containing configuration
             server_type: Type of server
             trim_ratio: Percentage of clients to trim from each end (default: 0.2)
         """
-        super(TrimmedMeanServer, self).__init__(server_lr, server_type)
+        super(TrimmedMeanServer, self).__init__(server_config, server_type)
         self.trim_ratio = trim_ratio
         log(INFO, f"Initialized Trimmed Mean server with trim_ratio={trim_ratio}")
 

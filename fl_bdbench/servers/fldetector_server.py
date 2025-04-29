@@ -15,8 +15,8 @@ from logging import INFO, WARNING
 class FLDetectorServer(UnweightedFedAvgServer):
     """FLDetector server implementation."""
     
-    def __init__(self, model: nn.Module, window_size: int = 10, **kwargs):
-        super().__init__(model, **kwargs)
+    def __init__(self, server_config, window_size: int = 10, **kwargs):
+        super().__init__(server_config, **kwargs)
         self.exclude_list = []
         self.start_round = self.current_round # Start round is the round when the server starts to detect anomalies
         self.init_model = None
