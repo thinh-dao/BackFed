@@ -29,11 +29,24 @@ class ChameleonClient(MaliciousClient):
     Chameleon client implementation for FL.
     """
 
-    def __init__(self, client_id, dataset, dataset_indices, model, client_config, atk_config, poison_module, context_actor, **kwargs):
+    def __init__(
+        self,
+        client_id,
+        dataset,
+        dataset_indices,
+        model,
+        client_config,
+        atk_config,
+        poison_module,
+        context_actor,
+        client_type: str = "chameleon_malicious",
+        **kwargs
+    ):
         # Merge default parameters with provided params
         params_to_update = DEFAULT_PARAMS.copy()
         params_to_update.update(kwargs)
         
+        # Initialize the client. After this, additional kwargs are updated to atk_config
         super().__init__(
             client_id=client_id,
             dataset=dataset,
@@ -43,7 +56,7 @@ class ChameleonClient(MaliciousClient):
             atk_config=atk_config,
             poison_module=poison_module,
             context_actor=context_actor,
-            client_type="chameleon",
+            client_type=client_type,
             **params_to_update
         )
         

@@ -37,7 +37,7 @@ class IBA(Poison):
             self.atk_model = UNet(3).to("cuda")    
             self.atk_model_name = "unet"
 
-        self.atk_model_path = os.path.join(self.params.output_dir, "iba")
+        self.atk_model_path = os.path.join("fl_bdbench/poisons/saved", "iba")
         os.makedirs(self.atk_model_path, exist_ok=True)
 
     def poison_inputs(self, inputs):

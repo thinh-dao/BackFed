@@ -123,6 +123,7 @@ class Pattern(Poison):
         self.create_img_trigger(self.trigger_pattern, self.trigger_weight)
 
     def poison_inputs(self, inputs):
+        inputs = inputs.to(self.device)
         poisoned_inputs = inputs * (1-self.trigger_image_weight) + self.trigger_image * self.trigger_image_weight
         if self.physical_transformation is not None:
             poisoned_inputs = self.physical_transformation(poisoned_inputs)

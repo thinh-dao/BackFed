@@ -34,7 +34,7 @@ class A3FL(Pattern):
         self.trigger_image *= 0.5  # Follow the original implementation
         self.adversarial_loss_fn = CrossEntropyLoss()  # Default loss function for adversarial training
         self.trigger_name = "a3fl_trigger" # Save name for the trigger image in trigger_path
-        self.trigger_path = os.path.join(self.params.output_dir, "a3fl")
+        self.trigger_path = os.path.join("fl_bdbench/poisons/saved", "a3fl")
         os.makedirs(self.trigger_path, exist_ok=True)
 
     def poison_warmup(self, client_id, server_round, initial_model, dataloader, normalization=None, **kwargs):

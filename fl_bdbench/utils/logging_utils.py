@@ -5,14 +5,19 @@ Logging utilities for FL.
 import os
 import logging
 import csv
+import hydra
+import omegaconf
+import ray
 
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.theme import Theme
+
 
 class FLLogger:
     """Logger for FL in distributed and serial modes."""
     _instances = {}
-    _console = Console(stderr=True)  # Shared console instance for stderr
+    _console = Console(stderr=True)
     
     @classmethod
     def get_logger(cls, name="fl_logger", log_level=logging.INFO):            
@@ -20,46 +25,39 @@ class FLLogger:
             return cls._instances[name]
         
         logger = logging.getLogger(name)
-        logger.propagate = False # Avoid logging duplication
+        logger.propagate = False
         logger.setLevel(log_level)
         
         # Clear existing handlers
         for handler in logger.handlers[:]:
             logger.removeHandler(handler)
         
-        # Rich console handler with progress bar compatibility
+        # Rich console handler for colored output
         console_handler = RichHandler(
-            console=cls._console,  # Use shared console
-            show_time=False,  # Disable built-in time since we'll use formatter
+            console=cls._console,
+            show_time=False,
             show_path=False,
-            show_level=False,  # Disable built-in level since we'll use formatter
-            markup=True
+            show_level=True,  # Let Rich handle the level
+            markup=True,
+            rich_tracebacks=True,
+            tracebacks_suppress=[
+                hydra,
+                omegaconf,
+                ray
+            ]
         )
-
-        # Use same formatter as file handler
-        formatter = logging.Formatter(
-            fmt="[%(asctime)s][%(levelname)s] %(message)s",
-            datefmt="%H:%M:%S"
-        )
-        console_handler.setFormatter(formatter)
+        console_handler.setFormatter(logging.Formatter("%(message)s"))
         logger.addHandler(console_handler)
 
-        # Add file handler for Hydra's main.log
+        # Plain file handler for clean output
         try:
             from hydra.core.hydra_config import HydraConfig
             if HydraConfig.initialized():
-                output_dir = HydraConfig.get().runtime.output_dir
-                log_file = os.path.join(output_dir, "main.log")
-                file_handler = logging.FileHandler(log_file)
-                # You can use your custom formatter for the file handler
-                formatter = logging.Formatter(
-                    fmt="[%(asctime)s][%(levelname)s] %(message)s",
-                    datefmt="%H:%M:%S"
-                )
-                file_handler.setFormatter(formatter)
+                file_handler = logging.FileHandler(os.path.join(HydraConfig.get().runtime.output_dir, "main.log"))
+                file_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
                 logger.addHandler(file_handler)
         except ImportError:
-            pass  # Hydra not available
+            pass
         
         cls._instances[name] = logger
         return logger
@@ -68,8 +66,7 @@ class FLLogger:
     def log(level, message, logger_name="fl_logger", *args, **kwargs):
         """Log a message at the specified level."""
         logger = FLLogger.get_logger(logger_name)
-        if isinstance(message, dict): # Metrics
-            # Use rich's Pretty but convert it to string before logging
+        if isinstance(message, dict):
             formatted_dict = "\n" + "\n".join(f"    {k}: {v}" for k, v in message.items())
             logger.log(level, formatted_dict, *args, **kwargs)
         else:
@@ -184,3 +181,15 @@ def init_csv_logger(config, attack_name, strategy_name, resume=False, validation
 
     csv_logger = CSVLogger(fieldnames=field_names, resume=resume, filename=file_name)
     return csv_logger
+
+class ColorFormatter(logging.Formatter):
+    """Formatter that adds color for console output only"""
+    def format(self, record):
+        # Only add color markup for console
+        if record.levelno >= logging.ERROR:
+            record.levelname = "[red]ERROR[/red]"
+        elif record.levelno >= logging.WARNING:
+            record.levelname = "[yellow]WARNING[/yellow]"
+        else:
+            record.levelname = "[green]INFO[/green]"
+        return super().format(record)

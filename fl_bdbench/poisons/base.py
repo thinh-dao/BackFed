@@ -14,10 +14,10 @@ class Poison(ABC):
         Args:
             params (DictConfig): Attack configuration
         """
-        self.params = params 
+        self.params = params
         self.client_id = client_id
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     def poison_batch(self, batch, mode="train"):
         poison_inputs, poison_labels = batch
         poison_inputs = poison_inputs.to(self.device, non_blocking=True)
@@ -33,10 +33,10 @@ class Poison(ABC):
             return poison_inputs[filter_mask], poison_labels[filter_mask]
         else:
             raise ValueError(f"Invalid mode: {mode}")
-    
+
     def poison_warmup(self, client_id, server_round, initial_model, dataloader, normalization=None, **kwargs):
         """
-        Not required for all attacks. Called at the start of the poisoning round to update resources (trigger pattern, trigger generator, etc.). 
+        Not required for all attacks. Called at the start of the poisoning round to update resources (trigger pattern, trigger generator, etc.).
         Could be used for training the trigger pattern, attacker model, etc.
 
         Args:
@@ -50,7 +50,7 @@ class Poison(ABC):
 
     def poison_inputs(self, inputs, mode, *args, **kwargs):
         """
-        Return the poisoned inputs (inputs with the trigger applied). 
+        Return the poisoned inputs (inputs with the trigger applied).
         'mode' argument is given if poison inputs during training and testing may be different. Otherwise, this should not matter.
         Args:
             inputs (torch.Tensor): Inputs to poison
@@ -63,7 +63,7 @@ class Poison(ABC):
 
     def poison_finish(self):
         """
-        Not required for all attacks. Called at the end of the experiment. 
+        Not required for all attacks. Called at the end of the experiment.
         Could be used to delete the trigger, attacker model, etc.
         """
         pass
@@ -72,19 +72,34 @@ class Poison(ABC):
         """
         Return the poisoned labels.
         Args:
-            labels (torch.Tensor): Labels to poison
+            labels (torch.Tensor or int): Labels to poison. Can be a tensor or a single integer.
             source_target_mappings (dict): Source-target mappings for the labels
             test (bool): Whether to poison the entire batch or a portion of it
         Return:
-            poisoned_labels (torch.Tensor): Poisoned labels
+            poisoned_labels (torch.Tensor or int): Poisoned labels in the same format as input
         """
+        # Handle scalar input (int or 0-dim tensor)
+        is_scalar = isinstance(labels, int) or (torch.is_tensor(labels) and labels.dim() == 0)
+
+        if is_scalar:
+            # Handle scalar inputs directly
+            if self.params.attack_type == "all2all":
+                return (labels + 1) % self.params.num_classes
+            elif self.params.attack_type == "all2one":
+                return self.params.target_class
+            elif self.params.attack_type == "one2one":
+                return self.params.target_class if labels == self.params.source_class else labels
+            else:
+                raise ValueError(f"Invalid attack_type: {self.params.attack_type}")
+
+        # Handle tensor inputs
         if self.params.attack_type == "all2all":
             return (labels + 1) % self.params.num_classes
         elif self.params.attack_type == "all2one":
             return torch.ones(len(labels), dtype=torch.long, device=self.device) * self.params.target_class
         elif self.params.attack_type == "one2one":
-            return torch.where(labels == self.params.source_class, 
-                            torch.tensor(self.params.target_class, dtype=torch.long, device=self.device), 
+            return torch.where(labels == self.params.source_class,
+                            torch.tensor(self.params.target_class, dtype=torch.long, device=self.device),
                             labels)
         else:
             raise ValueError(f"Invalid attack_type: {self.params.attack_type}")
@@ -109,10 +124,10 @@ class Poison(ABC):
         with torch.no_grad():
             for batch in test_loader:
                 poisoned_inputs, poisoned_labels = self.poison_batch(batch, mode="test")
-                
+
                 if normalization:
                     poisoned_inputs = normalization(poisoned_inputs)
-                    
+
                 outputs = net(poisoned_inputs)
                 backdoored_preds += (torch.max(outputs.data, 1)[1] == poisoned_labels).sum().item()
                 total_loss += loss_fn(outputs, poisoned_labels).item()
@@ -121,7 +136,7 @@ class Poison(ABC):
         backdoor_accuracy = backdoored_preds / total_samples
         backdoor_loss = total_loss / len(test_loader)
         return backdoor_loss, backdoor_accuracy
-    
+
     def get_filter_mask(self, labels, mode):
         """Filter mask for samples in mask. Only the masked samples are triggered and evaluated in poison_test"""
         if mode == "train":
@@ -144,10 +159,10 @@ class Poison(ABC):
         else:
             raise ValueError(f"Invalid mode: {mode}")
         return filter_mask
-    
+
     def set_client_id(self, client_id: int):
         self.client_id = client_id
-    
+
     def __repr__(self) -> str:
         return self.__class__.__name__
 
