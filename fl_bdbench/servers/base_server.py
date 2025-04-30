@@ -321,7 +321,23 @@ class BaseServer:
             aggregated_metrics: Dict of aggregated metrics from clients evaluation
         """
         client_packages = self.trainer.test(clients_mapping)
-        return self.aggregate_client_metrics(client_packages)
+
+        client_metrics = []
+        num_failures = 0
+
+        for client_id, package in client_packages.items():
+            if isinstance(package, dict) and package.get("status") == "failure":
+                num_failures += 1
+                log(WARNING, f"Client [{client_id}] failed during evaluation ({package['error']})")
+                continue
+
+            num_examples, metrics = package
+            client_metrics.append((client_id, num_examples, metrics))
+
+        if num_failures > 0:
+            log(WARNING, f"Number of evaluation failures: {num_failures}")
+
+        return self.aggregate_client_metrics(client_metrics)
 
     def server_evaluate(self, round: Optional[int] = None) -> Metrics:
         """Perform one round of FL evaluation on the server side."""
@@ -332,9 +348,8 @@ class BaseServer:
                                     )
 
         if self.poison_module is not None and (round is None or round > self.atk_config.poison_start_round - 1): # Evaluate the backdoor performance starting from the round before the poisoning starts
-            poison_loss, poison_accuracy = self.poison_module.poison_test(model=self.global_model, 
+            poison_loss, poison_accuracy = self.poison_module.poison_test(net=self.global_model, 
                                                             test_loader=self.test_loader, 
-                                                            server_round=round, 
                                                             normalization=self.normalization)
             metrics = {
                 "test_clean_loss": clean_loss,
@@ -398,9 +413,14 @@ class BaseServer:
         self.best_metrics = {}
         self.best_model_state = self.best_model_state = {name: param.clone().detach() for name, param in self.global_model.state_dict().items()}
 
+        poison_rounds = self.client_manager.get_poison_rounds()
         for self.current_round in train_progress_bar:
             separator = "=" * 30
-            log(INFO, f"{separator} TRAINING ROUND: {self.current_round + 1} {separator}")
+
+            if self.current_round in poison_rounds:
+                log(INFO, f"{separator} POISONING ROUND: {self.current_round + 1} {separator}")
+            else:
+                log(INFO, f"{separator} TRAINING ROUND: {self.current_round + 1} {separator}")
 
             begin = time.time()
             server_metrics, client_fit_metrics, client_evaluation_metrics = self.run_one_round(round=self.current_round)
@@ -473,14 +493,14 @@ class BaseServer:
         ClientApp use these arguments to initialize client and train the client.
         """
 
-        if client_type == BenignClient:
+        if issubclass(client_type, BenignClient):
             init_args = {}  
             train_package = {
                 "global_model_params": self.get_model_parameters(),
                 "server_round": self.current_round,
                 "normalization": self.normalization
             }
-        elif client_type == MaliciousClient:
+        elif issubclass(client_type, MaliciousClient):
             assert self.poison_module is not None, "Poison module is not initialized"
             assert self.context_actor is not None, "Context actor is not initialized"
             
@@ -509,18 +529,20 @@ class BaseServer:
         Send the test_package to ClientApp based on the client type.
         ClientApp use this package to test the client.
         """
-        if isinstance(client_type, BenignClient):
+        if issubclass(client_type, BenignClient):
             test_package = {
                 "global_model_params": self.global_model_params,
                 "server_round": self.current_round,
                 "normalization": self.normalization
             }
-        elif isinstance(client_type, MaliciousClient):
+        elif issubclass(client_type, MaliciousClient):
             test_package = {
                 "global_model_params": self.global_model_params,
                 "server_round": self.current_round,
                 "normalization": self.normalization
             }
+        else:
+            raise ValueError(f"Unsupported client type: {client_type}")
 
         return test_package
 
@@ -540,7 +562,6 @@ class FLTrainer:
             server: BaseServer instance
             clientapp_init_args: Dictionary containing initialization arguments for ClientApp
             mode: Training mode (sequential or parallel)
-            timeout: Timeout for the training and evaluation
         """
         self.server = server
         self.mode = mode

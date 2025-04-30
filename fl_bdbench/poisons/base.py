@@ -24,7 +24,7 @@ class Poison(ABC):
         poison_labels = poison_labels.to(self.device, non_blocking=True)
 
         filter_mask = self.get_filter_mask(poison_labels, mode)
-        poison_inputs[filter_mask] = self.poison_inputs(poison_inputs[filter_mask], mode)
+        poison_inputs[filter_mask] = self.poison_inputs(poison_inputs[filter_mask])
         poison_labels[filter_mask] = self.poison_labels(poison_labels[filter_mask])
 
         if mode == "train":

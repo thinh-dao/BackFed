@@ -20,7 +20,7 @@ class UnweightedFedAvgServer(BaseServer):
     def __init__(self, server_config, server_type = "unweighted_fedavg", eta=0.1, **kwargs):
         super(UnweightedFedAvgServer, self).__init__(server_config, server_type, **kwargs)
         self.eta = eta
-        log(INFO, f"Initialized Unweighted FedAvg server with eta={eta}")
+        log(INFO, f"Initialized UnweightedFedAvg server with eta={eta}")
 
     @torch.no_grad()
     def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]):
