@@ -21,6 +21,7 @@ class FlareServer(UnweightedFedAvgServer):
         super().__init__(server_config)
         self.voting_threshold = voting_threshold
         self.central_dataset = None
+        log(INFO, f"Initialized FLARE server with voting_threshold={voting_threshold}")
         
     def _kernel_function(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Compute RBF kernel between two vectors."""

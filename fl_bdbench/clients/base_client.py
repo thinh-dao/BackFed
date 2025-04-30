@@ -12,7 +12,7 @@ from typing import Dict, Any, Tuple, List, Optional
 from torch.utils.data import DataLoader, Subset, Dataset
 from omegaconf import DictConfig
 from fl_bdbench.utils import set_random_seed, log
-from fl_bdbench.const import StateDict, Metrics, ClientUpdates
+from fl_bdbench.const import StateDict, Metrics
 from hydra.utils import instantiate
 from logging import INFO, WARNING
 
@@ -96,7 +96,7 @@ class BaseClient:
         for key in required_keys:
             assert key in train_package, f"{key} not found in train_package for {self.client_type} client"
     
-    def train(self, train_package: Dict[str, Any]) -> Tuple[int, ClientUpdates, Metrics]:
+    def train(self, train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
         """
         Train the model for a number of epochs.
         
@@ -269,25 +269,28 @@ class ClientApp:
         """
         assert self.client is not None, "Only initialized client (after training) can be evaluated"
         
+        eval_time_start = time.time()
         timeout = self.client.client_config.timeout
-        
-        if timeout is not None:
-            if self.pool is None:
-                raise ValueError("Pool is not initialized")
-            
-            future = self.pool.submit(self.client.evaluate, test_package)
-            try:
+        try:
+            if timeout is not None:
+                if self.pool is None:
+                    raise ValueError("Pool is not initialized")
+                
+                future = self.pool.submit(self.client.evaluate, test_package)
                 results = future.result(timeout=timeout)
-            except TimeoutError:
-                future.cancel()
-                return {
-                    "status": "timeout",
-                    "client_id": self.client.client_id,
-                    "timeout": timeout
-                }
-        else:
-            results = self.client.evaluate(test_package)
-            
+            else:
+                results = self.client.evaluate(test_package)
+        except Exception as e:
+            log(WARNING, f"Client [{self.client.client_id}] failed during evaluation: {e}")
+            return {
+                "status": "failure",
+                "error": str(e)
+            }
+        
+        eval_time_end = time.time()
+        eval_time = eval_time_end - eval_time_start
+        log(INFO, f"Client [{self.client.client_id}] ({self.client.client_type}) - Evaluation time: {eval_time:.2f} seconds")
+        
         return results
 
     def __getattr__(self, name: str) -> Any:
