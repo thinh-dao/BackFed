@@ -14,13 +14,10 @@ class ContextActor:
     This allows malicious clients to share models, data, triggers, and other information
     when running in parallel mode.
     """
-    def __init__(self, mode: str = "parallel"):
-        self.mode = mode.lower()
-        if self.mode not in ["parallel", "serial"]:
-            raise ValueError("Mode must be either 'parallel' or 'serial'")
+    def __init__(self):
         self.shared_resources = {}  # round_number -> resource_package
-        self.ready_event = asyncio.Event() if self.mode == "parallel" else None
-        log(INFO, f"Context actor initialized in {self.mode} mode")
+        self.ready_event = asyncio.Event()
+        log(INFO, "Context actor initialized in parallel mode")
 
     def update_resource(self, client_id: int, resource_package: Dict[str, Any], round_number: int):
         """
@@ -32,33 +29,25 @@ class ContextActor:
         Returns:
             dict: The updated resource package.
         """
-        self.shared_resources[round_number] = resource_package
         log(INFO, f"Client[{client_id}] updated resources for round {round_number}")
+        self.shared_resources[round_number] = resource_package
         # Clean up old rounds to prevent memory leaks
         self._cleanup_old_rounds(round_number)
         # Signal that the resource is updated
-        if self.mode == "parallel":
-            self.ready_event.set()
+        self.ready_event.set()
         return resource_package
 
-    def wait_for_resource(self, round_number: int):
+    async def wait_for_resource(self, round_number: int):
         """
-        Get or wait for resources based on mode.
+        Wait for resources to be available.
         Args:
             round_number (int): The round number for which to retrieve resources.
         Returns:
-            dict or coroutine: The resource package or an awaitable coroutine.
+            dict: The resource package.
         """
-        if self.mode == "sequential":
-            if round_number not in self.shared_resources:
-                raise ValueError(f"Resources not found for round {round_number}")
-            return self.shared_resources[round_number]
-        # In parallel mode, return an async coroutine
-        async def _async_wait():
-            if round_number not in self.shared_resources:
-                await self.ready_event.wait()
-            return self.shared_resources[round_number]
-        return _async_wait()
+        if round_number not in self.shared_resources:
+            await self.ready_event.wait()
+        return self.shared_resources[round_number]
 
     def _cleanup_old_rounds(self, keep_last: int = 10):
         """

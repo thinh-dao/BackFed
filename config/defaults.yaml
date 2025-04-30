@@ -3,6 +3,8 @@
 defaults:
   - _self_
   - atk_config: multishot
+  - override hydra/hydra_logging: disabled  
+  - override hydra/job_logging: disabled 
 
 # *Aggregator
 aggregator: unweighted_fedavg
@@ -57,6 +59,7 @@ client_config:
   val_split: ${federated_val_split} # split of the training data to be used for validation
   seed: ${seed}  # Reproducibility
   deterministic: ${deterministic}
+  training_mode: ${mode} # Choose from [parallel, sequential]
 
 # *Setting to resume model training (weight and other parameters are loaded). 
 # *See the full list of parameters in the save_best_model function in server.py

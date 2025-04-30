@@ -6,6 +6,7 @@ import random
 import torch
 import torch.nn as nn
 import time
+import traceback
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Tuple, List, Optional
@@ -14,15 +15,24 @@ from omegaconf import DictConfig
 from fl_bdbench.utils import set_random_seed, log
 from fl_bdbench.const import StateDict, Metrics
 from hydra.utils import instantiate
-from logging import INFO, WARNING
+from logging import INFO, WARNING, ERROR
 
 class BaseClient:
     """
     Base class for all FL clients.
     Handles data partitioning, model setup, optimizer, and training logic.
     """
-    def __init__(self, client_id: int, dataset: Dataset, dataset_indices: List[List[int]], 
-                 model: nn.Module, client_config: DictConfig, client_type: str = "base", verbose: bool = True, **kwargs):
+    def __init__(
+        self,
+        client_id: int,
+        dataset: Dataset,
+        dataset_indices: List[List[int]], 
+        model: nn.Module,
+        client_config: DictConfig,
+        client_type: str = "base",
+        verbose: bool = False,
+        **kwargs
+    ):
         """
         Initialize the client.
         Args:
@@ -220,23 +230,11 @@ class ClientApp:
         )
 
     def train(self, client_cls: BaseClient, client_id: int, init_args: Dict[str, Any], train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
-        """
-        Train the client with preloaded model.
-        Args:
-            client_cls: Client class to be loaded
-            client_id: Unique identifier for the client
-            init_args: Keyword arguments for client initialization
-            train_package: Data package received from server to train the model (e.g., global model weights, learning rate, etc.)
-        Returns: 
-            num_examples (int): number of examples in the training dataset
-            state_dict (StateDict): updated model parameters
-            training_metrics (Dict[str, float]): training metrics
-        """
-        self.client = self._load_client(client_cls, client_id, **init_args)
-
-        train_time_start = time.time()
-        timeout = self.client.client_config.timeout
         try:
+            self.client = self._load_client(client_cls, client_id, **init_args)
+
+            train_time_start = time.time()
+            timeout = self.client.client_config.timeout
             if timeout is not None:
                 if self.pool is None:
                     raise ValueError("Pool is not initialized")
@@ -246,12 +244,15 @@ class ClientApp:
             else:
                 results = self.client.train(train_package)
         except Exception as e:
-            log(WARNING, f"Client [{self.client.client_id}] failed during training: {e}")
+            error_tb = traceback.format_exc()
             return {
                 "status": "failure",
-                "error": str(e)
+                "error": str(e),
+                "traceback": error_tb
             }
         
+        assert len(results) == 3, "Training results must contain (num_examples, state_dict, training_metrics)"
+
         train_time_end = time.time()
         train_time = train_time_end - train_time_start
         log(INFO, f"Client [{self.client.client_id}] ({self.client.client_type}) - Training time: {train_time:.2f} seconds")
@@ -259,19 +260,11 @@ class ClientApp:
         return results
 
     def evaluate(self, test_package: Dict[str, Any]) -> Tuple[int, Metrics]:
-        """
-        Evaluate the client with preloaded model.
-        Args:
-            test_package: Data package received from server to evaluate the model (e.g., global model weights, learning rate, etc.)
-        Returns:
-            num_examples (int): number of examples in the test dataset
-            evaluation_metrics (Dict[str, float]): evaluation metrics
-        """
-        assert self.client is not None, "Only initialized client (after training) can be evaluated"
-        
-        eval_time_start = time.time()
-        timeout = self.client.client_config.timeout
         try:
+            assert self.client is not None, "Only initialized client (after training) can be evaluated"
+            
+            eval_time_start = time.time()
+            timeout = self.client.client_config.timeout
             if timeout is not None:
                 if self.pool is None:
                     raise ValueError("Pool is not initialized")
@@ -281,10 +274,11 @@ class ClientApp:
             else:
                 results = self.client.evaluate(test_package)
         except Exception as e:
-            log(WARNING, f"Client [{self.client.client_id}] failed during evaluation: {e}")
+            error_tb = traceback.format_exc()
             return {
                 "status": "failure",
-                "error": str(e)
+                "error": str(e),
+                "traceback": error_tb
             }
         
         eval_time_end = time.time()
@@ -292,6 +286,13 @@ class ClientApp:
         log(INFO, f"Client [{self.client.client_id}] ({self.client.client_type}) - Evaluation time: {eval_time:.2f} seconds")
         
         return results
+    
+    def execute(self, client_cls: BaseClient, client_id: int, init_args: Dict[str, Any], exec_package: Dict[str, Any]) -> Any:
+        """
+        Execute the client with preloaded model.
+        """
+        self.client = self._load_client(client_cls, client_id, **init_args)
+        return self.client.execute(exec_package)
 
     def __getattr__(self, name: str) -> Any:
         """

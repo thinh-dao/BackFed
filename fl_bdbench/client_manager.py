@@ -47,7 +47,7 @@ class ClientManager:
             self.benign_client_class = BenignClient
 
             if self.start_round >= self.atk_config.poison_end_round or self.start_round + self.config.num_rounds <= self.atk_config.poison_start_round:
-                log(WARNING, f"Training rounds [{self.start_round} - {self.start_round + self.config.num_rounds}] are [bold red]out of scope[/bold red] for the attack range [{self.atk_config.poison_start_round} - {self.atk_config.poison_end_round}]. No attack will be applied.")
+                log(WARNING, f"Training rounds [{self.start_round} - {self.start_round + self.config.num_rounds}] are out of scope for the attack range [{self.atk_config.poison_start_round} - {self.atk_config.poison_end_round}]. No attack will be applied.")
                 self._initialize_normal_rounds()
             else:
                 self._initialize_poison_rounds()

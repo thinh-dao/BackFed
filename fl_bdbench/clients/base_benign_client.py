@@ -17,7 +17,16 @@ class BenignClient(BaseClient):
     Base class for all FL clients.
     """
     
-    def __init__(self, client_id, dataset, dataset_indices, model, client_config, **kwargs):
+    def __init__(
+        self,
+        client_id,
+        dataset,
+        dataset_indices,
+        model,
+        client_config,
+        client_type: str = "base_benign",
+        **kwargs
+    ):
         """
         Initialize the client.
         
@@ -34,7 +43,7 @@ class BenignClient(BaseClient):
             dataset_indices=dataset_indices,
             model=model,
             client_config=client_config,
-            client_type="benign",
+            client_type=client_type,
             **kwargs
         )
 

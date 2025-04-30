@@ -41,7 +41,7 @@ scale_factor: 100.0 #
 # 1. offline: Poisoning is done offline before training starts. That means p% of the training data is poisoned before batch training.
 # 2. online: Poisoning is done online during training. That means p% of each training batch is poisoned.
 # 3. multi_task: Poisoning is done online during training, with the multi-task formulation: L = alpha * L_poisoned + (1 - alpha) * L_clean
-poison_type: "online" # ["offline", "online", "multi_task"] - poison type during training
+poison_mode: "online" # ["offline", "online", "multi_task"] - poison mode during training
 poison_rate: 0.15625 # 10/64 of a training batch is poisoned
 attack_alpha: 0.5 # For "multi_task" poison type: L = alpha * L_poisoned + (1 - alpha) * L_clean
 
@@ -128,7 +128,7 @@ data_poison_config:
 ### Model poisoning configuration
 model_poison_config:
   base:
-    _target_: fl_bdbench.clients.BaseClient
+    _target_: fl_bdbench.clients.MaliciousClient
 
   chameleon: # Chameleon is a poison wrapper
     _target_: fl_bdbench.clients.ChameleonClient

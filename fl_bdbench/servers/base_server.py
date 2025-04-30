@@ -10,6 +10,8 @@ import glob
 import time
 import copy
 
+from logging import ERROR
+from ray.actor import ActorHandle
 from rich.progress import track
 from hydra.utils import instantiate
 from fl_bdbench.client_manager import ClientManager
@@ -76,9 +78,9 @@ class BaseServer:
             )
                             
             if self.config.mode == "parallel":
-                self.context_actor = ray.remote(ContextActor).options(num_cpus=0.0, num_gpus=0.0).remote(self.config.mode)
+                self.context_actor = ray.remote(ContextActor).options(num_cpus=0.1, num_gpus=0.0).remote()
             else:
-                self.context_actor = ContextActor(self.config.mode)
+                self.context_actor = None
 
         else:
             self.atk_config = None
@@ -283,22 +285,13 @@ class BaseServer:
 
         client_metrics = []
         client_updates = []
-        num_failures = 0
 
         for client_id, package in client_packages.items():
-            if isinstance(package, dict) and package.get("status") == "failure":
-                num_failures += 1
-                log(WARNING, f"Client [{client_id}] failed during training ({package['error']})")
-                continue
-
             num_examples, model_updates, metrics = package
             client_metrics.append((client_id, num_examples, metrics))
             client_updates.append((client_id, num_examples, model_updates))
 
         aggregate_time_start = time.time()
-
-        if num_failures > 0:
-            log(WARNING, f"Number of failures: {num_failures}")
             
         if self.aggregate_client_updates(client_updates):
             self.global_model.load_state_dict(self.global_model_params, strict=True)
@@ -321,21 +314,11 @@ class BaseServer:
             aggregated_metrics: Dict of aggregated metrics from clients evaluation
         """
         client_packages = self.trainer.test(clients_mapping)
-
         client_metrics = []
-        num_failures = 0
 
         for client_id, package in client_packages.items():
-            if isinstance(package, dict) and package.get("status") == "failure":
-                num_failures += 1
-                log(WARNING, f"Client [{client_id}] failed during evaluation ({package['error']})")
-                continue
-
             num_examples, metrics = package
             client_metrics.append((client_id, num_examples, metrics))
-
-        if num_failures > 0:
-            log(WARNING, f"Number of evaluation failures: {num_failures}")
 
         return self.aggregate_client_metrics(client_metrics)
 
@@ -436,11 +419,11 @@ class BaseServer:
             log(INFO, f"Round {self.current_round + 1} completed in {round_time:.2f} seconds")
 
             # Use separate log calls for better formatting
-            log(INFO, "[bold magenta]═══ Centralized Metrics ═══[/bold magenta]")
+            log(INFO, "═══ Centralized Metrics ═══")
             log(INFO, server_metrics)
-            log(INFO, "[bold cyan]═══ Client Fit Metrics ═══[/bold cyan]")
+            log(INFO, "═══ Client Fit Metrics ═══")
             log(INFO, client_fit_metrics)
-            log(INFO, "[bold yellow]═══ Client Evaluation Metrics ═══[/bold yellow]")
+            log(INFO, "═══ Client Evaluation Metrics ═══")
             log(INFO, client_evaluation_metrics)
 
             if self.config.save_logging in ["wandb", "both"]:
@@ -567,7 +550,7 @@ class FLTrainer:
         self.mode = mode
 
         if self.mode == "sequential":
-            self.worker = ClientApp(**clientapp_init_args)
+            self.worker : List[ClientApp] = [ClientApp(**clientapp_init_args) for _ in range(self.server.config.num_clients)]
         elif self.mode == "parallel":
             ray_client = ray.remote(ClientApp).options(
                 num_cpus=self.server.config.num_cpus,
@@ -576,7 +559,7 @@ class FLTrainer:
 
             client_ressource = dict(num_cpus=self.server.config.num_cpus, num_gpus=self.server.config.num_gpus)
             self.num_workers = pool_size_from_resources(client_ressource)
-            self.workers: list[ray.actor.ActorHandle] = [
+            self.workers : List[ActorHandle] = [
                 ray_client.remote(**clientapp_init_args) for _ in range(self.num_workers)
             ]
         else:
@@ -601,16 +584,30 @@ class FLTrainer:
             client_packages (dict): client_id -> (num_examples, model_updates, metrics)
         """
         client_packages = {}
+        num_failures = 0
 
         for client_cls in clients_mapping.keys():
             init_args, train_package = self.server.train_package(client_cls)
             for client_id in clients_mapping[client_cls]:
-                num_examples, model_updates, metrics = self.worker.train(client_cls=client_cls, 
+                client_package = self.worker.train(client_cls=client_cls, 
                     client_id=client_id, 
                     init_args=init_args, 
                     train_package=train_package
                 )
-                client_packages[client_id] = (num_examples, model_updates, metrics)
+
+                # Check if the client failed
+                if isinstance(client_package, dict) and client_package.get("status") == "failure":
+                    num_failures += 1
+                    error_msg = client_package['error']
+                    error_tb = client_package.get('traceback', 'No traceback available')
+                    log(ERROR, f"Client [{client_id}] failed during training:\n{error_msg}\n{error_tb}")
+                    continue
+                
+                # If not failed, add the client package to the client_packages
+                client_packages[client_id] = client_package
+
+        if num_failures > 0:
+            log(WARNING, f"Number of failures: {num_failures}")
 
         return client_packages
 
@@ -623,11 +620,6 @@ class FLTrainer:
         Returns:
             client_packages (dict): client_id -> (num_examples, model_updates, metrics)
         """
-        idle_workers = deque(range(self.num_workers))
-        futures = []
-        job_map = {}
-        client_packages = {}
-
         # Prepare all clients and their corresponding packages
         all_clients = []
         for client_cls, clients in clients_mapping.items():
@@ -638,6 +630,11 @@ class FLTrainer:
             for client_id in clients:
                 all_clients.append((client_cls, client_id, init_args_ref, train_package_ref))
 
+        idle_workers = deque(range(self.num_workers))
+        futures = []
+        job_map = {}
+        client_packages = {}
+        num_failures = 0
         i = 0
         while i < len(all_clients) or len(futures) > 0:
             # Launch new tasks while we have idle workers and clients to process
@@ -659,9 +656,22 @@ class FLTrainer:
                 all_finished, futures = ray.wait(futures)
                 for finished in all_finished:
                     client_id, worker_id = job_map[finished]
-                    num_examples, model_updates, metrics = ray.get(finished)
+                    client_package = ray.get(finished)
                     idle_workers.append(worker_id)
-                    client_packages[client_id] = (num_examples, model_updates, metrics)
+
+                    # Check if the client failed
+                    if isinstance(client_package, dict) and client_package.get("status") == "failure":
+                        num_failures += 1
+                        error_msg = client_package['error']
+                        error_tb = client_package.get('traceback', 'No traceback available')
+                        log(ERROR, f"Client [{client_id}] failed during training:\n{error_msg}\n{error_tb}")
+                        continue
+                    
+                    # If not failed, add the client package to the client_packages
+                    client_packages[client_id] = client_package
+
+        if num_failures > 0:
+            log(WARNING, f"Number of failures: {num_failures}")
 
         return client_packages
 
@@ -675,12 +685,25 @@ class FLTrainer:
             client_packages (dict): client_id -> (num_examples, eval_metrics)
         """
         client_packages = {}
-
+        num_failures = 0
         for client_cls in clients_mapping.keys():
             test_package = self.server.test_package(client_cls)
             for client_id in clients_mapping[client_cls]:
-                num_examples, eval_metrics = self.worker.evaluate(test_package=test_package)
-                client_packages[client_id] = (num_examples, eval_metrics)
+                client_package = self.worker.evaluate(test_package=test_package)
+
+                # Check if the client failed
+                if isinstance(client_package, dict) and client_package.get("status") == "failure":
+                    num_failures += 1
+                    error_msg = client_package['error']
+                    error_tb = client_package.get('traceback', 'No traceback available')
+                    log(WARNING, f"Client [{client_id}] failed during evaluation:\n{error_msg}\n{error_tb}")
+                    continue
+                
+                # If not failed, add the client package to the client_packages
+                client_packages[client_id] = client_package
+
+        if num_failures > 0:
+            log(WARNING, f"Number of failures: {num_failures}")
 
         return client_packages
 
@@ -693,11 +716,6 @@ class FLTrainer:
         Returns:
             client_packages (dict): client_id -> (num_examples, eval_metrics)
         """
-        futures = []
-        idle_workers = deque(range(self.num_workers))
-        job_map = {}
-        client_packages = {}
-
         # Prepare all clients and their corresponding packages
         all_clients = []
         for client_cls, clients in clients_mapping.items():
@@ -706,6 +724,11 @@ class FLTrainer:
             for client_id in clients:
                 all_clients.append((client_id, test_package_ref))
         
+        idle_workers = deque(range(self.num_workers))
+        futures = []
+        job_map = {}
+        client_packages = {}
+        num_failures = 0
         i = 0
         while i < len(all_clients) or len(futures) > 0:
             # Launch new tasks while we have idle workers and clients to process
@@ -722,9 +745,22 @@ class FLTrainer:
                 all_finished, futures = ray.wait(futures)
                 for finished in all_finished:
                     client_id, worker_id = job_map[finished]
-                    num_examples, eval_metrics = ray.get(finished)
+                    client_package = ray.get(finished)
                     idle_workers.append(worker_id)
-                    client_packages[client_id] = (num_examples, eval_metrics)
+
+                    # Check if the client failed
+                    if isinstance(client_package, dict) and client_package.get("status") == "failure":
+                        num_failures += 1
+                        error_msg = client_package['error']
+                        error_tb = client_package.get('traceback', 'No traceback available')
+                        log(ERROR, f"Client [{client_id}] failed during evaluation:\n{error_msg}\n{error_tb}")
+                        continue
+                    
+                    # If not failed, add the client package to the client_packages
+                    client_packages[client_id] = client_package
+
+        if num_failures > 0:
+            log(WARNING, f"Number of failures: {num_failures}")
 
         return client_packages
 
@@ -745,7 +781,7 @@ class FLTrainer:
             client_packages: OrderedDict mapping client IDs to function execution results
         """
         client_packages = {}
-
+        num_failures = 0
         for client_cls in clients_mapping.keys():
             init_args, exec_package = package_func(client_cls)
             for client_id in clients_mapping[client_cls]:
@@ -755,7 +791,20 @@ class FLTrainer:
                     init_args=init_args,
                     exec_package=exec_package
                 )
+
+                # Check if the client failed
+                if isinstance(package, dict) and package.get("status") == "failure":
+                    num_failures += 1
+                    error_msg = package['error']
+                    error_tb = package.get('traceback', 'No traceback available')
+                    log(ERROR, f"Client [{client_id}] failed during execution:\n{error_msg}\n{error_tb}")
+                    continue
+                
+                # If not failed, add the client package to the client_packages
                 client_packages[client_id] = package
+
+        if num_failures > 0:
+            log(WARNING, f"Number of failures: {num_failures}")
 
         return client_packages
 
@@ -775,11 +824,6 @@ class FLTrainer:
         Returns:
             client_packages: OrderedDict mapping client IDs to function execution results
         """
-        futures = []
-        idle_workers = deque(range(self.num_workers))
-        job_map = {}
-        client_packages = {}
-
         # Prepare all clients and their corresponding packages
         all_clients = []
         for client_cls, clients in clients_mapping.items():
@@ -789,6 +833,11 @@ class FLTrainer:
             for client_id in clients:
                 all_clients.append((client_cls, client_id, init_args_ref, exec_package_ref))
         
+        idle_workers = deque(range(self.num_workers))
+        futures = []
+        job_map = {}
+        client_packages = {}
+        num_failures = 0
         i = 0
         while i < len(all_clients) or len(futures) > 0:
             # Launch new tasks while we have idle workers and clients to process
@@ -812,6 +861,19 @@ class FLTrainer:
                     client_id, worker_id = job_map[finished]
                     package = ray.get(finished)
                     idle_workers.append(worker_id)
+
+                    # Check if the client failed
+                    if isinstance(package, dict) and package.get("status") == "failure":
+                        num_failures += 1
+                        error_msg = package['error']
+                        error_tb = package.get('traceback', 'No traceback available')
+                        log(ERROR, f"Client [{client_id}] failed during execution:\n{error_msg}\n{error_tb}")
+                        continue
+                    
+                    # If not failed, add the client package to the client_packages
                     client_packages[client_id] = package
+
+        if num_failures > 0:
+            log(WARNING, f"Number of failures: {num_failures}")
 
         return client_packages
