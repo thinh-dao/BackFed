@@ -162,6 +162,9 @@ class Poison(ABC):
 
     def set_client_id(self, client_id: int):
         self.client_id = client_id
+    
+    def set_device(self, device: torch.device):
+        self.device = device
 
     def __repr__(self) -> str:
         return self.__class__.__name__

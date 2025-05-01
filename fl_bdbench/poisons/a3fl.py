@@ -15,7 +15,7 @@ DEFAULT_PARAMS = {
     "trigger_lr": 0.01,
     "dm_adv_epochs": 5,
     "dm_adv_K": 100,
-    "dm_adv_model_count": 1,
+    "dm_adv_model_count": 0,
     "noise_loss_lambda": 0.01,
     "save_trigger_at_last": True,
 }
@@ -90,7 +90,6 @@ class A3FL(Pattern):
 
         adv_models = []
         adv_weights = []        
-        alpha = self.trigger_lr
 
         self.trigger_image.requires_grad = True
         ce_loss_fn = CrossEntropyLoss()
@@ -135,9 +134,13 @@ class A3FL(Pattern):
                 if self.trigger_image.grad is not None:
                     self.trigger_image.grad.zero_()
 
-                loss = backdoor_loss + self.noise_loss_lambda/self.dm_adv_model_count * adaptation_loss
+                if len(adv_models) > 0:
+                    loss = backdoor_loss + self.noise_loss_lambda/self.dm_adv_model_count * adaptation_loss
+                else:
+                    loss = backdoor_loss
                 loss.backward()
-                self.trigger_image.data = self.trigger_image.data - alpha * self.trigger_image.grad.sign()
+                
+                self.trigger_image.data = self.trigger_image.data - self.trigger_lr * self.trigger_image.grad.sign()
                 self.trigger_image.data = torch.clamp(self.trigger_image.data, min=0, max=1)
 
                 backdoor_preds += (torch.max(outputs.data, 1)[1] == poison_labels).sum().item()
