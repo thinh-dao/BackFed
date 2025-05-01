@@ -361,12 +361,11 @@ class MaliciousClient(BaseClient):
             "val_clean_acc": val_clean_accuracy,
         }
 
-        if self.atk_config.backdoor_eval:
-            backdoor_loss, backdoor_accuracy = self.poison_module.poison_test(self.model, self.val_loader, normalization=self.normalization)
-            metrics.update({
-                'val_backdoor_loss': backdoor_loss,
-                'val_backdoor_acc': backdoor_accuracy
-            })
+        backdoor_loss, backdoor_accuracy = self.poison_module.poison_test(self.model, self.val_loader, normalization=self.normalization)
+        metrics.update({
+            'val_backdoor_loss': backdoor_loss,
+            'val_backdoor_acc': backdoor_accuracy
+        })
         return len(self.val_dataset), metrics
 
     @torch.no_grad()

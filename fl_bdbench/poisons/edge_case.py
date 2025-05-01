@@ -32,6 +32,9 @@ class EdgeCase(Poison):
     def __init__(self, params: DictConfig, client_id: int = -1): 
         super(EdgeCase, self).__init__(params, client_id)
         
+        if self.params.attack_type == "all2all":
+            raise ValueError(f"Edge-case is not supported for all2all attack")
+
         dataset = self.params.dataset.upper()
         if dataset in DEFAULT_TRANSFORMS:
             self.transform_edge_case = DEFAULT_TRANSFORMS[dataset]
@@ -43,9 +46,9 @@ class EdgeCase(Poison):
     def _load_edge_case(self):            
         # Load data from disk if not available in context actor
         if self.params.dataset.upper() == "CIFAR10":
-            with open('fl_bdbench/attack/shared/edge-case/southwest_images_new_train.pkl', 'rb') as train_f:
+            with open('fl_bdbench/poisons/shared/edge-case/southwest_images_new_train.pkl', 'rb') as train_f:
                 saved_southwest_dataset_train = pickle.load(train_f)
-            with open('fl_bdbench/attack/shared/edge-case/southwest_images_new_test.pkl', 'rb') as test_f:
+            with open('fl_bdbench/poisons/shared/edge-case/southwest_images_new_test.pkl', 'rb') as test_f:
                 saved_southwest_dataset_test = pickle.load(test_f)    
             self.edge_case_train = torch.stack([self.transform_edge_case(img) for img in saved_southwest_dataset_train])
             self.edge_case_test = torch.stack([self.transform_edge_case(img) for img in saved_southwest_dataset_test]) 

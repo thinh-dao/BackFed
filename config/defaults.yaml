@@ -29,7 +29,7 @@ seed: 123456
 deterministic: False
 
 # *Simulation configuration 
-num_rounds: 500
+num_rounds: 600
 num_clients: 100
 fraction_fit: 0.1
 federated_evaluation: False # Whether to perform federated evaluation (evaluate global model on client's validation set)
