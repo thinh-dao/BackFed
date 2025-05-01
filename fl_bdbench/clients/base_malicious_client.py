@@ -186,13 +186,13 @@ class MaliciousClient(BaseClient):
             self.set_poisoned_dataloader()
 
         # Setup training protocol
-        proximal_mu = self.atk_config.get('proximal_mu', None) if self.atk_config.follow_protocol else None
+        proximal_mu = train_package.get('proximal_mu', None) if self.atk_config.follow_protocol else None
 
         # Initialize training tools
         scaler = torch.amp.GradScaler(device=self.device)
 
         if self.atk_config.poisoned_is_projection or proximal_mu is not None:
-            global_params_tensor = torch.cat([param.view(-1).detach().clone() for name, param in train_package["global_model_params"].items()
+            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in train_package["global_model_params"].items()
                                   if "weight" in name or "bias" in name]).to(self.device)
 
         if self.atk_config["step_scheduler"]:
@@ -273,7 +273,7 @@ class MaliciousClient(BaseClient):
 
                     # Add proximal term if needed
                     if proximal_mu is not None:
-                        proximal_term = self.model_dist(global_params_tensor, gradient_calc=True)
+                        proximal_term = self.model_dist(global_params_tensor=global_params_tensor, gradient_calc=True)
                         loss += (proximal_mu / 2) * proximal_term
 
                 # Backward pass with gradient masking
@@ -322,7 +322,7 @@ class MaliciousClient(BaseClient):
 
         # Log final results
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Final Train Loss: {self.train_loss:.4f} | "
+            f"Train Loss: {self.train_loss:.4f} | "
             f"Train Accuracy: {self.train_accuracy:.4f} | "
             f"Backdoor Loss: {self.train_backdoor_loss:.4f} | "
             f"Backdoor Accuracy: {self.train_backdoor_acc:.4f}")
@@ -390,15 +390,6 @@ class MaliciousClient(BaseClient):
             model_params[name] = (global_param + scale_factor * (local_param - global_param)).cpu()
 
         return model_params
-
-    def model_dist(self, global_params_tensor: torch.Tensor, gradient_calc=False):
-        """Calculate the L2 distance between client model parameters and global parameters"""
-        client_params_tensor = torch.cat([param.view(-1) for param in self.model.parameters()]).to(self.device)
-        global_params_tensor = global_params_tensor.to(self.device)
-        if gradient_calc:
-            return torch.linalg.norm(client_params_tensor - global_params_tensor, ord=2).item()
-        else:
-            return torch.linalg.norm(client_params_tensor - global_params_tensor, ord=2)
 
     @torch.no_grad()
     def _projection(self, global_params_tensor: torch.Tensor):

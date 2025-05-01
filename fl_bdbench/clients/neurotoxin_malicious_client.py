@@ -120,7 +120,7 @@ class NeurotoxinClient(MaliciousClient):
         scaler = torch.amp.GradScaler(device=self.device)
 
         if self.atk_config.poisoned_is_projection or proximal_mu is not None:
-            global_params_tensor = torch.cat([param.view(-1) for name, param in train_package["global_model_params"].items()
+            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in train_package["global_model_params"].items()
                                   if "weight" in name or "bias" in name]).to(self.device)
 
         if self.atk_config["step_scheduler"]:
@@ -201,7 +201,7 @@ class NeurotoxinClient(MaliciousClient):
 
                     # Add proximal term if needed
                     if proximal_mu is not None:
-                        proximal_term = self.model_dist(global_params_tensor, gradient_calc=True)
+                        proximal_term = self.model_dist(global_params_tensor=global_params_tensor, gradient_calc=True)
                         loss += (proximal_mu / 2) * proximal_term
 
                 # Backward pass with gradient masking
@@ -251,7 +251,7 @@ class NeurotoxinClient(MaliciousClient):
 
         # Log final results
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Final Train Loss: {self.train_loss:.4f} | "
+            f"Train Loss: {self.train_loss:.4f} | "
             f"Train Accuracy: {self.train_accuracy:.4f} | "
             f"Backdoor Loss: {self.train_backdoor_loss:.4f} | "
             f"Backdoor Accuracy: {self.train_backdoor_acc:.4f}")

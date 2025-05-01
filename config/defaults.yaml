@@ -84,7 +84,7 @@ save_logging: None # Choose from [wandb, csv (save to table), both (wandb & csv)
 # Add a name tag to the run name --> Final run name: {name}_{name_tag}
 name_tag: "" 
 # Add a directory tag to csv file and log file --> Final path: {dir_tag}/{dir_path}
-dir_tag: ${dataset}_${aggregator}_${atk_config.data_poison_method}_${atk_config.model_poison_method} 
+dir_tag: ${eval:"'${dataset}_${aggregator}_noattack' if ${no_attack} else '${dataset}_${aggregator}_${atk_config.model_poison_method}(${atk_config.data_poison_method})'"} 
 
 wandb:
   entity: dthinh-forwork-vinuniversity

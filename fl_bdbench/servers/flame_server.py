@@ -47,13 +47,18 @@ class FlameServer(UnweightedFedAvgServer):
             
             for name, param in update.items():
                 if 'weight' in name or 'bias' in name:
-                    diff = param.cpu() - self.global_model_params[name]
+                    # Move both tensors to the same device (GPU) before subtraction
+                    diff = param.to(self.device) - self.global_model_params[name]
                     flat_update.append(diff.flatten())  # Keep as torch.Tensor
                 
                 if name in last_layers:
-                    current_client_weight.append(param.cpu().flatten())  # Keep as torch.Tensor
+                    current_client_weight.append(param.to(self.device).flatten())  # Keep as torch.Tensor
             
-            all_client_weights.append(torch.cat(current_client_weight).cpu().numpy()) # Convert to numpy array for HDBSCAN
+            # Concatenate on GPU for faster operations, then move to CPU for numpy conversion
+            client_weights_tensor = torch.cat(current_client_weight)
+            all_client_weights.append(client_weights_tensor.cpu().numpy().astype(np.float64))  # Convert to numpy array for HDBSCAN
+            
+            # Calculate norm on GPU for better performance
             euclidean_distances.append(torch.linalg.norm(torch.cat(flat_update)))  
 
         # Cluster clients
@@ -65,7 +70,7 @@ class FlameServer(UnweightedFedAvgServer):
             min_samples=1,
             allow_single_cluster=True
         )
-        labels = clusterer.fit_predict(np.array(all_client_weights))
+        labels = clusterer.fit_predict(np.array(all_client_weights, dtype=np.float64))
 
         # Identify benign clients
         benign_indices = []
@@ -75,7 +80,7 @@ class FlameServer(UnweightedFedAvgServer):
             unique_labels, counts = np.unique(labels, return_counts=True)
             largest_cluster = unique_labels[np.argmax(counts)]
             benign_indices = [i for i, label in enumerate(labels) if label == largest_cluster]
-
+        
         if len(benign_indices) == 0:
             log(WARNING, "Flame: No benign clients found.")
             return False
@@ -92,6 +97,8 @@ class FlameServer(UnweightedFedAvgServer):
             _, _, update = client_updates[idx]
             weight = 1 / len(benign_indices)
             for name, param in update.items():
+                if name.endswith('num_batches_tracked'):
+                    continue
                 diff = (param.to(self.device) - self.global_model_params[name])
                 if ('weight' in name or 'bias' in name) and euclidean_distances[idx] > clip_norm:
                     diff *= clip_norm / euclidean_distances[idx]

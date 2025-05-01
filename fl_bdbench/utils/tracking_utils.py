@@ -20,16 +20,21 @@ def init_wandb(config):
     api_key = os.getenv('WANDB_API_KEY')
     wandb.login(key=api_key)
 
-    attack_name = f"{config.atk_config.model_poison_method}({config.atk_config.data_poison_method})"
-    aggregator = config.server_config.aggregator
-
     # Define name for wandb run
+    aggregator = config.aggregator
+
+    if config.no_attack:
+        attack_name = "noattack"
+    else:
+        attack_name = f"{config.atk_config.model_poison_method}({config.atk_config.data_poison_method})"
+
     if config.partitioner.lower() == "dirichlet":
         partitoner = f"dirichlet({config.alpha})"
     else:
         partitoner = "uniform"
+
     config.wandb.name = f"{attack_name}_{aggregator.lower()}_{config.dataset.lower()}_{partitoner}_{config.atk_config.selection_scheme}_{config.atk_config.poison_scheme}"
-    if len(config.name_tag) > 0:
+    if config.name_tag:
         config.wandb.name = f"{config.wandb.name}_{config.name_tag}"
 
     # Check if the run already exists and increment the version if it does
@@ -59,19 +64,23 @@ def init_csv_logger(config, resume=False, validation=False):
     else:
         partitoner = "uniform"
 
-    attack_name = f"{config.atk_config.model_poison_method}({config.atk_config.data_poison_method})"
-    aggregator = config.server_config.aggregator
+    aggregator = config.aggregator
+
+    if config.no_attack:
+        attack_name = "noattack"
+    else:
+        attack_name = f"{config.atk_config.model_poison_method}({config.atk_config.data_poison_method})"
 
     name = f"{attack_name}_{aggregator.lower()}_{config.dataset.lower()}_{partitoner}_{config.atk_config.selection_scheme}_{config.atk_config.poison_scheme}"
     if config.name_tag:
         name = f"{name}_{config.name_tag}"
 
-    dir_path = f"{attack_name}_{aggregator.lower()}_{config.dataset.lower()}"
     if config.dir_tag:
-        dir_path = os.path.join(str(config.dir_tag), dir_path)
+        dir_path = os.path.join("csv_results", config.dir_tag)
+    else:
+        dir_path = "csv_results"
 
     # Check if the run already exists and increment the version if it does
-    dir_path = os.path.join("csv_results", dir_path)
     os.makedirs(dir_path, exist_ok=True)
     count = 0
     for csv_file in os.listdir(dir_path):

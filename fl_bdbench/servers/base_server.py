@@ -65,7 +65,7 @@ class BaseServer:
         self._initialize_model()
 
         # Global model parameters that are sent to clients and updated by aggregate_client_updates function
-        self.global_model_params = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
+        self.global_model_params = {name: param.detach().clone().to(self.device) for name, param in self.global_model.state_dict().items()}
 
         # Initialize poison module (for poisoning) and ContextActor (for resource synchronization between malicious clients)
         if self.config.no_attack == False:
