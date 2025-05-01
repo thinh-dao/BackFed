@@ -224,7 +224,7 @@ class SupConLoss(nn.Module):
                 raise ValueError('Num of labels does not match num of features')
             mask = torch.eq(labels, labels.T).float().to(device)
             
-            mask_scale = mask.clone().detach()
+            mask_scale = mask.detach().clone()
             mask_cross_feature = torch.ones_like(mask_scale).to(device)
             
             for ind, label in enumerate(labels.view(-1)):

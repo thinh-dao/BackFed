@@ -46,8 +46,8 @@ class ClientManager:
             self.malicious_client_class = get_class(self.atk_config.model_poison_config[model_poison_method]._target_)
             self.benign_client_class = BenignClient
 
-            if self.start_round >= self.atk_config.poison_end_round or self.start_round + self.config.num_rounds <= self.atk_config.poison_start_round:
-                log(WARNING, f"Training rounds [{self.start_round} - {self.start_round + self.config.num_rounds}] are out of scope for the attack range [{self.atk_config.poison_start_round} - {self.atk_config.poison_end_round}]. No attack will be applied.")
+            if self.start_round >= self.atk_config.poison_end_round or self.start_round + self.config.num_rounds + 1 <= self.atk_config.poison_start_round:
+                log(WARNING, f"Training rounds [{self.start_round} - {self.start_round + self.config.num_rounds + 1}] are out of scope for the attack range [{self.atk_config.poison_start_round} - {self.atk_config.poison_end_round}]. No attack will be applied.")
                 self._initialize_normal_rounds()
             else:
                 self._initialize_poison_rounds()
@@ -81,7 +81,7 @@ class ClientManager:
 
     def _initialize_normal_rounds(self):
         """Initialize normal rounds. Only update rounds that are not poisoned."""
-        for r in range(self.start_round, self.start_round + self.config.num_rounds):
+        for r in range(self.start_round, self.start_round + self.config.num_rounds + 1):
             if r not in self.poison_rounds:
                 self.rounds_selection[r] = {
                     self.benign_client_class: random.sample(self.benign_clients, self.num_clients_per_round)

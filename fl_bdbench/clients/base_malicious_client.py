@@ -192,7 +192,7 @@ class MaliciousClient(BaseClient):
         scaler = torch.amp.GradScaler(device=self.device)
 
         if self.atk_config.poisoned_is_projection or proximal_mu is not None:
-            global_params_tensor = torch.cat([param.view(-1) for name, param in train_package["global_model_params"].items()
+            global_params_tensor = torch.cat([param.view(-1).detach().clone() for name, param in train_package["global_model_params"].items()
                                   if "weight" in name or "bias" in name]).to(self.device)
 
         if self.atk_config["step_scheduler"]:

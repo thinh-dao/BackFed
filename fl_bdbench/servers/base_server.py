@@ -228,7 +228,7 @@ class BaseServer:
         """
         Get the global model parameters.
         """
-        return {name: param.clone().detach().to("cpu") for name, param in self.global_model_params.items()}
+        return {name: param.detach().clone().to("cpu") for name, param in self.global_model_params.items()}
     
     def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> bool:
         """
@@ -319,6 +319,7 @@ class BaseServer:
             aggregated_metrics = self.aggregate_client_metrics(client_metrics)
         else:
             log(WARNING, "No client updates to aggregate. Global model parameters are not updated.")
+            aggregated_metrics = None
         
         aggregate_time_end = time.time()
         aggregate_time = aggregate_time_end - aggregate_time_start
@@ -418,7 +419,7 @@ class BaseServer:
         )
 
         self.best_metrics = {}
-        self.best_model_state = self.best_model_state = {name: param.clone().detach() for name, param in self.global_model.state_dict().items()}
+        self.best_model_state = self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
 
         poison_rounds = self.client_manager.get_poison_rounds()
         for self.current_round in train_progress_bar:
@@ -435,7 +436,7 @@ class BaseServer:
             # Initialize or update best metrics
             if len(self.best_metrics) == 0 or server_metrics["test_clean_acc"] > self.best_metrics.get("test_clean_acc", 0): 
                 self.best_metrics = server_metrics
-                self.best_model_state = {name: param.clone().detach() for name, param in self.global_model.state_dict().items()}
+                self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
 
             end = time.time()
             round_time = end - begin
@@ -574,7 +575,7 @@ class FLTrainer:
         self.mode = mode
 
         if self.mode == "sequential":
-            self.worker : List[ClientApp] = [ClientApp(**clientapp_init_args) for _ in range(self.server.config.num_clients)]
+            self.workers : List[ClientApp] = [ClientApp(**clientapp_init_args) for _ in range(self.server.config.num_clients)]
         elif self.mode == "parallel":
             ray_client = ray.remote(ClientApp).options(
                 num_cpus=self.server.config.num_cpus,
@@ -613,7 +614,7 @@ class FLTrainer:
         for client_cls in clients_mapping.keys():
             init_args, train_package = self.server.train_package(client_cls)
             for client_id in clients_mapping[client_cls]:
-                client_package = self.worker.train(client_cls=client_cls, 
+                client_package = self.workers[client_id].train(client_cls=client_cls, 
                     client_id=client_id, 
                     init_args=init_args, 
                     train_package=train_package
@@ -713,7 +714,7 @@ class FLTrainer:
         for client_cls in clients_mapping.keys():
             test_package = self.server.test_package(client_cls)
             for client_id in clients_mapping[client_cls]:
-                client_package = self.worker.evaluate(test_package=test_package)
+                client_package = self.workers[client_id].evaluate(test_package=test_package)
 
                 # Check if the client failed
                 if isinstance(client_package, dict) and client_package.get("status") == "failure":
@@ -809,7 +810,7 @@ class FLTrainer:
         for client_cls in clients_mapping.keys():
             init_args, exec_package = package_func(client_cls)
             for client_id in clients_mapping[client_cls]:
-                package = getattr(self.worker, func_name)(
+                package = getattr(self.workers[client_id], func_name)(
                     client_cls=client_cls,
                     client_id=client_id,
                     init_args=init_args,
