@@ -20,9 +20,6 @@ poison_convergence_threshold: 0.1 # If backdoor loss is less than this threshold
 # *Training protocol
 follow_protocol: True # whether to follow training protocol from the server (e.g., for FedProx, Differential Privacy, etc.)
 
-# *Evaluation settings
-backdoor_eval: True # whether to evaluate backdoor performace on validation set (form client's side)
-
 # *Dataset settings
 mutual_dataset: False # Whether the attacker and the server share the same dataset
 num_attacker_samples: 640 # Number of clean samples that attacker holds, if mutual_dataset is True
@@ -52,13 +49,13 @@ malicious_clients: [1, 4, 5, 8, 12] # If random_adversaries is False, specify ad
 
 # *Poisoning target type
 attack_type: "all2one" # ["all2one", "all2all", "one2one"]
-random_class: True # Random target class and source class if True
-target_class: 5 # If random_target_class is False, specify target class. No target class if "all2all"
+random_class: False # Random target class and source class if True
+target_class: 2 # If random_target_class is False, specify target class. No target class if "all2all"
 source_class: 0 # For "one2one" attack, specify source class
 
 # *Poisoning period
-poison_start_round: 301
-poison_end_round: 600
+poison_start_round: 2001
+poison_end_round: 2300
 
 # *Poisoning scheme
 # 1. single-shot: All malicious clients poison the data in only round {poison_start_round} and then stop.
