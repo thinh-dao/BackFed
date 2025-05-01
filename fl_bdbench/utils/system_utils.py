@@ -66,6 +66,8 @@ def ray_init(num_gpus: int, num_cpus: int, namespace: str):
             num_cpus=num_cpus,
             num_gpus=num_gpus,
             ignore_reinit_error=True,
+            log_to_driver=True,
+            include_dashboard=True,
         )
     except ValueError:
         # If Ray is already running, connect to it
@@ -73,6 +75,8 @@ def ray_init(num_gpus: int, num_cpus: int, namespace: str):
             address="auto",
             namespace=namespace,
             ignore_reinit_error=True,
+            log_to_driver=True,
+            include_dashboard=True,
         )
 
 def set_attack_config(config: DictConfig):    

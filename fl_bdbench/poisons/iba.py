@@ -13,7 +13,7 @@ from flwr.common.logger import log
 DEFAULT_PARAMS = {
     "atk_eps": 0.06,
     "atk_lr": 0.01,
-    "outter_epochs": 200,
+    "outter_epochs": 100,
     "save_atk_model_at_last": True,
 }
 
@@ -60,12 +60,12 @@ class IBA(Poison):
 
         loss_fn = nn.CrossEntropyLoss()
         # training trigger
-        model.eval() # classifier model
+        model.eval()  # classifier model
         self.freeze_model(model)
         
-        self.atk_model.train() # trigger model
-        num_attack_sample = -1 # poison all samples
-
+        self.atk_model.train()  # trigger model
+        num_attack_sample = -1  # poison all samples
+        
         local_asr, threshold_asr = 0.0, 0.8
         atk_optimizer = torch.optim.Adam(self.atk_model.parameters(), lr=self.atk_lr)
         
@@ -74,10 +74,18 @@ class IBA(Poison):
                 break
 
             backdoor_preds, backdoor_loss, total_sample = 0, 0, 0
-                
+            
             for _, batch in enumerate(dataloader):
                 inputs, labels = batch[0].to("cuda"), batch[1].to("cuda")
-                poisoned_inputs, poisoned_labels = self.poison_inputs(inputs), self.poison_labels(labels)
+                
+                # Zero gradients for the optimizer
+                atk_optimizer.zero_grad()
+                
+                # Generate poisoned inputs using the attack model
+                noise = self.atk_model(inputs) * self.atk_eps
+                poisoned_inputs = torch.clamp(inputs + noise, min=0, max=1)
+                poisoned_labels = self.poison_labels(labels)
+                
                 if normalization:
                     poisoned_inputs = normalization(poisoned_inputs)
 
@@ -85,10 +93,12 @@ class IBA(Poison):
                     poisoned_inputs = poisoned_inputs[:num_attack_sample]
                     poisoned_labels = poisoned_labels[:num_attack_sample]
                 
+                # Forward pass through the classifier model
                 poisoned_outputs = model(poisoned_inputs)
                 loss_p = loss_fn(poisoned_outputs, poisoned_labels)
                 backdoor_loss += loss_p.item()
-                atk_optimizer.zero_grad()
+                
+                # Backward pass
                 loss_p.backward()
                 atk_optimizer.step()
 

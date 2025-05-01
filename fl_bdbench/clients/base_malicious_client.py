@@ -4,10 +4,10 @@ Base malicious client implementation for FL.
 import random
 import time
 import torch
-import copy
 import ray
 
 from logging import INFO, WARNING
+from typing import Optional
 from fl_bdbench.utils import log
 from fl_bdbench.poisons import IBA, A3FL, Poison
 from fl_bdbench.context_actor import ContextActor
@@ -33,8 +33,8 @@ class MaliciousClient(BaseClient):
         model,
         client_config,
         atk_config,
-        poison_module,
-        context_actor: ContextActor,
+        poison_module: Poison,
+        context_actor: Optional[ContextActor],
         client_type: str = "base_malicious",
         **kwargs
     ):
@@ -51,7 +51,7 @@ class MaliciousClient(BaseClient):
             poison_module: Poison module for to inject trigger
             context_actor: Context actor for resource synchronization
         """
-        if client_config.mode == "parallel" and context_actor is None:
+        if client_config.training_mode == "parallel" and context_actor is None:
             raise ValueError("Context actor must be provided in parallel mode")
 
         self.atk_config = atk_config
@@ -59,12 +59,6 @@ class MaliciousClient(BaseClient):
         # Update attack config with additional kwargs (client-specific arguments)
         with open_dict(self.atk_config):
             self.atk_config.update(kwargs)
-
-        self.context_actor = context_actor
-        self.poison_module = poison_module
-        self.poison_module.set_client_id(client_id)
-        self.train_backdoor_loss = 0
-        self.train_backdoor_acc = 0
 
         # Set up model, dataloader, optimizer, criterion, etc.
         super().__init__(
@@ -76,6 +70,13 @@ class MaliciousClient(BaseClient):
             client_type=client_type,
             **kwargs
         )
+
+        self.context_actor = context_actor
+        self.poison_module = poison_module
+        self.poison_module.set_client_id(self.client_id)
+        self.poison_module.set_device(self.device)
+        self.train_backdoor_loss = 0
+        self.train_backdoor_acc = 0
 
     def _set_optimizer(self):
         if self.atk_config.use_atk_optimizer:
@@ -122,15 +123,18 @@ class MaliciousClient(BaseClient):
             if self.client_id == selected_malicious_clients[0]:
                 if isinstance(self.poison_module, IBA):
                     resource_package = {
-                        "iba_atk_model": self.poison_module.atk_model.state_dict()
+                        "iba_atk_model": {
+                            k: v.cpu() if isinstance(v, torch.Tensor) else v 
+                            for k, v in self.poison_module.atk_model.state_dict().items()
+                        }
                     }
                 elif isinstance(self.poison_module, A3FL):
                     resource_package = {
-                        "a3fl_trigger": self.poison_module.trigger_image.detach().clone()
+                        "a3fl_trigger": self.poison_module.trigger_image.detach().clone().cpu()
                     }
                 
                 ray.get(self.context_actor.update_resource.remote(client_id=self.client_id, resource_package=resource_package, round_number=server_round))
-                log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - Updating poison module")
+                log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - Updated poison module")
             else:
                 log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - Waiting for poison module")
                 if isinstance(self.poison_module, IBA):
@@ -138,8 +142,8 @@ class MaliciousClient(BaseClient):
                     self.poison_module.atk_model.load_state_dict(resource_package["iba_atk_model"])
                 elif isinstance(self.poison_module, A3FL):
                     resource_package = ray.get(self.context_actor.wait_for_resource.remote(round_number=server_round))
-                    self.poison_module.trigger_image = resource_package["a3fl_trigger"]
-                    log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - Poison module updated")
+                    self.poison_module.trigger_image = resource_package["a3fl_trigger"].to(self.device)
+                log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - Poison module updated")
 
     def train(self, train_package):
         """Train the neurotoxin malicious client.

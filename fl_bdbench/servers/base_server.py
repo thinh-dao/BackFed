@@ -29,7 +29,7 @@ from fl_bdbench.utils import (
 )
 from fl_bdbench.context_actor import ContextActor
 from fl_bdbench.clients import ClientApp, BenignClient, MaliciousClient
-from fl_bdbench.poisons import Poison
+from fl_bdbench.poisons import Poison, IBA, A3FL
 from fl_bdbench.const import StateDict, Metrics
 from logging import INFO, WARNING
 from typing import Dict, Any, List, Tuple, Callable, Optional
@@ -76,9 +76,10 @@ class BaseServer:
                 params=self.atk_config,
                 _recursive_=False # Avoid recursive instantiation
             )
-                            
+                        
             if self.config.mode == "parallel":
-                self.context_actor = ray.remote(ContextActor).options(num_cpus=0.1, num_gpus=0.0).remote()
+                self.context_actor = ContextActor.remote()
+                self.poison_module.set_device(self.device) # Set device for poison module since it is initialized on the server
             else:
                 self.context_actor = None
 
@@ -268,6 +269,26 @@ class BaseServer:
             aggregated_metrics[metric_name] /= metrics_num_examples[metric_name]
 
         return aggregated_metrics
+    
+    def update_poison_module(self, round_number: int):
+        assert self.config.mode == "parallel", "Update poison module should only be called in parallel mode"
+        assert self.config.no_attack == False, "Update poison module should only be called when there is an attack"
+        # In parallel mode, we need to ensure the poison module is updated with the latest resources
+        if (isinstance(self.poison_module, IBA) or isinstance(self.poison_module, A3FL)) \
+            and round_number in self.client_manager.get_poison_rounds():
+            try:
+                # Try to get the latest resources for this round
+                resource_package = ray.get(self.context_actor.wait_for_resource.remote(round_number=round_number))
+                
+                # Update the poison module based on its type
+                if hasattr(self.poison_module, 'atk_model') and "iba_atk_model" in resource_package:
+                    self.poison_module.atk_model.load_state_dict(resource_package["iba_atk_model"])
+                elif hasattr(self.poison_module, 'trigger_image') and "a3fl_trigger" in resource_package:
+                    self.poison_module.trigger_image = resource_package["a3fl_trigger"].to(self.device)
+                
+                log(INFO, f"Server updated poison module at round {round_number}")
+            except Exception as e:
+                log(WARNING, f"Failed to update poison module at round {round_number}: {e}")
 
     def fit_round(self, clients_mapping: Dict[Any, List[int]]) -> Metrics:
         """Perform one round of FL training. 
@@ -322,7 +343,7 @@ class BaseServer:
 
         return self.aggregate_client_metrics(client_metrics)
 
-    def server_evaluate(self, round: Optional[int] = None) -> Metrics:
+    def server_evaluate(self, round_number: Optional[int] = None) -> Metrics:
         """Perform one round of FL evaluation on the server side."""
         clean_loss, clean_accuracy = test(model=self.global_model, 
                                         test_loader=self.test_loader, 
@@ -330,17 +351,16 @@ class BaseServer:
                                         normalization=self.normalization
                                     )
 
-        if self.poison_module is not None and (round is None or round > self.atk_config.poison_start_round - 1): # Evaluate the backdoor performance starting from the round before the poisoning starts
+        if self.poison_module is not None and (round_number is None or round_number > self.atk_config.poison_start_round - 1): # Evaluate the backdoor performance starting from the round before the poisoning starts            
             poison_loss, poison_accuracy = self.poison_module.poison_test(net=self.global_model, 
-                                                            test_loader=self.test_loader, 
-                                                            normalization=self.normalization)
+                                                                test_loader=self.test_loader, 
+                                                                normalization=self.normalization)
             metrics = {
                 "test_clean_loss": clean_loss,
                 "test_clean_acc": clean_accuracy,
                 "test_backdoor_loss": poison_loss,
                 "test_backdoor_acc": poison_accuracy
             }
-                
         else:
             metrics = {
                 "test_clean_loss": clean_loss,
@@ -349,24 +369,28 @@ class BaseServer:
 
         return metrics
 
-    def run_one_round(self, round):
+    def run_one_round(self, round_number: int):
         """Run a full FL round: clients training, clients evaluation, and server evaluation.
         By default, clients that are selected for training are also selected for evaluation.
         
         Args:
-            round: The round number to run
+            round_number: The round number to run
         Returns:
             server_metrics: Dict of server evaluation metrics
             client_fit_metrics: Dict of client training metrics
             client_evaluation_metrics: Dict of client evaluation metrics
         """
-        clients_mapping = self.rounds_selection[round]
+        clients_mapping = self.rounds_selection[round_number]
         time_start = time.time()
         client_fit_metrics = self.fit_round(clients_mapping)
         time_end = time.time()
         time_fit = time_end - time_start
         
         log(INFO, f"Server fit time: {time_fit:.2f} seconds")
+
+        # If mode is parallel, we need to update the poison module at the end of the round for server evaluation
+        if self.config.mode == "parallel" and self.config.no_attack == False:
+            self.update_poison_module(round_number=round_number)
 
         client_eval_time_start = time.time()
         if self.config.federated_evaluation:
@@ -378,7 +402,7 @@ class BaseServer:
         log(INFO, f"Clients evaluation time: {client_eval_time:.2f} seconds")
 
         server_eval_time_start = time.time()
-        server_evaluation_metrics = self.server_evaluate(round)
+        server_evaluation_metrics = self.server_evaluate(round_number)
         server_eval_time_end = time.time()
         server_eval_time = server_eval_time_end - server_eval_time_start
         log(INFO, f"Server evaluation time: {server_eval_time:.2f} seconds")
@@ -388,7 +412,7 @@ class BaseServer:
         """Run the full FL experiment loop."""   
         experiment_start_time = time.time()
         train_progress_bar = track(
-            range(self.current_round, self.current_round + self.config.num_rounds),
+            range(self.current_round, self.current_round + self.config.num_rounds + 1),
             "[bold green]Training...",
             console=FLLogger.get_console(),
         )
@@ -401,12 +425,12 @@ class BaseServer:
             separator = "=" * 30
 
             if self.current_round in poison_rounds:
-                log(INFO, f"{separator} POISONING ROUND: {self.current_round + 1} {separator}")
+                log(INFO, f"{separator} POISONING ROUND: {self.current_round} {separator}")
             else:
-                log(INFO, f"{separator} TRAINING ROUND: {self.current_round + 1} {separator}")
+                log(INFO, f"{separator} TRAINING ROUND: {self.current_round} {separator}")
 
             begin = time.time()
-            server_metrics, client_fit_metrics, client_evaluation_metrics = self.run_one_round(round=self.current_round)
+            server_metrics, client_fit_metrics, client_evaluation_metrics = self.run_one_round(round_number=self.current_round)
 
             # Initialize or update best metrics
             if len(self.best_metrics) == 0 or server_metrics["test_clean_acc"] > self.best_metrics.get("test_clean_acc", 0): 
