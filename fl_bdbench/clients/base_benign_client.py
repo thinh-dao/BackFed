@@ -141,8 +141,8 @@ class BenignClient(BaseClient):
         state_dict = self.get_model_parameters()
 
         training_metrics = {
-            "train_loss": self.train_loss,
-            "train_accuracy": self.train_accuracy,
+            "train_clean_loss": self.train_loss,
+            "train_clean_acc": self.train_accuracy,
         }
 
         return len(self.train_dataset), state_dict, training_metrics

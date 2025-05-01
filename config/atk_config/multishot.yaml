@@ -11,7 +11,7 @@ model_poison_method: base # Choose from the key in model_poison below
 use_atk_optimizer: True # If False, use the same optimizer (including learning rate) as other clients
 atk_optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in atk_optimizer_config
 poisoned_lr: 0.05
-poison_epochs: 10
+poison_epochs: 6
 step_scheduler: True
 step_size: 2
 poison_until_convergence: False # If true, train until the backdoor loss converges
@@ -42,7 +42,7 @@ scale_factor: 100.0 #
 # 2. online: Poisoning is done online during training. That means p% of each training batch is poisoned.
 # 3. multi_task: Poisoning is done online during training, with the multi-task formulation: L = alpha * L_poisoned + (1 - alpha) * L_clean
 poison_mode: "online" # ["offline", "online", "multi_task"] - poison mode during training
-poison_rate: 0.15625 # 10/64 of a training batch is poisoned
+poison_rate: 0.3125 # 20/64 of a training batch is poisoned
 attack_alpha: 0.5 # For "multi_task" poison type: L = alpha * L_poisoned + (1 - alpha) * L_clean
 
 # *Number of adversaries

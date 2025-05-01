@@ -15,7 +15,7 @@ DEFAULT_PARAMS = {
     "trigger_lr": 0.01,
     "dm_adv_epochs": 5,
     "dm_adv_K": 100,
-    "dm_adv_model_count": 0,
+    "dm_adv_model_count": 1,
     "noise_loss_lambda": 0.01,
     "save_trigger_at_last": True,
 }
@@ -139,7 +139,7 @@ class A3FL(Pattern):
                 else:
                     loss = backdoor_loss
                 loss.backward()
-                
+
                 self.trigger_image.data = self.trigger_image.data - self.trigger_lr * self.trigger_image.grad.sign()
                 self.trigger_image.data = torch.clamp(self.trigger_image.data, min=0, max=1)
 

@@ -453,9 +453,11 @@ class BaseServer:
 
             if self.config.save_logging in ["wandb", "both"]:
                 wandb.log({**server_metrics, "round": self.current_round})
-            
+                wandb.log({**client_fit_metrics}, step=self.current_round) 
+                
             elif self.config.save_logging in ["csv", "both"]:
                 self.csv_logger.log({**server_metrics}, step=self.current_round)
+                self.csv_logger.log({**client_fit_metrics}, step=self.current_round)
 
             if self.current_round in self.config.save_model_rounds:
                 if self.config.partitioner == "dirichlet":

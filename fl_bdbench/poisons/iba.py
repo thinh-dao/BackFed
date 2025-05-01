@@ -40,10 +40,10 @@ class IBA(Poison):
         self.atk_model_path = os.path.join("fl_bdbench/poisons/saved", "iba")
         os.makedirs(self.atk_model_path, exist_ok=True)
 
+    @torch.no_grad()
     def poison_inputs(self, inputs):
-        with torch.no_grad():
-            noise = self.atk_model(inputs) * self.atk_eps
-            return torch.clamp(inputs + noise, min=0, max=1)
+        noise = self.atk_model(inputs) * self.atk_eps
+        return torch.clamp(inputs + noise, min=0, max=1)
     
     def poison_warmup(self, client_id, server_round, initial_model, dataloader, normalization=None, **kwargs):
         """Update the trigger generator model"""
@@ -65,7 +65,7 @@ class IBA(Poison):
         
         self.atk_model.train()  # trigger model
         num_attack_sample = -1  # poison all samples
-        
+
         local_asr, threshold_asr = 0.0, 0.8
         atk_optimizer = torch.optim.Adam(self.atk_model.parameters(), lr=self.atk_lr)
         
