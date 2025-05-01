@@ -239,12 +239,6 @@ class NeurotoxinClient(MaliciousClient):
             if self.atk_config["step_scheduler"]:
                 scheduler.step()
 
-        # Final evaluation
-        self.train_backdoor_loss, self.train_backdoor_acc = self.poison_module.poison_test(
-            self.model,
-            self.train_loader,
-            normalization=normalization
-        )
         self.train_loss = epoch_loss
         self.train_accuracy = epoch_accuracy
         self.training_time = time.time() - start_time
@@ -253,8 +247,7 @@ class NeurotoxinClient(MaliciousClient):
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
             f"Train Loss: {self.train_loss:.4f} | "
             f"Train Accuracy: {self.train_accuracy:.4f} | "
-            f"Backdoor Loss: {self.train_backdoor_loss:.4f} | "
-            f"Backdoor Accuracy: {self.train_backdoor_acc:.4f}")
+        )
 
         # Prepare return values
         if self.atk_config["scale_weights"]:
@@ -266,8 +259,6 @@ class NeurotoxinClient(MaliciousClient):
             state_dict = self.get_model_parameters()
 
         training_metrics = {
-            "train_loss": self.train_loss,
-            "train_accuracy": self.train_accuracy,
             "train_backdoor_loss": self.train_backdoor_loss,
             "train_backdoor_acc": self.train_backdoor_acc,
         }
