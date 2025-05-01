@@ -61,6 +61,8 @@ class NormClippingServer(BaseServer):
         for _, _, client_params in client_updates:
             diff_dict = {}
             for name, param in client_params.items():
+                if name.endswith('num_batches_tracked'):
+                    continue
                 diff_dict[name] = param.to(self.device) - self.global_model_params[name]
             client_diffs.append(diff_dict)
         self.clip_updates_inplace(client_diffs)
@@ -69,6 +71,8 @@ class NormClippingServer(BaseServer):
         weight_diff_scale = self.eta / len(client_updates)
         for diff_dict in client_diffs:
             for name, diff in diff_dict.items():
+                if name.endswith('num_batches_tracked'):
+                    continue
                 self.global_model_params[name].add_(diff, alpha=weight_diff_scale)
 
         return True

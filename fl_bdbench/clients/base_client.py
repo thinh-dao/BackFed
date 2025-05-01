@@ -61,6 +61,12 @@ class BaseClient:
         self.current_memory = 0.0
         self.max_memory = 0.0
 
+        # Training and evaluation metrics
+        self.train_loss = 0.0
+        self.train_accuracy = 0.0
+        self.eval_loss = 0.0
+        self.eval_accuracy = 0.0
+
         # Set random seed
         set_random_seed(seed=self.client_config.seed, deterministic=True)
 
@@ -131,6 +137,19 @@ class BaseClient:
         """
         raise NotImplementedError("Evaluate method must be implemented by subclasses")
 
+    # An utility function to calculate the L2 distance between client model parameters and global parameters
+    def model_dist(self, global_params_tensor: torch.Tensor, client_model=None, gradient_calc=False):
+        """Calculate the L2 distance between client model parameters and global parameters"""
+        if client_model is None:
+            client_model = self.model
+
+        client_params_tensor = torch.cat([param.view(-1) for param in client_model.parameters()]).to(self.device)
+        global_params_tensor = global_params_tensor.to(self.device)
+        if gradient_calc:
+            return torch.linalg.norm(client_params_tensor - global_params_tensor, ord=2).item()
+        else:
+            return torch.linalg.norm(client_params_tensor - global_params_tensor, ord=2)
+        
     def get_model_parameters(self) -> StateDict:
         """
         Move the global model parameters to cpu.

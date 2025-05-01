@@ -8,11 +8,10 @@ import csv
 import hydra
 import omegaconf
 import ray
+import torch
 
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.theme import Theme
-
 
 class FLLogger:
     """Logger for FL in distributed and serial modes."""
@@ -43,7 +42,8 @@ class FLLogger:
             tracebacks_suppress=[
                 hydra,
                 omegaconf,
-                ray
+                ray,
+                torch
             ]
         )
         console_handler.setFormatter(logging.Formatter("%(message)s"))

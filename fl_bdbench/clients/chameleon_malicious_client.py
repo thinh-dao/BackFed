@@ -60,13 +60,25 @@ class ChameleonClient(MaliciousClient):
             **params_to_update
         )
         
-    def train_contrastive_model(self, train_package):
+    def train_contrastive_model(self,train_package):
         """
         Train the model maliciously for a number of epochs.
         
         Args:
             train_package: Data package received from server to train the model (e.g., global model weights, learning rate, etc.)
         """
+        self._check_required_keys(train_package, required_keys=["normalization", "server_round", "global_model_params"])
+        normalization = train_package["normalization"]
+        server_round = train_package["server_round"]
+        proximal_mu = train_package.get('proximal_mu', None)
+
+        log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - Training contrastive model")
+
+        
+        if self.atk_config.poisoned_is_projection or proximal_mu is not None:
+            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in train_package["global_model_params"].items()
+                                  if "weight" in name or "bias" in name]).to(self.device)
+        
         self.contrastive_model = copy.deepcopy(self.model)
         self.contrastive_model.train()
 
@@ -81,16 +93,13 @@ class ChameleonClient(MaliciousClient):
         self._supcon_optimizer()
         self._supcon_scheduler()
 
-        data_iterator = self.train_loader
-        target_params_variables = self.model.state_dict()
-
         for internal_round in range(self.atk_config["poisoned_supcon_retrain_no_times"]):
-            for batch_idx, batch in enumerate(data_iterator):
+            for batch_idx, batch in enumerate(self.train_loader):
                 self.supcon_optimizer.zero_grad()
-                batch = self.poison.poison_batch(batch, mode="train")
+                batch = self.poison_module.poison_batch(batch, mode="train")
                 data, targets = batch
-                if train_package.get("normalization", None):
-                    data = train_package["normalization"](data)
+                if normalization:
+                    data = normalization(data)
                 data = data.cuda().detach().requires_grad_(False)
                 targets = targets.cuda().detach().requires_grad_(False)
 
@@ -99,28 +108,30 @@ class ChameleonClient(MaliciousClient):
                 contrastive_loss = self.supcon_loss(output, targets,
                                                     scale_weight=self.atk_config["fac_scale_weight"],
                                                     fac_label=self.atk_config["target_class"])
-                if train_package.get("proximal_mu", None):
-                    distance_loss = self._model_dist_norm(self.contrastive_model, target_params_variables)
-                    loss = contrastive_loss + (train_package["proximal_mu"]/2) * distance_loss
+                
+                # Add proximal term if needed
+                if proximal_mu is not None:
+                    distance_loss = super().model_dist(client_model=self.contrastive_model, global_params_tensor=global_params_tensor, gradient_calc=True)
+                    loss = contrastive_loss + (proximal_mu/2) * distance_loss
                 else:
                     loss = contrastive_loss
                 
                 loss.backward()
                 self.supcon_optimizer.step()
                 
-                if self.atk_config["poisoned_is_projection"] and \
-                    (batch_idx + 1) % self.atk_config["poisoned_projection_frequency"] == 0 and \
-                    batch_idx == len(data_iterator) - 1:
-                    self._projection(self.contrastive_model, target_params_variables)
+                # Project poisoned model parameters
+                if self.atk_config.poisoned_is_projection and \
+                    ( (batch_idx + 1) % self.atk_config.poisoned_projection_frequency == 0 or (batch_idx == len(self.train_loader) - 1) ):
+                    self._projection(global_params_tensor)
 
             self.supcon_scheduler.step()
-            backdoor_loss, backdoor_accuracy = self.poison.poison_test(self.model, self.train_loader)
+            backdoor_loss, backdoor_accuracy = self.poison_module.poison_test(self.model, self.train_loader)
             
             if self.verbose and self.atk_config["poisoned_supcon_retrain_no_times"] % (self.atk_config["poisoned_supcon_retrain_no_times"] // 5) == 0:
-                log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {train_package['server_round']} - Epoch {internal_round} | Contrastive loss: {contrastive_loss.item()} | Backdoor loss: {backdoor_loss} | Backdoor accuracy: {backdoor_accuracy}")
+                log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - Epoch {internal_round} | Contrastive loss: {contrastive_loss.item()} | Backdoor loss: {backdoor_loss} | Backdoor accuracy: {backdoor_accuracy}")
 
         # Transfer the trained weights of encoder to the local model and freeze the encoder
-        self.transfer_params(source_model=self.contrastive_model, target_model=self.model)
+        self._transfer_params(source_model=self.contrastive_model, target_model=self.model)
         for params in self.model.named_parameters():
             if "linear.weight" not in params[0] and "linear.bias" not in params[0]:
                 params[1].require_grad = False
@@ -131,8 +142,8 @@ class ChameleonClient(MaliciousClient):
         """
         Train the model maliciously.
         """
-        self.train_contrastive_model(train_package.get("normalization", None))
-        super().train(train_package)
+        self.train_contrastive_model(train_package)
+        return super().train(train_package)
     
     def _loss_function(self):
         self.supcon_loss = SupConLoss().cuda()
@@ -147,40 +158,9 @@ class ChameleonClient(MaliciousClient):
         self.supcon_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.supcon_optimizer,
                                                  milestones=self.atk_config['poisoned_supcon_milestones'],
                                                  gamma=self.atk_config['poisoned_supcon_lr_gamma'])
-        return True
+        return True  
 
-    def _model_dist_norm_var(self, model, target_params_variables, ord=2):
-        size = 0
-        for name, layer in model.named_parameters():
-            size += layer.view(-1).shape[0]
-        sum_var = torch.zeros(size, device="cuda")
-        size = 0
-        for name, layer in model.named_parameters():
-            sum_var[size:size + layer.view(-1).shape[0]] = (
-            layer - target_params_variables[name]).view(-1)
-            size += layer.view(-1).shape[0]
-
-        return torch.linalg.norm(sum_var, ord=ord)
-
-    def _model_dist_norm(self, model, target_params_variables):
-        squared_sum = 0
-        for name, layer in model.named_parameters():
-            squared_sum += torch.sum(torch.pow(layer.data - target_params_variables[name].data, 2))
-        return math.sqrt(squared_sum)
-    
-    def _projection(self, model, target_params_variables):
-        model_norm = self._model_dist_norm_var(model, target_params_variables)
-
-        if model_norm > self.atk_config["poisoned_projection_eps"]:
-            norm_scale = self.atk_config["poisoned_projection_eps"] / model_norm
-            for name, param in model.named_parameters():
-                clipped_difference = norm_scale * (
-                        param.data - target_params_variables[name])
-                param.data.copy_(target_params_variables[name]+clipped_difference)
-
-        return True   
-
-    def transfer_params(self, source_model, target_model):
+    def _transfer_params(self, source_model, target_model):
         source_params = source_model.state_dict()
         target_params = target_model.state_dict()
         for name, param in source_params.items():
