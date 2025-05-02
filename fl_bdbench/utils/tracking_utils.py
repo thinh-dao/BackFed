@@ -33,7 +33,7 @@ def init_wandb(config):
     else:
         partitoner = "uniform"
 
-    config.wandb.name = f"{attack_name}_{aggregator.lower()}_{config.dataset.lower()}_{partitoner}_{config.atk_config.selection_scheme}_{config.atk_config.poison_scheme}"
+    config.wandb.name = f"{attack_name}_{aggregator.lower()}_{config.dataset.lower()}_{partitoner}_{config.atk_config.selection_scheme}_{config.atk_config.poison_frequency}"
     if config.name_tag:
         config.wandb.name = f"{config.wandb.name}_{config.name_tag}"
 
@@ -71,7 +71,7 @@ def init_csv_logger(config, resume=False, validation=False):
     else:
         attack_name = f"{config.atk_config.model_poison_method}({config.atk_config.data_poison_method})"
 
-    name = f"{attack_name}_{aggregator.lower()}_{config.dataset.lower()}_{partitoner}_{config.atk_config.selection_scheme}_{config.atk_config.poison_scheme}"
+    name = f"{attack_name}_{aggregator.lower()}_{config.dataset.lower()}_{partitoner}_{config.atk_config.selection_scheme}_{config.atk_config.poison_frequency}"
     if config.name_tag:
         name = f"{name}_{config.name_tag}"
 

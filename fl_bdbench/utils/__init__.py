@@ -18,9 +18,9 @@ from fl_bdbench.utils.system_utils import (
 )
 
 from fl_bdbench.utils.logging_utils import (
-    FLLogger,
     log,
-    CSVLogger
+    CSVLogger,
+    get_console
 )
 
 from fl_bdbench.utils.tracking_utils import (
@@ -39,7 +39,8 @@ from fl_bdbench.utils.server_utils import (
 
 from fl_bdbench.utils.misc_utils import (
     sync_to_async,
-    with_timeout
+    with_timeout,
+    format_time_hms
 )
 
 # For backward compatibility, re-export everything at the top level
@@ -49,7 +50,7 @@ __all__ = [
     # System utilities
     'system_startup', 'set_attack_config', 'set_random_seed', 'set_debug_settings', 'pool_size_from_resources',
     # Logging utilities
-    'FLLogger', 'log', 'CSVLogger',
+    'log', 'CSVLogger', 'get_console',
     # Tracking utilities
     'init_wandb', 'init_csv_logger', 'plot_csv', 'save_model_to_wandb_artifact',
     # Misc utilities

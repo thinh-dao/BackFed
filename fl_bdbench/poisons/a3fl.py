@@ -95,7 +95,7 @@ class A3FL(Pattern):
         ce_loss_fn = CrossEntropyLoss()
 
         num_attack_sample = -1
-        local_asr, threshold_asr = 0.0, 0.80
+        local_asr, threshold_asr = 0.0, 0.70
         
         for trigger_train_epoch in range(self.trigger_outter_epochs):
             if local_asr > threshold_asr:

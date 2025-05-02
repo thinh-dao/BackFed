@@ -18,7 +18,7 @@ from fl_bdbench.client_manager import ClientManager
 from fl_bdbench.dataset import FL_DataLoader
 from fl_bdbench.utils import (
     pool_size_from_resources,
-    log,
+    log, get_console,
     get_model,
     get_normalization,
     init_wandb,
@@ -26,6 +26,7 @@ from fl_bdbench.utils import (
     CSVLogger,
     test,
     save_model_to_wandb_artifact,
+    format_time_hms
 )
 from fl_bdbench.context_actor import ContextActor
 from fl_bdbench.clients import ClientApp, BenignClient, MaliciousClient
@@ -34,8 +35,6 @@ from fl_bdbench.const import StateDict, Metrics
 from logging import INFO, WARNING
 from typing import Dict, Any, List, Tuple, Callable, Optional
 from collections import deque
-from fl_bdbench.utils.logging_utils import FLLogger
-from fl_bdbench.utils.misc_utils import format_time_hms
 
 class BaseServer:
     """
@@ -273,6 +272,9 @@ class BaseServer:
     def update_poison_module(self, round_number: int):
         assert self.config.mode == "parallel", "Update poison module should only be called in parallel mode"
         assert self.config.no_attack == False, "Update poison module should only be called when there is an attack"
+
+        self.poison_module.set_client_id(-1) # Set poison module to server
+
         # In parallel mode, we need to ensure the poison module is updated with the latest resources
         if (isinstance(self.poison_module, IBA) or isinstance(self.poison_module, A3FL)) \
             and round_number in self.client_manager.get_poison_rounds():
@@ -352,7 +354,8 @@ class BaseServer:
                                         normalization=self.normalization
                                     )
 
-        if self.poison_module is not None and (round_number is None or round_number > self.atk_config.poison_start_round - 1): # Evaluate the backdoor performance starting from the round before the poisoning starts            
+        if self.poison_module is not None and (round_number is None or round_number > self.atk_config.poison_start_round - 1): # Evaluate the backdoor performance starting from the round before the poisoning starts
+            self.poison_module.set_client_id(-1) # Set poison module to server
             poison_loss, poison_accuracy = self.poison_module.poison_test(net=self.global_model, 
                                                                 test_loader=self.test_loader, 
                                                                 normalization=self.normalization)
@@ -415,22 +418,22 @@ class BaseServer:
         train_progress_bar = track(
             range(self.current_round, self.current_round + self.config.num_rounds + 1),
             "[bold green]Training...",
-            console=FLLogger.get_console(),
+            console=get_console(),
         )
 
         self.best_metrics = {}
-        self.best_model_state = self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
+        self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
 
         poison_rounds = self.client_manager.get_poison_rounds()
         for self.current_round in train_progress_bar:
             separator = "=" * 30
+            round_start_time = time.time()
 
             if self.current_round in poison_rounds:
                 log(INFO, f"{separator} POISONING ROUND: {self.current_round} {separator}")
             else:
                 log(INFO, f"{separator} TRAINING ROUND: {self.current_round} {separator}")
 
-            begin = time.time()
             server_metrics, client_fit_metrics, client_evaluation_metrics = self.run_one_round(round_number=self.current_round)
 
             # Initialize or update best metrics
@@ -438,10 +441,9 @@ class BaseServer:
                 self.best_metrics = server_metrics
                 self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
 
-            end = time.time()
-            round_time = end - begin
-
-            log(INFO, f"Round {self.current_round + 1} completed in {round_time:.2f} seconds")
+            round_end_time = time.time()
+            round_time = round_end_time - round_start_time
+            log(INFO, f"Round {self.current_round} completed in {round_time:.2f} seconds")
 
             # Use separate log calls for better formatting
             log(INFO, "═══ Centralized Metrics ═══")
@@ -494,7 +496,7 @@ class BaseServer:
         
         experiment_end_time = time.time()
         experiment_time = experiment_end_time - experiment_start_time
-        log(INFO, f"Experiment time: {format_time_hms(experiment_time)}")
+        log(INFO, f"Total experiment time: {format_time_hms(experiment_time)}")
         log(INFO, f"{separator} TRAINING COMPLETED {separator}")
 
     def train_package(self, client_type: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
