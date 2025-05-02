@@ -66,7 +66,7 @@ class IBA(Poison):
         self.atk_model.train()  # trigger model
         num_attack_sample = -1  # poison all samples
 
-        local_asr, threshold_asr = 0.0, 0.8
+        local_asr, threshold_asr = 0.0, 0.70
         atk_optimizer = torch.optim.Adam(self.atk_model.parameters(), lr=self.atk_lr)
         
         for atk_train_epoch in range(self.outter_epochs):

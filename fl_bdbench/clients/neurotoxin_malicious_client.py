@@ -258,8 +258,8 @@ class NeurotoxinClient(MaliciousClient):
             state_dict = self.get_model_parameters()
 
         training_metrics = {
-            "train_backdoor_loss": self.train_backdoor_loss,
-            "train_backdoor_acc": self.train_backdoor_acc,
+            "train_backdoor_loss": self.train_loss,
+            "train_backdoor_acc": self.train_accuracy,
         }
 
         return len(self.train_dataset), state_dict, training_metrics

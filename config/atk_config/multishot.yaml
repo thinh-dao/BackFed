@@ -31,7 +31,7 @@ poisoned_projection_frequency: 2 # Project every 2 iterations
 
 # *Model replacement settings
 scale_weights: False 
-scale_factor: 100.0 #
+scale_factor: 25 # 4 malicious clients 
 
 # *Type of poisoning
 # There are 3 types of poisoning:
@@ -57,10 +57,10 @@ source_class: 0 # For "one2one" attack, specify source class
 poison_start_round: 2001
 poison_end_round: 2300
 
-# *Poisoning scheme
+# *Poisoning frequency
 # 1. single-shot: All malicious clients poison the data in only round {poison_start_round} and then stop.
 # 2. multi-shot: All malicious clients poison the data in the all communication rounds between {poison_start_round} and {poison_end_round}.
-poison_scheme: "multi-shot"
+poison_frequency: "multi-shot"
 poison_interval: 1 # Poison every round
 
 # *Selection scheme

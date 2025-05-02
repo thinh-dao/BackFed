@@ -10,75 +10,91 @@ import omegaconf
 import ray
 import torch
 
-from rich.console import Console
+from hydra.core.hydra_config import HydraConfig
 from rich.logging import RichHandler
+from rich.console import Console
 
-class FLLogger:
-    """Logger for FL in distributed and serial modes."""
-    _instances = {}
-    _console = Console(stderr=True)
+# Create a global console for rich output
+rich_console = Console(stderr=True)
+
+# Configure root logger once at module import time
+def _setup_logging():
+    """Set up logging configuration once"""
+    root_logger = logging.getLogger('fl_bdbench')
+    root_logger.setLevel(logging.INFO)
     
-    @classmethod
-    def get_logger(cls, name="fl_logger", log_level=logging.INFO):            
-        if name in cls._instances:
-            return cls._instances[name]
-        
-        logger = logging.getLogger(name)
-        logger.propagate = False
-        logger.setLevel(log_level)
-        
-        # Clear existing handlers
-        for handler in logger.handlers[:]:
-            logger.removeHandler(handler)
-        
-        # Rich console handler for colored output
-        console_handler = RichHandler(
-            console=cls._console,
+    # Check if rich handler is already configured
+    has_rich_handler = any(isinstance(h, RichHandler) for h in root_logger.handlers)
+    
+    if not has_rich_handler:
+        # Remove any existing handlers to avoid duplicates
+        for handler in list(root_logger.handlers):
+            root_logger.removeHandler(handler)
+            
+        # Add Rich handler to root logger
+        rich_handler = RichHandler(
+            console=rich_console,
             show_time=False,
             show_path=False,
-            show_level=True,  # Let Rich handle the level
+            show_level=True,
             markup=True,
             rich_tracebacks=True,
-            tracebacks_suppress=[
-                hydra,
-                omegaconf,
-                ray,
-                torch
-            ]
+            tracebacks_suppress=[hydra, omegaconf, ray, torch]
         )
-        console_handler.setFormatter(logging.Formatter("%(message)s"))
-        logger.addHandler(console_handler)
-
-        # Plain file handler for clean output
-        try:
-            from hydra.core.hydra_config import HydraConfig
-            if HydraConfig.initialized():
-                file_handler = logging.FileHandler(os.path.join(HydraConfig.get().runtime.output_dir, "main.log"))
-                file_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
-                logger.addHandler(file_handler)
-        except ImportError:
-            pass
-        
-        cls._instances[name] = logger
-        return logger
+        rich_handler.setFormatter(logging.Formatter("%(message)s"))
+        root_logger.addHandler(rich_handler)
     
-    @staticmethod
-    def log(level, message, logger_name="fl_logger", *args, **kwargs):
-        """Log a message at the specified level."""
-        logger = FLLogger.get_logger(logger_name)
-        if isinstance(message, dict):
-            formatted_dict = "\n" + "\n".join(f"    {k}: {v}" for k, v in message.items())
-            logger.log(level, formatted_dict, *args, **kwargs)
-        else:
-            logger.log(level, message, *args, **kwargs)
+    return root_logger
 
-    @classmethod
-    def get_console(cls):
-        """Get the shared console instance."""
-        return cls._console
+# Initialize the logger once
+logger = _setup_logging()
 
-def log(*args, **kwargs):
-    return FLLogger.log(*args, **kwargs)
+def log(level, message, *args, **kwargs):
+    """Log a message at the specified level."""
+    if isinstance(message, dict):
+        formatted_dict = "\n" + "\n".join(f"    {k}: {v}" for k, v in message.items())
+        logger.log(level, formatted_dict, *args, **kwargs)
+    else:
+        logger.log(level, message, *args, **kwargs)
+
+def log_runtime(start_time, end_time, phase="Total"):
+    """Log runtime information for a specific phase."""
+    runtime = end_time - start_time
+    hours, remainder = divmod(runtime, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    
+    if hours > 0:
+        time_str = f"{int(hours)}h {int(minutes)}m {seconds:.2f}s"
+    elif minutes > 0:
+        time_str = f"{int(minutes)}m {seconds:.2f}s"
+    else:
+        time_str = f"{seconds:.2f}s"
+        
+    logger.info(f"[Runtime] {phase}: {time_str}")
+    return runtime
+
+def get_console():
+    """Get a properly configured console instance that works with Hydra's rich logging.
+    
+    Since Hydra is already configured with rich logging in the YAML file,
+    we should reuse the existing console rather than creating a new one.
+    
+    Returns:
+        Console: A configured rich console instance
+    """
+    return rich_console
+
+def create_rich_console():
+    """Create a Rich console for logging.
+    
+    This function is used by Hydra's configuration system to create a properly
+    instantiated Console object for the RichHandler.
+    
+    Returns:
+        Console: A configured Rich console instance
+    """
+    from rich.console import Console
+    return Console(stderr=True)
 
 class CSVLogger():
     def __init__(self, fieldnames, resume=False, filename='log.csv'):

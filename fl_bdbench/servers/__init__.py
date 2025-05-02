@@ -16,6 +16,7 @@ from fl_bdbench.servers.rflbat_server import RFLBATServer
 from fl_bdbench.servers.fldetector_server import FLDetectorServer
 from fl_bdbench.servers.fltrust_server import FLTrustServer
 from fl_bdbench.servers.flare_server import FlareServer
+from fl_bdbench.servers.robustlr_server import RobustLRServer
 
 __all__ = [
     "BaseServer",
@@ -42,5 +43,6 @@ __all__ = [
     "RFLBATServer",
     "FLDetectorServer",
     "FLTrustServer",
-    "FlareServer"
+    "FlareServer",
+    "RobustLRServer"
 ]

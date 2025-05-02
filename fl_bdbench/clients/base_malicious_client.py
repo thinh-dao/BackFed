@@ -75,8 +75,6 @@ class MaliciousClient(BaseClient):
         self.poison_module = poison_module
         self.poison_module.set_client_id(self.client_id)
         self.poison_module.set_device(self.device)
-        self.train_backdoor_loss = 0
-        self.train_backdoor_acc = 0
 
     def _set_optimizer(self):
         if self.atk_config.use_atk_optimizer:
@@ -330,8 +328,8 @@ class MaliciousClient(BaseClient):
             state_dict = self.get_model_parameters()
 
         training_metrics = {
-            "train_backdoor_loss": self.train_backdoor_loss,
-            "train_backdoor_acc": self.train_backdoor_acc,
+            "train_backdoor_loss": self.train_loss,
+            "train_backdoor_acc": self.train_accuracy,
         }
 
         return len(self.train_dataset), state_dict, training_metrics

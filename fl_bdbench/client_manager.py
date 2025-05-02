@@ -56,15 +56,15 @@ class ClientManager:
     def _initialize_poison_rounds(self):
         """Initialize poison rounds based on the attack configuration."""
         selection_scheme = self.atk_config.selection_scheme
-        poison_scheme = self.atk_config.poison_scheme
+        poison_frequency = self.atk_config.poison_frequency
 
-        if poison_scheme == "single-shot":
+        if poison_frequency == "single-shot":
             selected_poison_rounds = [self.atk_config.poison_start_round]
-        elif poison_scheme == "multi-shot":
+        elif poison_frequency == "multi-shot":
             start, end, interval = self.atk_config.poison_start_round, self.atk_config.poison_end_round, self.atk_config.poison_interval
             selected_poison_rounds = list(range(start, end + 1, interval))
         else:
-            raise ValueError(f"Invalid poison scheme {poison_scheme}")
+            raise ValueError(f"Invalid poison scheme {poison_frequency}")
 
         if selection_scheme == "single-adversary":
             self._single_adversary_selection(selected_poison_rounds)
@@ -73,7 +73,7 @@ class ClientManager:
         elif selection_scheme == "all-adversary":
             self._all_adversary_selection(selected_poison_rounds)
         elif selection_scheme == "random":
-            self._random_selection(poison_scheme)
+            self._random_selection(poison_frequency)
         elif selection_scheme == "manual":
             self._manual_selection()
         else:
@@ -117,7 +117,7 @@ class ClientManager:
                 self.benign_client_class: random.sample(self.benign_clients, self.num_clients_per_round - num_adversaries_per_round)
             }
 
-    def _random_selection(self, poison_scheme):
+    def _random_selection(self, poison_frequency):
         """Randomly select clients. If malicious clients are selected, they will poison the data."""
         start, end = self.atk_config.poison_start_round, self.atk_config.poison_end_round
         for r in range(start, end + 1):
@@ -127,11 +127,13 @@ class ClientManager:
                 benign_clients = [client for client in selected_clients if client not in self.benign_clients]
 
                 # Update the rounds_selection dictionary and poison_rounds list
-                self.rounds_selection[r].update({self.malicious_client_class: malicious_clients})
+                self.rounds_selection[r] = {
+                    self.malicious_client_class: malicious_clients
+                }
                 if len(benign_clients) > 0: self.rounds_selection[r].update({self.benign_client_class: benign_clients})
                 self.poison_rounds.append(r)
 
-                if poison_scheme == "single-shot":
+                if poison_frequency == "single-shot":
                     break  # Only attack once.
             else:
                 self.rounds_selection[r] = {

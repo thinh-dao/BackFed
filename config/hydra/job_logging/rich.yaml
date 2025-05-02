@@ -1,0 +1,14 @@
+# @package hydra.job_logging
+version: 1
+formatters:
+  simple:
+    format: "[%(levelname)s] %(message)s"
+handlers:
+  file:
+    class: logging.FileHandler
+    formatter: simple
+    filename: ${hydra.runtime.output_dir}/main.log
+root:
+  level: INFO
+  handlers: [file]  # Only file handler in Hydra config
+disable_existing_loggers: false  # Important: don't disable existing loggers

@@ -3,8 +3,7 @@
 defaults:
   - _self_
   - atk_config: multishot
-  - override hydra/hydra_logging: disabled  
-  - override hydra/job_logging: disabled 
+  - override hydra/job_logging: rich  # Use our custom rich logging
 
 # *Aggregator
 aggregator: unweighted_fedavg
@@ -21,7 +20,7 @@ debug_fraction_data: 0.1 # Only use a portion of the data in debug mode
 
 # *Resource configuration for each client
 cuda_visible_devices: 1,2,4,5,6
-num_cpus: 2
+num_cpus: 1
 num_gpus: 0.5
 
 # *Reproducibility
@@ -77,10 +76,10 @@ save_model_rounds: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000] # Save th
 # 2. checkpoint is "wandb", the weight will be loaded from wandb
 # 3. checkpoint is a weight path (.pth), the weight will be loaded from the path
 # If checkpoint is Null, the weight will not be loaded
-checkpoint: Null # A weight path (.pth) | "wandb" (load from wandb) | Null
+checkpoint: 2000 # A weight path (.pth) | "wandb" (load from wandb) | Null
 
 # *Logging configuration
-save_logging: None # Choose from [wandb, csv (save to table), both (wandb & csv), Null (no save logging)]
+save_logging: csv # Choose from [wandb, csv (save to table), both (wandb & csv), Null (no save logging)]
 # Add a name tag to the run name --> Final run name: {name}_{name_tag}
 name_tag: "" 
 # Add a directory tag to csv file and log file --> Final path: {dir_tag}/{dir_path}
@@ -124,8 +123,8 @@ aggregator_config:
 
   multi_krum:
     _target_: fl_bdbench.servers.MultiKrumServer
-    num_malicious_clients: 5
-    num_clients_to_keep: 5
+    num_malicious_clients: 4
+    num_clients_to_keep: 6
     oracle: True # If true, we will set num_malicious_clients to the true number in runtime
     eta: 0.1 # Replace 10% of global model with updates from clients in the next round
   
@@ -143,7 +142,7 @@ aggregator_config:
   
   trimmed_mean:
     _target_: fl_bdbench.servers.TrimmedMeanServer
-    beta: 0.2
+    trim_ratio: 0.2
 
   weakdp:
     _target_: fl_bdbench.servers.WeakDPServer
@@ -176,6 +175,10 @@ aggregator_config:
     _target_: fl_bdbench.servers.FlareServer
     voting_threshold: 0.5
 
+  robustlr:
+    _target_: fl_bdbench.servers.RobustLRServer
+    eta: 0.1
+
 ########################################################
 # *Optimizer configuration
 client_optimizer_config:
@@ -201,5 +204,9 @@ hydra:
   run:
     dir: ./out/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
   sweep:
-    dir: ./out/multirun/${now:%Y-%m-%d-%H-%M-%S}/${hydra.job.override_dirname}
+    dir: ./multirun/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
     subdir: ${hydra.job.num}
+    # dir: ./multirun/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}/${hydra.job.override_dirname}
+    # subdir: ${hydra.job.num}
+
+    
