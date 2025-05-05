@@ -1,66 +1,141 @@
 python main.py -m \
     aggregator=unweighted_fedavg \
+    atk_config=multishot \
+    atk_config.model_poison_method=base,neurotoxin,chameleon \
     atk_config.data_poison_method=pattern \
-    atk_config.selection_scheme=all-adversary,random \
-    atk_config.poison_start_round=2000 \
-    atk_config.poison_end_round=2300 \
     checkpoint=2000 \
     save_logging=csv \
     num_rounds=600 \
     num_gpus=0.5 \
     num_cpus=1 \
-    cuda_visible_devices=\"0,1,3,4,7\"
+    dir_tag=fed_avg_vs_attacks \
+    cuda_visible_devices=\"1,2,3,4,6\" && \
+# Model replacement
+python main.py \
+    aggregator=unweighted_fedavg \
+    atk_config=singleshot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=pattern \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=300 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement \
+    cuda_visible_devices=\"1,2,3,4,6\"
+
+
+
 
 python main.py -m \
     aggregator=unweighted_fedavg \
+    atk_config=multishot \
+    atk_config.model_poison_method=base,neurotoxin,chameleon \
     atk_config.data_poison_method=distributed \
-    atk_config.selection_scheme=all-adversary,random \
-    atk_config.poison_start_round=2000 \
-    atk_config.poison_end_round=2300 \
     checkpoint=2000 \
     save_logging=csv \
     num_rounds=600 \
     num_gpus=0.5 \
     num_cpus=1 \
-    cuda_visible_devices=\"0,1,3,4,7\"
-
-python main.py -m   \
+    dir_tag=fed_avg_vs_attacks \
+    cuda_visible_devices=\"1,2,3,6\" && \
+# Model replacement
+python main.py \
     aggregator=unweighted_fedavg \
+    atk_config=singleshot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=distributed \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=300 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement \
+    cuda_visible_devices=\"1,2,3,6\"
+
+
+
+
+python main.py -m \
+    aggregator=unweighted_fedavg \
+    atk_config=multishot \
+    atk_config.model_poison_method=base,neurotoxin,chameleon \
     atk_config.data_poison_method=edge_case \
-    atk_config.selection_scheme=all-adversary,random \
-    atk_config.poison_start_round=2000 \
-    atk_config.poison_end_round=2300 \
     checkpoint=2000 \
     save_logging=csv \
     num_rounds=600 \
     num_gpus=0.5 \
     num_cpus=1 \
-    cuda_visible_devices=\"2,3,0,5,6\"
+    dir_tag=fed_avg_vs_attacks \
+    cuda_visible_devices=\"6,3,2,1\" && \
+# Model replacement
+python main.py \
+    aggregator=unweighted_fedavg \
+    atk_config=singleshot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=edge_case \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=300 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement \
+    cuda_visible_devices=\"6,3,2,1\"
+
+
+
+
 
 python main.py -m \
     aggregator=unweighted_fedavg \
+    atk_config=multishot \
+    atk_config.model_poison_method=base,neurotoxin,chameleon \
     atk_config.data_poison_method=a3fl \
-    atk_config.selection_scheme=all-adversary,random \
-    atk_config.poison_start_round=2000 \
-    atk_config.poison_end_round=2300 \
     checkpoint=2000 \
     save_logging=csv \
     num_rounds=600 \
     num_gpus=0.5 \
     num_cpus=1 \
-    cuda_visible_devices=\"7,4,1,0,6\"
+    dir_tag=fed_avg_vs_attacks \
+    cuda_visible_devices=\"6,3,2,1\" && \
+# Model replacement
+python main.py \
+    aggregator=unweighted_fedavg \
+    atk_config=singleshot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=a3fl \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=300 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement \
+    cuda_visible_devices=\"6,3,2,1\"
+
+
 
 python main.py -m \
     aggregator=unweighted_fedavg \
+    atk_config=multishot \
+    atk_config.model_poison_method=base,neurotoxin,chameleon \
     atk_config.data_poison_method=iba \
-    atk_config.selection_scheme=all-adversary,random \
-    atk_config.poison_start_round=2000 \
-    atk_config.poison_end_round=2300 \
     checkpoint=2000 \
     save_logging=csv \
     num_rounds=600 \
     num_gpus=0.5 \
     num_cpus=1 \
-    cuda_visible_devices=\"2,3,0,5,6\"
-
-
+    dir_tag=fed_avg_vs_attacks \
+    cuda_visible_devices=\"6,3,2,1\" && \
+# Model replacement
+python main.py \
+    aggregator=unweighted_fedavg \
+    atk_config=singleshot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=iba \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=300 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement \
+    cuda_visible_devices=\"6,3,2,1\"

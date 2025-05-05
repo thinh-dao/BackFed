@@ -144,7 +144,7 @@ class BaseServer:
             checkpoint = self._load_checkpoint()
             self.global_model = get_model(model_name=self.config.model, num_classes=self.config.num_classes, dataset_name=self.config.dataset)
             self.global_model.load_state_dict(checkpoint['model_state'], strict=True)
-            self.current_round = checkpoint['server_round']
+            self.current_round = checkpoint['server_round'] + 1
 
         elif self.config.pretrain_model_path != None:
             self.global_model = get_model(model_name=self.config.model, num_classes=self.config.num_classes, dataset_name=self.config.dataset, pretrain_model_path=self.config.pretrain_model_path)
@@ -346,6 +346,7 @@ class BaseServer:
 
         return self.aggregate_client_metrics(client_metrics)
 
+    @torch.inference_mode()
     def server_evaluate(self, round_number: Optional[int] = None) -> Metrics:
         """Perform one round of FL evaluation on the server side."""
         clean_loss, clean_accuracy = test(model=self.global_model, 
@@ -413,10 +414,10 @@ class BaseServer:
         return server_evaluation_metrics, client_fit_metrics, client_evaluation_metrics
 
     def run_experiment(self):
-        """Run the full FL experiment loop."""   
+        """Run the full FL experiment loop."""  
         experiment_start_time = time.time()
         train_progress_bar = track(
-            range(self.current_round, self.current_round + self.config.num_rounds + 1),
+            range(self.current_round, self.current_round + self.config.num_rounds),
             "[bold green]Training...",
             console=get_console(),
         )
@@ -496,8 +497,8 @@ class BaseServer:
         
         experiment_end_time = time.time()
         experiment_time = experiment_end_time - experiment_start_time
-        log(INFO, f"Total experiment time: {format_time_hms(experiment_time)}")
         log(INFO, f"{separator} TRAINING COMPLETED {separator}")
+        log(INFO, f"Total experiment time: {format_time_hms(experiment_time)}")
 
     def train_package(self, client_type: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """

@@ -30,7 +30,7 @@ deterministic: False
 # *Simulation configuration 
 num_rounds: 600
 num_clients: 100
-fraction_fit: 0.1
+num_clients_per_round: 10
 federated_evaluation: False # Whether to perform federated evaluation (evaluate global model on client's validation set)
 federated_val_split: 0.0 # Validation split for each client's dataset (should be > 0 if federated evaluation is True)
 
@@ -45,13 +45,13 @@ normalize: True # Normalize the dataset
 model: ResNet18
 pretrain_model_path: Null # A weight path (.pth) | "IMAGENET1K_V2" | Null. This model_path is loaded only if checkpoint is Null.
 num_classes: ??? # This will be set in runtime when loading the dataset
+test_batch_size: 512
 
 # *Default local training configuration (passed to clients during training)
 client_config:
   # Training configuration
   local_epochs: 2
-  train_batch_size: 64
-  val_batch_size: 512
+  batch_size: 64
   mixed_precision: True   # Use mixed precision and grad scaling during training
   timeout: Null # Timeout for each client training (in seconds)
   optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
@@ -203,9 +203,9 @@ hydra:
     chdir: False  # Prevent Hydra from changing working directory
   run:
     dir: ./out/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
-  sweep:
-    dir: ./multirun/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
-    subdir: ${hydra.job.num}
+  # sweep:
+  #   dir: ./multirun/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
+  #   subdir: ${hydra.job.num}
     # dir: ./multirun/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}/${hydra.job.override_dirname}
     # subdir: ${hydra.job.num}
 

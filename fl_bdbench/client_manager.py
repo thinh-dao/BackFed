@@ -10,7 +10,7 @@ import pandas as pd
 import os
 
 from typing import Dict, List
-from logging import WARNING
+from logging import WARNING, INFO
 from fl_bdbench.utils import log
 from fl_bdbench.clients import BenignClient
 from hydra.utils import get_class
@@ -28,16 +28,17 @@ class ClientManager:
         # Store the selected clients for each round. In each round, we have a dictionary of client classes and the clients selected for that type.
         self.rounds_selection: Dict[int, Dict[type, List[int]]] = {}
         self.poison_rounds = []  # Store all poison rounds
-        self.num_clients_per_round = int(round(self.config.fraction_fit * self.config.num_clients))
 
         # If no attack, we don't need to initialize poison rounds
         if config.no_attack:
+            log(INFO, "ClientManager: No attack, initialize rounds selection for benign clients")
             self.malicious_clients = []
             self.benign_clients = list(range(self.config.num_clients))
             # Initialize benign client class for rounds_selection
             self.benign_client_class = BenignClient
             self._initialize_normal_rounds()
         else:
+            log(INFO, f"ClientManager: Attack is enabled, initialize rounds selection with {self.atk_config.poison_frequency} poison scheme and {self.atk_config.selection_scheme} selection scheme")
             self.malicious_clients = self.atk_config.malicious_clients
             self.benign_clients = [i for i in range(self.config.num_clients) if i not in self.malicious_clients]
             
@@ -46,8 +47,8 @@ class ClientManager:
             self.malicious_client_class = get_class(self.atk_config.model_poison_config[model_poison_method]._target_)
             self.benign_client_class = BenignClient
 
-            if self.start_round >= self.atk_config.poison_end_round or self.start_round + self.config.num_rounds + 1 <= self.atk_config.poison_start_round:
-                log(WARNING, f"Training rounds [{self.start_round} - {self.start_round + self.config.num_rounds + 1}] are out of scope for the attack range [{self.atk_config.poison_start_round} - {self.atk_config.poison_end_round}]. No attack will be applied.")
+            if self.start_round > self.atk_config.poison_end_round or self.start_round + self.config.num_rounds < self.atk_config.poison_start_round:
+                log(WARNING, f"Training rounds [{self.start_round} - {self.start_round + self.config.num_rounds}] are out of scope for the attack range [{self.atk_config.poison_start_round} - {self.atk_config.poison_end_round}]. No attack will be applied.")
                 self._initialize_normal_rounds()
             else:
                 self._initialize_poison_rounds()
@@ -64,7 +65,7 @@ class ClientManager:
             start, end, interval = self.atk_config.poison_start_round, self.atk_config.poison_end_round, self.atk_config.poison_interval
             selected_poison_rounds = list(range(start, end + 1, interval))
         else:
-            raise ValueError(f"Invalid poison scheme {poison_frequency}")
+            raise ValueError(f"ClientManager: Invalid poison scheme {poison_frequency}")
 
         if selection_scheme == "single-adversary":
             self._single_adversary_selection(selected_poison_rounds)
@@ -74,17 +75,15 @@ class ClientManager:
             self._all_adversary_selection(selected_poison_rounds)
         elif selection_scheme == "random":
             self._random_selection(poison_frequency)
-        elif selection_scheme == "manual":
-            self._manual_selection()
         else:
-            raise ValueError(f"Invalid selection scheme {selection_scheme}. Choose between ['random', 'manual', 'all-adversary', 'single-adversary', 'multi-adversary']")
+            raise ValueError(f"ClientManager: Invalid selection scheme {selection_scheme}. Choose between ['random', 'manual', 'all-adversary', 'single-adversary', 'multi-adversary']")
 
     def _initialize_normal_rounds(self):
         """Initialize normal rounds. Only update rounds that are not poisoned."""
-        for r in range(self.start_round, self.start_round + self.config.num_rounds + 1):
+        for r in range(self.start_round, self.start_round + self.config.num_rounds):
             if r not in self.poison_rounds:
                 self.rounds_selection[r] = {
-                    self.benign_client_class: random.sample(self.benign_clients, self.num_clients_per_round)
+                    self.benign_client_class: random.sample(self.benign_clients, self.config.num_clients_per_round)
                 }
 
     def _single_adversary_selection(self, selected_rounds):
@@ -94,37 +93,48 @@ class ClientManager:
             round_idx = selected_rounds.index(r) % len(self.malicious_clients)
             self.rounds_selection[r] = {
                 self.malicious_client_class: [self.malicious_clients[round_idx]],
-                self.benign_client_class: random.sample(self.benign_clients, self.num_clients_per_round - 1)
+                self.benign_client_class: random.sample(self.benign_clients, self.config.num_clients_per_round - 1)
             }
 
     def _multi_adversary_selection(self, selected_rounds):
         """Randomly select {num_adversaries_per_round} adversaries for poisoning in each communication round."""
-        num_adversaries_per_round = min(self.atk_config.num_adversaries_per_round, len(self.malicious_clients), self.num_clients_per_round)
+        num_adversaries_per_round = min(self.atk_config.num_adversaries_per_round, len(self.malicious_clients), self.config.num_clients_per_round)
+
+        if self.atk_config.num_adversaries_per_round > num_adversaries_per_round:
+            log(WARNING, f"ClientManager: Number of adversaries per round is too large. Number of adversaries per round is reset to {num_adversaries_per_round}")
+
+        log(INFO, f"ClientManager: Percentage of adversaries per round is {num_adversaries_per_round / self.config.num_clients_per_round * 100:.2f}%")
+            
         self.poison_rounds = selected_rounds
         for r in selected_rounds:
             self.rounds_selection[r] = {
                 self.malicious_client_class: random.sample(self.malicious_clients, num_adversaries_per_round),
-                self.benign_client_class: random.sample(self.benign_clients, self.num_clients_per_round - num_adversaries_per_round)
+                self.benign_client_class: random.sample(self.benign_clients, self.config.num_clients_per_round - num_adversaries_per_round)
             }
 
     def _all_adversary_selection(self, selected_rounds):
         """All adversaries are selected for poisoning in each communication round."""
-        num_adversaries_per_round = min(len(self.malicious_clients), self.num_clients_per_round)
+        num_adversaries_per_round = min(len(self.malicious_clients), self.config.num_clients_per_round)
+        if len(self.malicious_clients) > num_adversaries_per_round:
+            log(WARNING, f"ClientManager: Number of adversaries per round is too large. Number of adversaries per round is reset to {num_adversaries_per_round}")
+
+        log(INFO, f"ClientManager: Percentage of adversaries per round is {num_adversaries_per_round / self.config.num_clients_per_round * 100:.2f}%")
+
         self.poison_rounds = selected_rounds
         for r in selected_rounds:
             self.rounds_selection[r] = {
                 self.malicious_client_class: random.sample(self.malicious_clients, num_adversaries_per_round),
-                self.benign_client_class: random.sample(self.benign_clients, self.num_clients_per_round - num_adversaries_per_round)
+                self.benign_client_class: random.sample(self.benign_clients, self.config.num_clients_per_round - num_adversaries_per_round)
             }
 
     def _random_selection(self, poison_frequency):
         """Randomly select clients. If malicious clients are selected, they will poison the data."""
         start, end = self.atk_config.poison_start_round, self.atk_config.poison_end_round
         for r in range(start, end + 1):
-            selected_clients = random.sample(range(self.config.num_clients), self.num_clients_per_round)
+            selected_clients = random.sample(range(self.config.num_clients), self.config.num_clients_per_round)
             if any(client in self.malicious_clients for client in selected_clients):
                 malicious_clients = [client for client in selected_clients if client in self.malicious_clients]
-                benign_clients = [client for client in selected_clients if client not in self.benign_clients]
+                benign_clients = [client for client in selected_clients if client in self.benign_clients]
 
                 # Update the rounds_selection dictionary and poison_rounds list
                 self.rounds_selection[r] = {
@@ -139,16 +149,6 @@ class ClientManager:
                 self.rounds_selection[r] = {
                     self.benign_client_class: selected_clients
                 }
-
-    def _manual_selection(self):
-        """Manually specify the poisoning rounds and malicious clients for each poisoning round."""
-        manual_poison_rounds = self.atk_config.poison_rounds
-        self.poison_rounds = list(manual_poison_rounds.keys())
-        for r in manual_poison_rounds.keys():
-            self.rounds_selection[r] = {
-                self.malicious_client_class: manual_poison_rounds[r],
-                self.benign_client_class: random.sample(self.benign_clients, self.num_clients_per_round - len(manual_poison_rounds[r]))
-            }
             
     def get_rounds_selection(self):
         """Get the client selection for each round."""
@@ -172,7 +172,7 @@ class ClientManager:
 
     def get_num_clients_per_round(self):
         """Get the number of clients per round."""
-        return self.num_clients_per_round
+        return self.config.num_clients_per_round
 
     def plot_client_selection(self, start_round=-1, end_round=-1, interval=2, only_poison_rounds=False, save_path=None):
         """
