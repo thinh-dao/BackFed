@@ -91,7 +91,7 @@ class MaliciousClient(BaseClient):
                                 poison_ratio=self.atk_config.poison_rate
                             )
         self.train_loader = DataLoader(poisoned_dataset,
-                                batch_size=self.client_config["train_batch_size"],
+                                batch_size=self.client_config["batch_size"],
                                 shuffle=True, pin_memory=True,
                             )
 

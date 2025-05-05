@@ -30,8 +30,8 @@ poisoned_projection_eps: 10 # Projection norm
 poisoned_projection_frequency: 2 # Project every 2 iterations
 
 # *Model replacement settings
-scale_weights: False 
-scale_factor: 25 # 4 malicious clients 
+scale_weights: True 
+scale_factor: 100 
 
 # *Type of poisoning
 # There are 3 types of poisoning:
@@ -43,7 +43,7 @@ poison_rate: 0.3125 # 20/64 of a training batch is poisoned
 attack_alpha: 0.5 # For "multi_task" poison type: L = alpha * L_poisoned + (1 - alpha) * L_clean
 
 # *Number of adversaries
-adversary_selection: "random" # Choose from ["random", "fixed", "single"]. If "single", there is only one adversary in the system (default to client 0)
+adversary_selection: "single" # Choose from ["random", "fixed", "single"]. If "single", there is only one adversary in the system (default to client 0)
 fraction_adversaries: 0.05 # Percentage of clients to be adversaries when using "random" selection
 malicious_clients: [0, 4, 5, 8, 12] # Specific client IDs to be adversaries when using "fixed" selection
 
@@ -55,12 +55,12 @@ source_class: 0 # For "one2one" attack, specify source class
 
 # *Poisoning period
 poison_start_round: 2001
-poison_end_round: 2300
+poison_end_round: 2001
 
 # *Poisoning frequency
 # 1. single-shot: All malicious clients poison the data in only round {poison_start_round} and then stop.
 # 2. multi-shot: All malicious clients poison the data in the all communication rounds between {poison_start_round} and {poison_end_round}.
-poison_frequency: "multi-shot"
+poison_frequency: "single-shot"
 poison_interval: 1 # Interval between poisoning rounds (1 means poison every round)
 
 # *Selection scheme
@@ -68,8 +68,9 @@ poison_interval: 1 # Interval between poisoning rounds (1 means poison every rou
 # 2. multi-adversary: Randomly select {num_adversaries_selected} adversaries for poisoning in each communication round.
 # 3. all-adversary: All adversaries are selected for poisoning.
 # 4. random: Randomly select clients for poisoning.
-selection_scheme: "random" 
-num_adversaries_per_round: 4 # parameter for multi-adversary selection
+selection_scheme: "single-adversary" 
+num_adversaries_per_round: 1 # parameter for multi-adversary selection
+
 
 ########################################################
 # *Poison configuration

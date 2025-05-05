@@ -17,11 +17,6 @@ from typing import List, Dict, Optional, Tuple, Any
 DEFAULT_PARAMS = {
     "gradient_mask_ratio": 0.99, # Mask ratio - Project gradient into bottom 99% of the gradient space
     "aggregate_all_layers": True, # Mask the aggregated model's gradients from a concatenated vector or mask layer by layer
-    "mask_compute_subset": 0.3,   # Use only a subset of data for mask computation (0.3 = 30%)
-    "mask_compute_rounds": 2,     # Number of rounds for mask computation (reduced from 5)
-    "num_workers": 4,             # Number of workers for data loading
-    "persistent_workers": True,   # Keep workers alive between iterations
-    "prefetch_factor": 2,         # Number of batches to prefetch
 }
 
 class NeurotoxinClient(MaliciousClient):

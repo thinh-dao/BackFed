@@ -176,7 +176,7 @@ class FL_DataLoader:
         # Server-side test loader (for server-side evaluation)
         self.test_loader = torch.utils.data.DataLoader(
             self.testset,
-            batch_size=self.config.client_config.val_batch_size,
+            batch_size=self.config.test_batch_size,
             num_workers=4,
             pin_memory=True,
             shuffle=False
@@ -197,6 +197,8 @@ class FL_DataLoader:
         class_indices = {}
         for ind in indices:
             label = self.trainset.targets[ind]
+            if isinstance(label, torch.Tensor):
+                label = label.item()
             if label in class_indices:
                 class_indices[label].append(ind)
             else:

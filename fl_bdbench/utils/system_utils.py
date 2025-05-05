@@ -80,24 +80,33 @@ def ray_init(num_gpus: int, num_cpus: int, namespace: str):
         )
 
 def set_attack_config(config: DictConfig):    
-    # Define malicious clients if random_adversaries is True
-    if config.atk_config.random_adversaries:
+    # Define malicious clients based on selection method
+    if config.atk_config.adversary_selection == "random":
         num_adversaries = int(config.atk_config.fraction_adversaries * config.num_clients)
         config.atk_config.malicious_clients = random.sample(range(config.num_clients), num_adversaries)
+    elif config.atk_config.adversary_selection == "single":
+        # Ensure we have at least one client in the list
+        if not config.atk_config.malicious_clients:
+            config.atk_config.malicious_clients = [0]  # Default to client 0
+        # Keep only the first client in the list
+        config.atk_config.malicious_clients = [config.atk_config.malicious_clients[0]]
+    # For "fixed", we keep the malicious_clients list as is
 
     log(INFO, f"Malicious clients: {config.atk_config.malicious_clients}")
     
     # Define target and source class if random_class is True
-    if config.atk_config.random_class:
+    if config.atk_config.random_class and config.atk_config.attack_type != "all2all":
         config.atk_config.target_class = random.randint(0, config.num_classes - 1)
         config.atk_config.source_class = random.randint(0, config.num_classes - 1)
         while config.atk_config.source_class == config.atk_config.target_class:
             config.atk_config.source_class = random.randint(0, config.num_classes - 1)
     
-    if config.atk_config.attack_type == "all2one":
+    if config.atk_config.attack_type == "one2one":
         log(INFO, f"Attack type: {config.atk_config.attack_type}, Target class: {config.atk_config.target_class}, Source class: {config.atk_config.source_class}")
-    else:
+    elif config.atk_config.attack_type == "all2one":
         log(INFO, f"Attack type: {config.atk_config.attack_type}, Target class: {config.atk_config.target_class}")
+    elif config.atk_config.attack_type == "all2all":
+        log(INFO, f"Attack type: {config.atk_config.attack_type}")
 
 def set_random_seed(seed=123123, deterministic=False):
     """Set random seed for reproducibility."""
@@ -117,11 +126,8 @@ def set_debug_settings(config):
     # FL settings
     config.num_rounds = 4
     config.num_clients = 4
+    config.num_clients_per_round = 4
     config.num_gpus = 0.5
-    config.train_batch_size = 128
-    config.simulation.fraction_fit = 1
-    config.simulation.min_fit_clients = 4
-    config.simulation.min_evaluate_clients = 4
     config.save_logging = None
     
     # Attacker settings

@@ -4,7 +4,7 @@ import torch
 
 from typing import List
 from omegaconf import DictConfig
-from .base import Poison
+from fl_bdbench.poisons.base import Poison
 from fl_bdbench.const import IMG_SIZE
 
 # Default trigger settings per dataset
@@ -12,7 +12,7 @@ DEFAULT_TRIGGER_SETTINGS = {
     "MNIST": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0]},
     "CIFAR10": {"size": [1, 5], "gap": [2, 2], "loc": [0, 0]},
     "CIFAR100": {"size": [1, 5], "gap": [2, 2], "loc": [0, 0]},
-    "TINYIMAGENET": {"size": [1, 5], "gap": [2, 2], "loc": [0, 0]},
+    "TINYIMAGENET": {"size": [1, 10], "gap": [2, 2], "loc": [0, 0]},
     "EMNIST_BYCLASS": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0]},
     "EMNIST_BALANCED": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0]},
     "EMNIST_DIGITS": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0]},
@@ -120,7 +120,6 @@ class Distributed(Poison):
                 torch.ones_like(poison_inputs),
                 poison_inputs
             )
-
         return poison_inputs
         
 class Centralized(Distributed):

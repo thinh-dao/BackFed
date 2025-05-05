@@ -99,11 +99,11 @@ class BaseClient:
 
             self.train_dataset = Subset(dataset, train_indices)
             self.val_dataset = Subset(dataset, val_indices)
-            self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["train_batch_size"], shuffle=True, pin_memory=True)
-            self.val_loader = DataLoader(self.val_dataset, batch_size=self.client_config["val_batch_size"], shuffle=True, pin_memory=True)
+            self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=True)
+            self.val_loader = DataLoader(self.val_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=True)
         else:
             self.train_dataset = Subset(dataset, indices)
-            self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["train_batch_size"], shuffle=True, pin_memory=True)
+            self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=True)
 
     def _check_required_keys(self, train_package: Dict[str, Any], required_keys: List[str] = ["global_model_params", "server_round"]):
         """
