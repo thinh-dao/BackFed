@@ -28,6 +28,7 @@ class Distributed(Poison):
             trigger_size: List[int] = None,  # (height, width) of a local distributed trigger
             trigger_gap: List[int] = None,   # (gap_x, gap_y) Distance between distributed triggers
             trigger_loc: List[int] = None,   # (shift_x, shift_y) offset from top-left corner
+            maximum_shares: int = 10 # Maximum trigger fragments
         ):
         super().__init__(params, client_id)
         
@@ -36,6 +37,7 @@ class Distributed(Poison):
         self.trigger_size = trigger_size or dataset_settings["size"]
         self.trigger_gap = trigger_gap or dataset_settings["gap"]
         self.trigger_loc = trigger_loc or dataset_settings["loc"]
+        self.maximum_shares = maximum_shares
 
         # Cache for all trigger positions
         self.trigger_positions = {}
@@ -57,6 +59,9 @@ class Distributed(Poison):
         
         # Calculate positions for each malicious client
         for idx, client_id in enumerate(malicious_clients):
+            if idx >= self.maximum_shares:
+                idx = idx % self.maximum_shares
+
             row, col = idx // num_rows, idx % num_rows
             start_x = self.trigger_loc[0] + (row * (self.trigger_gap[0] + self.trigger_size[0]))
             start_y = self.trigger_loc[1] + (col * (self.trigger_gap[1] + self.trigger_size[1]))
@@ -79,10 +84,14 @@ class Distributed(Poison):
             }
             
             # Append to server positions
-            server_positions['start_x'].append(start_x)
-            server_positions['end_x'].append(end_x)
-            server_positions['start_y'].append(start_y)
-            server_positions['end_y'].append(end_y)
+            if start_x not in server_positions['start_x']:
+                server_positions['start_x'].append(start_x)
+            if end_x not in server_positions['end_x']:
+                server_positions['end_x'].append(end_x)
+            if start_y not in server_positions['start_y']:
+                server_positions['start_y'].append(start_y)
+            if end_y not in server_positions['end_y']:
+                server_positions['end_y'].append(end_y)
         
         # Store server positions
         self.trigger_positions[-1] = server_positions

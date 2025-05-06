@@ -50,6 +50,9 @@ class BaseClient:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.verbose = verbose
 
+        # Set random seed
+        set_random_seed(seed=self.client_config.seed, deterministic=self.client_config.deterministic)
+
         # Set up model, dataloader, optimizer, criterion
         self.model = model.to(self.device)
         self._set_dataloader(dataset, self.client_indices)
@@ -66,9 +69,6 @@ class BaseClient:
         self.train_accuracy = 0.0
         self.eval_loss = 0.0
         self.eval_accuracy = 0.0
-
-        # Set random seed
-        set_random_seed(seed=self.client_config.seed, deterministic=True)
 
         # Reset peak memory stats to track memory usage of this client
         if torch.cuda.is_available():
