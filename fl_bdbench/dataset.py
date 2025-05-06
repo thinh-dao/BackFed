@@ -177,7 +177,7 @@ class FL_DataLoader:
         self.test_loader = torch.utils.data.DataLoader(
             self.testset,
             batch_size=self.config.test_batch_size,
-            num_workers=4,
+            num_workers=self.config.num_workers,
             pin_memory=True,
             shuffle=False
         )

@@ -6,7 +6,9 @@ import torch
 import torchvision
 import fl_bdbench.models as models
 import torchvision.transforms as transforms
-from fl_bdbench.const import NUM_CLASSES
+
+from fl_bdbench.utils.logging_utils import log
+from logging import INFO
 
 def get_model(model_name, num_classes, dataset_name, pretrain_model_path=None):
     """Return a torchvision model with the given name and number of classes."""
@@ -32,8 +34,6 @@ def get_model(model_name, num_classes, dataset_name, pretrain_model_path=None):
         if pretrain_model_path == None:
             model = getattr(torchvision.models, model_name)(num_classes=num_classes)
         elif pretrain_model_path == "IMAGENET1K_V1" or pretrain_model_path == "IMAGENET1K_V2":
-            from fl_bdbench.utils.logging_utils import log
-            from logging import INFO
             log(INFO, f"Load pretrained model from {pretrain_model_path}")
             model = getattr(torchvision.models, model_name)(weights=pretrain_model_path)
             # Replace the last fully connected layer
