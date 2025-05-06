@@ -406,11 +406,15 @@ class BaseServer:
         client_eval_time = client_eval_time_end - client_eval_time_start
         log(INFO, f"Clients evaluation time: {client_eval_time:.2f} seconds")
 
-        server_eval_time_start = time.time()
-        server_evaluation_metrics = self.server_evaluate(round_number)
-        server_eval_time_end = time.time()
-        server_eval_time = server_eval_time_end - server_eval_time_start
-        log(INFO, f"Server evaluation time: {server_eval_time:.2f} seconds")
+        if round_number % self.config.test_every == 0:
+            server_eval_time_start = time.time()
+            server_evaluation_metrics = self.server_evaluate(round_number)
+            server_eval_time_end = time.time()
+            server_eval_time = server_eval_time_end - server_eval_time_start
+            log(INFO, f"Server evaluation time: {server_eval_time:.2f} seconds")
+        else:
+            server_evaluation_metrics = {}
+
         return server_evaluation_metrics, client_fit_metrics, client_evaluation_metrics
 
     def run_experiment(self):
@@ -438,7 +442,7 @@ class BaseServer:
             server_metrics, client_fit_metrics, client_evaluation_metrics = self.run_one_round(round_number=self.current_round)
 
             # Initialize or update best metrics
-            if len(self.best_metrics) == 0 or server_metrics["test_clean_acc"] > self.best_metrics.get("test_clean_acc", 0): 
+            if len(self.best_metrics) == 0 or server_metrics.get("test_clean_acc", 0) > self.best_metrics.get("test_clean_acc", 0): 
                 self.best_metrics = server_metrics
                 self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
 

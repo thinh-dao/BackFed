@@ -45,7 +45,11 @@ normalize: True # Normalize the dataset
 model: ResNet18
 pretrain_model_path: Null # A weight path (.pth) | "IMAGENET1K_V2" | Null. This model_path is loaded only if checkpoint is Null.
 num_classes: ??? # This will be set in runtime when loading the dataset
+
+# *Test configuration
 test_batch_size: 512
+num_workers: 4 # Number of workers for dataloader
+test_every: 1 # Test every x rounds
 
 # *Default local training configuration (passed to clients during training)
 client_config:
