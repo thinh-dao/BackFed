@@ -25,8 +25,6 @@ python main.py \
     cuda_visible_devices=\"1,2,3,4,6\"
 
 
-
-
 python main.py -m \
     aggregator=unweighted_fedavg \
     atk_config=multishot \
@@ -51,10 +49,7 @@ python main.py \
     num_gpus=0.5 \
     num_cpus=1 \
     dir_tag=model_replacement \
-    cuda_visible_devices=\"1,2,3,6\"
-
-
-
+    cuda_visible_devices=\"0,1,2,3,4\"
 
 python main.py -m \
     aggregator=unweighted_fedavg \
