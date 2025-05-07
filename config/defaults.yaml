@@ -207,9 +207,9 @@ hydra:
     chdir: False  # Prevent Hydra from changing working directory
   run:
     dir: ./out/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
-  # sweep:
-  #   dir: ./multirun/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
-  #   subdir: ${hydra.job.num}
+  sweep:
+    dir: ./multirun/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
+    subdir: ${hydra.job.num}
     # dir: ./multirun/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}/${hydra.job.override_dirname}
     # subdir: ${hydra.job.num}
 

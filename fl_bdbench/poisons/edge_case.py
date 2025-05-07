@@ -3,12 +3,11 @@ import torchvision.transforms.v2 as transforms
 import numpy as np
 import pickle
 import random
-import ray
 
 from .base import Poison
 from omegaconf import DictConfig
-from logging import INFO, WARNING
-from flwr.common.logger import log
+from logging import INFO
+from fl_bdbench.utils import log
 
 DEFAULT_TRANSFORMS = {
     "CIFAR10": transforms.Compose([

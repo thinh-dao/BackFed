@@ -9,14 +9,14 @@ from fl_bdbench.const import IMG_SIZE
 
 # Default trigger settings per dataset
 DEFAULT_TRIGGER_SETTINGS = {
-    "MNIST": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0]},
-    "CIFAR10": {"size": [1, 5], "gap": [2, 2], "loc": [0, 0]},
-    "CIFAR100": {"size": [1, 5], "gap": [2, 2], "loc": [0, 0]},
-    "TINYIMAGENET": {"size": [1, 10], "gap": [2, 2], "loc": [0, 0]},
-    "EMNIST_BYCLASS": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0]},
-    "EMNIST_BALANCED": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0]},
-    "EMNIST_DIGITS": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0]},
-    "FEMNIST": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0]}
+    "MNIST": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0], "maximum_shares": 4},
+    "CIFAR10": {"size": [1, 5], "gap": [2, 2], "loc": [0, 0], "maximum_shares": 5},
+    "CIFAR100": {"size": [1, 5], "gap": [2, 2], "loc": [0, 0], "maximum_shares": 5},
+    "TINYIMAGENET": {"size": [1, 10], "gap": [2, 2], "loc": [0, 0], "maximum_shares": 10},
+    "EMNIST_BYCLASS": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0], "maximum_shares": 4},
+    "EMNIST_BALANCED": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0], "maximum_shares": 4},
+    "EMNIST_DIGITS": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0], "maximum_shares": 4},
+    "FEMNIST": {"size": [1, 4], "gap": [2, 2], "loc": [0, 0], "maximum_shares": 4}
 }
 
 class Distributed(Poison):
@@ -28,7 +28,7 @@ class Distributed(Poison):
             trigger_size: List[int] = None,  # (height, width) of a local distributed trigger
             trigger_gap: List[int] = None,   # (gap_x, gap_y) Distance between distributed triggers
             trigger_loc: List[int] = None,   # (shift_x, shift_y) offset from top-left corner
-            maximum_shares: int = 10 # Maximum trigger fragments
+            maximum_shares: int = None # Maximum trigger fragments
         ):
         super().__init__(params, client_id)
         
@@ -37,7 +37,7 @@ class Distributed(Poison):
         self.trigger_size = trigger_size or dataset_settings["size"]
         self.trigger_gap = trigger_gap or dataset_settings["gap"]
         self.trigger_loc = trigger_loc or dataset_settings["loc"]
-        self.maximum_shares = maximum_shares
+        self.maximum_shares = maximum_shares or dataset_settings["maximum_shares"]
 
         # Cache for all trigger positions
         self.trigger_positions = {}
@@ -61,8 +61,18 @@ class Distributed(Poison):
         for idx, client_id in enumerate(malicious_clients):
             if idx >= self.maximum_shares:
                 idx = idx % self.maximum_shares
-
-            row, col = idx // num_rows, idx % num_rows
+            
+            # If either gap_x or gap_y is 0, we only slide the trigger fragment in one direction
+            if self.trigger_gap[0] == 0 or self.trigger_gap[1] == 0:
+                if self.trigger_gap[0] == 0:
+                    row = 0
+                    col = idx
+                else:
+                    col = 0
+                    row = idx
+            else:
+                row, col = idx // num_rows, idx % num_rows
+                
             start_x = self.trigger_loc[0] + (row * (self.trigger_gap[0] + self.trigger_size[0]))
             start_y = self.trigger_loc[1] + (col * (self.trigger_gap[1] + self.trigger_size[1]))
             end_x = start_x + self.trigger_size[0]
@@ -84,14 +94,10 @@ class Distributed(Poison):
             }
             
             # Append to server positions
-            if start_x not in server_positions['start_x']:
-                server_positions['start_x'].append(start_x)
-            if end_x not in server_positions['end_x']:
-                server_positions['end_x'].append(end_x)
-            if start_y not in server_positions['start_y']:
-                server_positions['start_y'].append(start_y)
-            if end_y not in server_positions['end_y']:
-                server_positions['end_y'].append(end_y)
+            server_positions['start_x'].append(start_x)
+            server_positions['end_x'].append(end_x)
+            server_positions['start_y'].append(start_y)
+            server_positions['end_y'].append(end_y)
         
         # Store server positions
         self.trigger_positions[-1] = server_positions
