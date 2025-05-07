@@ -31,7 +31,7 @@ poisoned_projection_frequency: 2 # Project every 2 iterations
 
 # *Model replacement settings
 scale_weights: True 
-scale_factor: 100 
+scale_factor: 20 
 
 # *Type of poisoning
 # There are 3 types of poisoning:
@@ -43,8 +43,8 @@ poison_rate: 0.3125 # 20/64 of a training batch is poisoned
 attack_alpha: 0.5 # For "multi_task" poison type: L = alpha * L_poisoned + (1 - alpha) * L_clean
 
 # *Number of adversaries
-adversary_selection: "random" # Choose from ["random", "fixed", "single"]. If "single", there is only one adversary in the system (default to client 0)
-fraction_adversaries: 0.05 # Percentage of clients to be adversaries when using "random" selection
+adversary_selection: "fixed" # Choose from ["random", "fixed", "single"]. If "single", there is only one adversary in the system (default to client 0)
+fraction_adversaries: 0.1 # Percentage of clients to be adversaries when using "random" selection
 malicious_clients: [0, 4, 5, 8, 12] # Specific client IDs to be adversaries when using "fixed" selection
 
 # *Poisoning target type
