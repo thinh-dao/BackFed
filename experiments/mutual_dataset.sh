@@ -10,7 +10,7 @@ python main.py -m \
     num_gpus=0.5 \
     num_cpus=1 \
     dir_tag=mutual_dataset \
-    cuda_visible_devices=\"1,2,3,4,5\" && \
+    cuda_visible_devices=\"6,4,3,2,1\"
 
 
 
@@ -24,10 +24,10 @@ python main.py -m \
     checkpoint=2000 \
     save_logging=csv \
     num_rounds=600 \
-    num_gpus=0.5 \
+    num_gpus=0.4 \
     num_cpus=1 \
     dir_tag=mutual_dataset \
-    cuda_visible_devices=\"0,1,2,3,4\" && \
+    cuda_visible_devices=\"6,4,3,2\" 
 
 
 
@@ -41,10 +41,10 @@ python main.py -m \
     checkpoint=2000 \
     save_logging=csv \
     num_rounds=600 \
-    num_gpus=0.5 \
+    num_gpus=0.4 \
     num_cpus=1 \
     dir_tag=mutual_dataset \
-    cuda_visible_devices=\"5,4,3,2,1\" && \
+    cuda_visible_devices=\"6,4,3,2\"
 
 
 
@@ -58,10 +58,10 @@ python main.py -m \
     checkpoint=2000 \
     save_logging=csv \
     num_rounds=600 \
-    num_gpus=0.5 \
+    num_gpus=0.4 \
     num_cpus=1 \
     dir_tag=mutual_dataset \
-    cuda_visible_devices=\"5,4,3,2,1\" && \
+    cuda_visible_devices=\"6,4,3,2\"
 
 
 
@@ -74,7 +74,7 @@ python main.py -m \
     checkpoint=2000 \
     save_logging=csv \
     num_rounds=600 \
-    num_gpus=0.5 \
+    num_gpus=0.4 \
     num_cpus=1 \
     dir_tag=mutual_dataset \
-    cuda_visible_devices=\"3,4,5,2,1\" && \
+    cuda_visible_devices=\"6,4,3,2\"
