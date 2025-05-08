@@ -6,11 +6,11 @@ import torch
 from typing import Dict, List, Tuple
 from logging import INFO
 
-from fl_bdbench.servers.base_server import BaseServer
+from fl_bdbench.servers.defense_categories import RobustAggregationServer
 from fl_bdbench.utils.logging_utils import log
 from fl_bdbench.const import StateDict
 
-class FoolsGoldServer(BaseServer):
+class FoolsGoldServer(RobustAggregationServer):
     """
     FoolsGold server that uses cosine similarity to detect and defend against sybil attacks.
     """
@@ -24,7 +24,7 @@ class FoolsGoldServer(BaseServer):
     def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> bool:
         """
         Aggregate client updates using FoolsGold algorithm.
-        
+
         Args:
             client_updates: List of tuples (client_id, num_examples, model_update)
         Returns:
@@ -32,7 +32,7 @@ class FoolsGoldServer(BaseServer):
         """
         if len(client_updates) == 0:
             return False
-            
+
         # Extract client IDs and their updates
         client_ids = [client_id for client_id, _, _ in client_updates]
 
@@ -43,14 +43,14 @@ class FoolsGoldServer(BaseServer):
             for name, param in client_params.items():
                 diff = param.to(self.device) - self.global_model_params[name]
                 update_vector.append(diff.flatten())
-            
+
             update_vector = torch.cat(update_vector)
-            
+
             # Normalize update vector
             norm = torch.linalg.norm(update_vector)
             if norm > 1:
                 update_vector = update_vector / norm
-                
+
             # Update history
             if client_id not in self.update_history:
                 self.update_history[client_id] = update_vector
@@ -78,13 +78,13 @@ class FoolsGoldServer(BaseServer):
             if name.endswith('num_batches_tracked'):
                 continue
             param.add_(weight_accumulator[name] * self.eta)
-            
+
         return True
-    
+
     def _foolsgold(self, selected_clients) -> torch.Tensor:
         """
         Compute FoolsGold weights for the selected clients.
-        
+
         Args:
             selected_clients: List of client IDs
         Returns:
@@ -98,10 +98,10 @@ class FoolsGoldServer(BaseServer):
 
         # Stack client update histories
         M = torch.stack(selected_his)
-        
+
         # Compute norms for each client's update history
         norms = torch.linalg.norm(M, dim=1)
-        
+
         # Compute cosine similarity matrix
         dot_products = torch.mm(M, M.t())
         norms_matrix = torch.outer(norms, norms)
@@ -124,7 +124,7 @@ class FoolsGoldServer(BaseServer):
         wv = torch.clamp(wv, 0, 1)
         wv = wv / (torch.max(wv) + 1e-10)  # Normalize
         wv[wv == 1] = 0.99  # Avoid division by zero
-        
+
         # Apply logit function with confidence
         wv = self.confidence * (torch.log((wv/(1-wv)) + 1e-5) + 0.5)
         wv = torch.clamp(wv, 0, 1)

@@ -563,6 +563,21 @@ class BaseServer:
 
         return test_package
 
+    def get_clients_info(self, round_number: int) -> Dict[str, Any]:
+        """
+        Get the clients info for the given round number.
+        """
+        assert round_number in self.rounds_selection, "Round number is not in the rounds selection"
+        clients_info = {}
+
+        for cls in self.rounds_selection[round_number].keys():
+            if issubclass(cls, BenignClient):
+                clients_info["benign_clients"].extend(self.rounds_selection[round_number][cls])
+            elif issubclass(cls, MaliciousClient):
+                clients_info["malicious_clients"].extend(self.rounds_selection[round_number][cls])
+
+        return clients_info
+
     def get_server_type(self):
         return self.server_type
 

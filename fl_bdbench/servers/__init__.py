@@ -3,6 +3,13 @@ Server implementations for FL.
 """
 
 from fl_bdbench.servers.base_server import BaseServer
+from fl_bdbench.servers.defense_categories import (
+    ClientSideDefenseServer,
+    RobustAggregationServer,
+    AnomalyDetectionServer,
+    PostAggregationServer,
+    HybridDefenseServer
+)
 from fl_bdbench.servers.trimmed_mean_server import TrimmedMeanServer
 from fl_bdbench.servers.median_server import GeometricMedianServer, CoordinateMedianServer
 from fl_bdbench.servers.multi_krum_server import MultiKrumServer
@@ -19,7 +26,15 @@ from fl_bdbench.servers.flare_server import FlareServer
 from fl_bdbench.servers.robustlr_server import RobustLRServer
 
 __all__ = [
+    # Base classes
     "BaseServer",
+    "ClientSideDefenseServer",
+    "RobustAggregationServer",
+    "AnomalyDetectionServer",
+    "PostAggregationServer",
+    "HybridDefenseServer",
+
+    # Server implementations
     "TrimmedMeanServer",
     "FedTrimmedAvg",
     "GeometricMedianServer",

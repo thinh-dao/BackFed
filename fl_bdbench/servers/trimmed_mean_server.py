@@ -4,12 +4,12 @@ Trimmed Mean server implementation for FL.
 import torch
 from typing import List, Tuple
 
-from fl_bdbench.servers.base_server import BaseServer
+from fl_bdbench.servers.defense_categories import RobustAggregationServer
 from fl_bdbench.utils.logging_utils import log
 from fl_bdbench.const import StateDict
 from logging import INFO
 
-class TrimmedMeanServer(BaseServer):
+class TrimmedMeanServer(RobustAggregationServer):
     """
     Server that implements trimmed mean aggregation to mitigate the impact of malicious clients.
 
@@ -30,7 +30,6 @@ class TrimmedMeanServer(BaseServer):
         self.trim_ratio = trim_ratio
         log(INFO, f"Initialized Trimmed Mean server with trim_ratio={trim_ratio}")
 
-    @torch.no_grad()
     def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> bool:
         """
         Aggregate client updates using trimmed mean.
@@ -46,28 +45,28 @@ class TrimmedMeanServer(BaseServer):
         # Extract client parameters
         client_params = [params for _, _, params in client_updates]
         num_clients = len(client_params)
-        
+
         # Calculate number of clients to trim from each end
         num_trim = int(num_clients * self.trim_ratio)
-        
+
         # Update global model parameters directly
         for name, param in self.global_model_params.items():
             if name.endswith('num_batches_tracked'):
                 continue
-            
+
             # Stack parameters from all clients for this layer
             layer_updates = torch.stack([client_param[name] for client_param in client_params])
-            
+
             # Sort values along the client dimension
             sorted_updates, _ = torch.sort(layer_updates, dim=0)
-            
+
             # Calculate trimmed mean
             trimmed_updates = sorted_updates[num_trim:num_clients-num_trim]
             mean_update = torch.mean(trimmed_updates, dim=0)
-            
+
             # Apply update
             param.copy_(mean_update.to(param.device))
-        
+
         return True
 
     def __repr__(self) -> str:
