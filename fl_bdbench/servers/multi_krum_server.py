@@ -6,11 +6,10 @@ This implements the Multi-Krum algorithm from the paper:
 by Peva Blanchard, El Mahdi El Mhamdi, Rachid Guerraoui, and Julien Stainer.
 """
 import torch
-import numpy as np
 
 from fl_bdbench.servers.defense_categories import RobustAggregationServer
 from fl_bdbench.utils.logging_utils import log
-from fl_bdbench.const import StateDict
+from fl_bdbench.const import StateDict, client_id, num_examples
 from logging import INFO
 from typing import List, Tuple
 
@@ -59,7 +58,7 @@ class MultiKrumServer(RobustAggregationServer):
         log(INFO, f"Initialized Multi-Krum server with num_malicious_clients={self.num_malicious_clients}, "
                  f"num_clients_to_keep={self.num_clients_to_keep}, eta={self.eta}")
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> StateDict:
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> StateDict:
         """
         Aggregate client updates using Multi-Krum algorithm.
 
@@ -93,7 +92,7 @@ class MultiKrumServer(RobustAggregationServer):
         distances = torch.zeros(num_clients, num_clients)
         for i in range(num_clients):
             for j in range(i+1, num_clients):
-                dist = torch.norm(flattened_params[i] - flattened_params[j])**2
+                dist = torch.linalg.norm(flattened_params[i] - flattened_params[j])**2
                 distances[i, j] = dist
                 distances[j, i] = dist
 

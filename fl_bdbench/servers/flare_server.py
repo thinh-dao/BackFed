@@ -29,7 +29,7 @@ class FlareServer(RobustAggregationServer):
     def _kernel_function(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Compute RBF kernel between two vectors."""
         sigma = 1.0
-        return torch.exp(-torch.norm(x - y) ** 2 / (2 * sigma ** 2))
+        return torch.exp(-torch.linalg.norm(x - y) ** 2 / (2 * sigma ** 2))
 
     def _compute_mmd(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Compute Maximum Mean Discrepancy between two sets of features."""

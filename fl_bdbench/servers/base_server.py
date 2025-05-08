@@ -31,7 +31,7 @@ from fl_bdbench.utils import (
 from fl_bdbench.context_actor import ContextActor
 from fl_bdbench.clients import ClientApp, BenignClient, MaliciousClient
 from fl_bdbench.poisons import Poison, IBA, A3FL
-from fl_bdbench.const import StateDict, Metrics
+from fl_bdbench.const import StateDict, Metrics, client_id, num_examples
 from logging import INFO, WARNING
 from typing import Dict, Any, List, Tuple, Callable, Optional
 from collections import deque
@@ -40,7 +40,8 @@ class BaseServer:
     """
     Base class for all FL servers.
     """
-    
+    defense_categories = ["base"]
+
     def __init__(self, server_config, server_type = "base", **kwargs):
         """
         Initialize the server.
@@ -99,7 +100,10 @@ class BaseServer:
             init_wandb(server_config)
 
         elif self.config.save_logging in ["csv", "both"]:
-            self.csv_logger : CSVLogger = init_csv_logger(server_config)
+            if "anomaly_detection" in self.defense_categories:
+                self.csv_logger : CSVLogger = init_csv_logger(server_config, detection=True)
+            else:
+                self.csv_logger : CSVLogger = init_csv_logger(server_config)
 
         elif self.config.save_logging == None:
             log(WARNING, "The logging is not saved!")
@@ -229,7 +233,7 @@ class BaseServer:
         """
         return {name: param.detach().clone().to("cpu") for name, param in self.global_model_params.items()}
     
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> bool:
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> bool:
         """
         Aggregates client updates to update global model parameters (self.global_model_params)
 
@@ -321,7 +325,7 @@ class BaseServer:
             aggregated_metrics = self.aggregate_client_metrics(client_metrics)
         else:
             log(WARNING, "No client updates to aggregate. Global model parameters are not updated.")
-            aggregated_metrics = None
+            aggregated_metrics = {}
         
         aggregate_time_end = time.time()
         aggregate_time = aggregate_time_end - aggregate_time_start
@@ -568,13 +572,16 @@ class BaseServer:
         Get the clients info for the given round number.
         """
         assert round_number in self.rounds_selection, "Round number is not in the rounds selection"
-        clients_info = {}
+        clients_info = {
+            "benign_clients": [],
+            "malicious_clients": []
+        }
 
         for cls in self.rounds_selection[round_number].keys():
             if issubclass(cls, BenignClient):
-                clients_info["benign_clients"].extend(self.rounds_selection[round_number][cls])
+                clients_info["benign_clients"] = self.rounds_selection[round_number][cls]
             elif issubclass(cls, MaliciousClient):
-                clients_info["malicious_clients"].extend(self.rounds_selection[round_number][cls])
+                clients_info["malicious_clients"] = self.rounds_selection[round_number][cls]
 
         return clients_info
 

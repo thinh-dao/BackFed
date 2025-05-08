@@ -47,7 +47,7 @@ class FLTrustServer(RobustAggregationServer):
 
         # Convert central update to vector
         central_vector = self._parameters_dict_to_vector(self.central_update)
-        central_norm = torch.norm(central_vector)
+        central_norm = torch.linalg.norm(central_vector)
 
         score_list = []
         total_score = 0
@@ -60,7 +60,7 @@ class FLTrustServer(RobustAggregationServer):
             # Calculate cosine similarity and trust score
             client_cos = F.cosine_similarity(central_vector, local_vector, dim=0)
             client_cos = max(client_cos.item(), 0)
-            client_norm_ratio = central_norm / torch.norm(local_vector)
+            client_norm_ratio = central_norm / torch.linalg.norm(local_vector)
 
             score_list.append(client_cos)
             total_score += client_cos

@@ -6,11 +6,11 @@ Reference: https://www.usenix.org/conference/raid2020/presentation/fung
 import torch
 import numpy as np
 import hdbscan
-
+import wandb
 from logging import INFO, WARNING
 from fl_bdbench.servers.defense_categories import AnomalyDetectionServer, RobustAggregationServer
 from fl_bdbench.utils.logging_utils import log
-from fl_bdbench.const import StateDict
+from fl_bdbench.const import StateDict, client_id, num_examples
 from typing import List, Tuple
 
 class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
@@ -33,9 +33,10 @@ class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
         layer_names = list(state_dict.keys())
         return layer_names[-2:]
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]):
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
         """Aggregate client updates using Flame defensive mechanism."""
         if len(client_updates) == 0:
+            log(WARNING, "Flame: No client updates found.")
             return False
 
         # Keep everything on CPU for this function
@@ -88,6 +89,11 @@ class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
         if len(benign_indices) == 0:
             log(WARNING, "Flame: No benign clients found.")
             return False
+
+        # Evaluate detection and log metrics
+        malicious_clients = [client_id for idx, (client_id, _, _) in enumerate(client_updates) if idx not in benign_indices]
+        true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
+        self.evaluate_detection(malicious_clients, true_malicious_clients, len(client_updates))
 
         # Aggregate clipped differences from benign clients
         clip_norm = torch.median(torch.stack(euclidean_distances))

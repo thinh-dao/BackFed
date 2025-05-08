@@ -6,7 +6,7 @@ from typing import List, Tuple
 
 from fl_bdbench.servers.defense_categories import RobustAggregationServer
 from fl_bdbench.utils.logging_utils import log
-from fl_bdbench.const import StateDict
+from fl_bdbench.const import StateDict, client_id, num_examples
 from logging import INFO
 
 class TrimmedMeanServer(RobustAggregationServer):
@@ -30,7 +30,7 @@ class TrimmedMeanServer(RobustAggregationServer):
         self.trim_ratio = trim_ratio
         log(INFO, f"Initialized Trimmed Mean server with trim_ratio={trim_ratio}")
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> bool:
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> bool:
         """
         Aggregate client updates using trimmed mean.
 

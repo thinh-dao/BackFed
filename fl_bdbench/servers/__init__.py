@@ -8,7 +8,6 @@ from fl_bdbench.servers.defense_categories import (
     RobustAggregationServer,
     AnomalyDetectionServer,
     PostAggregationServer,
-    HybridDefenseServer
 )
 from fl_bdbench.servers.trimmed_mean_server import TrimmedMeanServer
 from fl_bdbench.servers.median_server import GeometricMedianServer, CoordinateMedianServer

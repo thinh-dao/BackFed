@@ -137,7 +137,7 @@ class FL_DataLoader:
             import pickle
             with open(semantic_path, 'wb') as f:
                 pickle.dump(poison_images, f)
-            print(f"Dumped {len(poison_images)} poison images to {semantic_path}")
+            log(INFO, f"Dumped {len(poison_images)} poison images to {semantic_path}")
 
         # Remove poison_index_cars samples from self.train_dataset
         self.trainset = torch.utils.data.Subset(self.trainset, [i for i in range(len(self.trainset)) if i not in poison_index_cars])
@@ -406,6 +406,6 @@ class FEMNIST(MNIST):
             utils.download_and_extract_archive(url, download_root=self.raw_folder, filename=filename, md5=md5)
 
         # process and save as torch files
-        print('Processing...')
+        log(INFO, 'Processing...')
         shutil.move(os.path.join(self.raw_folder, self.training_file), self.processed_folder)
         shutil.move(os.path.join(self.raw_folder, self.test_file), self.processed_folder)

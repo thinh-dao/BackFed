@@ -8,7 +8,7 @@ from logging import INFO
 
 from fl_bdbench.servers.defense_categories import RobustAggregationServer
 from fl_bdbench.utils.logging_utils import log
-from fl_bdbench.const import StateDict
+from fl_bdbench.const import StateDict, client_id, num_examples
 
 class FoolsGoldServer(RobustAggregationServer):
     """
@@ -21,7 +21,7 @@ class FoolsGoldServer(RobustAggregationServer):
         self.update_history: Dict[int, torch.Tensor] = {}  # client_id -> update_vector
         log(INFO, f"Initialized FoolsGold server with eta={eta}, confidence={confidence}")
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> bool:
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> bool:
         """
         Aggregate client updates using FoolsGold algorithm.
 

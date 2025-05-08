@@ -2,6 +2,7 @@
 FLDetector server implementation.
 """
 
+import torch
 import numpy as np
 import copy
 
@@ -12,79 +13,117 @@ from fl_bdbench.utils import log
 from logging import INFO, WARNING
 
 class FLDetectorServer(AnomalyDetectionServer):
-    """FLDetector server implementation."""
+    """FLDetector server implementation with PyTorch optimizations."""
 
     def __init__(self, server_config, window_size: int = 10, **kwargs):
         super().__init__(server_config, **kwargs)
         self.exclude_list = []
-        self.start_round = self.current_round # Start round is the round when the server starts to detect anomalies
+        self.start_round = self.current_round
         self.init_model = None
         self.window_size = window_size
 
-        # Initialize tracking variables
+        # Initialize tracking variables as PyTorch tensors
         self.weight_record = []
         self.grad_record = []
-        self.malicious_score = np.zeros((1, self.config.num_clients))
+        self.malicious_score = torch.zeros(1, self.config.num_clients, device=self.device)
         self.grad_list = []
         self.old_grad_list = []
         self.last_weight = 0
         self.last_grad = 0
 
-    def LBFGS(self, S_k_list: List[np.ndarray], Y_k_list: List[np.ndarray], v: np.ndarray) -> np.ndarray:
-        """Implement L-BFGS algorithm for Hessian-vector product approximation."""
-        curr_S_k = np.concatenate(S_k_list, axis=1)
-        curr_Y_k = np.concatenate(Y_k_list, axis=1)
-        S_k_time_Y_k = np.matmul(curr_S_k.T, curr_Y_k)
-        S_k_time_S_k = np.matmul(curr_S_k.T, curr_S_k)
+    def LBFGS(self, S_k_list: List[torch.Tensor], Y_k_list: List[torch.Tensor], v: torch.Tensor) -> torch.Tensor:
+        """Implement L-BFGS algorithm for Hessian-vector product approximation using PyTorch."""
+        # Concatenate tensors along dimension 1
+        curr_S_k = torch.cat(S_k_list, dim=1)
+        curr_Y_k = torch.cat(Y_k_list, dim=1)
+        
+        # Matrix multiplications using torch.matmul
+        S_k_time_Y_k = torch.matmul(curr_S_k.T, curr_Y_k)
+        S_k_time_S_k = torch.matmul(curr_S_k.T, curr_S_k)
 
-        R_k = np.triu(S_k_time_Y_k)
+        # Upper triangular part
+        R_k = torch.triu(S_k_time_Y_k)
         L_k = S_k_time_Y_k - R_k
-        sigma_k = np.matmul(Y_k_list[-1].T, S_k_list[-1]) / (np.matmul(S_k_list[-1].T, S_k_list[-1]))
-        D_k_diag = np.diag(S_k_time_Y_k)
+        
+        # Scalar computation
+        sigma_k = torch.matmul(Y_k_list[-1].T, S_k_list[-1]) / torch.matmul(S_k_list[-1].T, S_k_list[-1])
+        D_k_diag = torch.diag(S_k_time_Y_k)
 
-        upper_mat = np.concatenate([sigma_k * S_k_time_S_k, L_k], axis=1)
-        lower_mat = np.concatenate([L_k.T, -np.diag(D_k_diag)], axis=1)
-        mat = np.concatenate([upper_mat, lower_mat], axis=0)
-        mat_inv = np.linalg.inv(mat)
+        # Construct matrix for inversion
+        upper_mat = torch.cat([sigma_k * S_k_time_S_k, L_k], dim=1)
+        lower_mat = torch.cat([L_k.T, -torch.diag(D_k_diag)], dim=1)
+        mat = torch.cat([upper_mat, lower_mat], dim=0)
+        
+        # Matrix inversion
+        mat_inv = torch.linalg.inv(mat)
 
+        # Final computation
         approx_prod = sigma_k * v
-        p_mat = np.concatenate([np.matmul(curr_S_k.T, sigma_k * v), np.matmul(curr_Y_k.T, v)], axis=0)
-        approx_prod -= np.matmul(np.matmul(np.concatenate([sigma_k * curr_S_k, curr_Y_k], axis=1), mat_inv), p_mat)
+        p_mat = torch.cat([
+            torch.matmul(curr_S_k.T, sigma_k * v), 
+            torch.matmul(curr_Y_k.T, v)
+        ], dim=0)
+        
+        approx_prod -= torch.matmul(
+            torch.matmul(torch.cat([sigma_k * curr_S_k, curr_Y_k], dim=1), mat_inv), 
+            p_mat
+        )
 
         return approx_prod
 
-    def simple_mean(self, old_gradients: List[np.ndarray], param_list: List[np.ndarray],
-                   num_malicious: int = 0, hvp: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
-        """Calculate mean of parameters and distances if HVP is provided."""
+    def simple_mean(self, old_gradients: List[torch.Tensor], param_list: List[torch.Tensor],
+                   num_malicious: int = 0, hvp: torch.Tensor = None) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Calculate mean of parameters and distances if HVP is provided using PyTorch."""
+        # Stack parameters for efficient computation
+        stacked_params = torch.cat(param_list, dim=1)
+        
         if hvp is not None:
-            pred_grad = []
-            for grad in old_gradients:
-                pred_grad.append(grad + hvp)
-
-            pred = np.zeros(len(param_list))
-            pred[:num_malicious] = 1
-            distance = np.linalg.norm((np.concatenate(pred_grad, axis=1) - np.concatenate(param_list, axis=1)), axis=0)
-            distance = distance / np.sum(distance)
+            # Compute predicted gradients
+            pred_grad = [grad + hvp for grad in old_gradients]
+            stacked_pred_grad = torch.cat(pred_grad, dim=1)
+            
+            # Create prediction tensor
+            pred = torch.zeros(len(param_list), device=self.device)
+            if num_malicious > 0:
+                pred[:num_malicious] = 1
+                
+            # Compute distances efficiently
+            distance = torch.linalg.norm(stacked_pred_grad - stacked_params, dim=0)
+            distance = distance / torch.sum(distance)
         else:
             distance = None
 
-        mean = np.mean(np.concatenate(param_list, axis=1), axis=-1, keepdims=True)
+        # Compute mean efficiently
+        mean = torch.mean(stacked_params, dim=1, keepdim=True)
         return mean, distance
 
-    def gap_statistics(self, data: np.ndarray, num_sampling: int, K_max: int, n: int) -> int:
-        """Implement gap statistics for optimal cluster number selection."""
-        data = np.reshape(data, (data.shape[0], -1))
-        data_c = np.ndarray(shape=data.shape)
-
-        # Linear transformation
-        for i in range(data.shape[1]):
-            data_c[:,i] = (data[:,i] - np.min(data[:,i])) / (np.max(data[:,i]) - np.min(data[:,i]))
+    def gap_statistics(self, data: torch.Tensor, num_sampling: int, K_max: int, n: int) -> int:
+        """Implement gap statistics for optimal cluster number selection.
+        
+        Note: We convert to numpy for sklearn compatibility, but use PyTorch for preprocessing.
+        """
+        # Reshape data
+        data = data.reshape(data.shape[0], -1)
+        
+        # Convert to numpy for sklearn compatibility
+        data_np = data.cpu().numpy()
+        
+        # Normalize data (min-max scaling)
+        data_c = np.zeros_like(data_np)
+        for i in range(data_np.shape[1]):
+            min_val = np.min(data_np[:, i])
+            max_val = np.max(data_np[:, i])
+            if max_val > min_val:
+                data_c[:, i] = (data_np[:, i] - min_val) / (max_val - min_val)
+            else:
+                data_c[:, i] = 0.0
 
         gaps = []
         s_values = []
 
         for k in range(1, K_max + 1):
-            kmeans = KMeans(n_clusters=k, init='k-means++').fit(data_c)
+            # Fit KMeans
+            kmeans = KMeans(n_clusters=k, init='k-means++', random_state=self.config.seed).fit(data_c)
             centers = kmeans.cluster_centers_
             labels = kmeans.labels_
 
@@ -92,21 +131,23 @@ class FLDetectorServer(AnomalyDetectionServer):
             wk = 0
             for i in range(k):
                 cluster_points = data_c[labels == i]
-                wk += np.sum(np.linalg.norm(cluster_points - centers[i], axis=1))
+                if len(cluster_points) > 0:
+                    wk += np.sum(np.linalg.norm(cluster_points - centers[i], axis=1))
 
             # Calculate expected dispersion for random data
             wkbs = []
             for _ in range(num_sampling):
-                random_data = np.random.uniform(0, 1, size=(n, data.shape[1]))
-                kmeans_b = KMeans(n_clusters=k, init='k-means++').fit(random_data)
+                random_data = np.random.uniform(0, 1, size=(n, data_c.shape[1]))
+                kmeans_b = KMeans(n_clusters=k, init='k-means++', random_state=self.config.seed).fit(random_data)
                 wkb = 0
                 for i in range(k):
                     cluster_points = random_data[kmeans_b.labels_ == i]
-                    wkb += np.sum(np.linalg.norm(cluster_points - kmeans_b.cluster_centers_[i], axis=1))
-                wkbs.append(np.log(wkb))
+                    if len(cluster_points) > 0:
+                        wkb += np.sum(np.linalg.norm(cluster_points - kmeans_b.cluster_centers_[i], axis=1))
+                wkbs.append(np.log(wkb + 1e-10))  # Add small epsilon to avoid log(0)
 
             # Calculate gap statistic
-            gap = np.mean(wkbs) - np.log(wk)
+            gap = np.mean(wkbs) - np.log(wk + 1e-10)  # Add small epsilon to avoid log(0)
             sd = np.std(wkbs) * np.sqrt(1 + 1/num_sampling)
 
             gaps.append(gap)
@@ -117,12 +158,9 @@ class FLDetectorServer(AnomalyDetectionServer):
             if gaps[k-1] >= gaps[k] - s_values[k]:
                 return k
         return K_max
-
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, Dict]]) -> Dict:
-        """Aggregate client updates using FLDetector."""
-        if len(client_updates) == 0:
-            return False
-
+    
+    def detect_anomalies(self, client_updates: List[Tuple[int, int, Dict]]) -> Tuple[List[int], List[int]]:
+        """Detect anomalies in the client updates using PyTorch optimizations."""
         if self.current_round <= self.start_round:
             self.init_model = {name: param.clone() for name, param in self.global_model.state_dict().items()}
 
@@ -132,19 +170,21 @@ class FLDetectorServer(AnomalyDetectionServer):
                 log(INFO, f"FLDetector: Skipping client {client_id}")
                 continue
 
+            # Apply update to a copy of the global model
             local_model = copy.deepcopy(self.global_model)
             for name, param in update.items():
                 local_model.state_dict()[name].copy_(param)
 
-            # Convert model parameters to numpy arrays for detection
-            grad_params = [param.detach().cpu().numpy() for name, param in local_model.state_dict().items()]
+            # Extract model parameters as tensors (keeping on device)
+            grad_params = [param.detach() for name, param in local_model.state_dict().items()]
             self.grad_list.append(grad_params)
 
-        param_list = [np.concatenate([p.reshape(-1, 1) for p in params], axis=0) for params in self.grad_list]
+        # Flatten and concatenate parameters
+        param_list = [torch.cat([p.reshape(-1, 1) for p in params], dim=0) for params in self.grad_list]
 
-        # Get current global weights
-        current_weights = [param.detach().cpu().numpy() for name, param in self.global_model.named_parameters()]
-        weight = np.concatenate([w.reshape(-1, 1) for w in current_weights], axis=0)
+        # Get current global weights (keeping on device)
+        current_weights = [param.detach() for name, param in self.global_model.named_parameters()]
+        weight = torch.cat([w.reshape(-1, 1) for w in current_weights], dim=0)
 
         # Calculate HVP if enough rounds have passed
         hvp = None
@@ -161,25 +201,28 @@ class FLDetectorServer(AnomalyDetectionServer):
 
         # Update malicious scores
         if distance is not None and self.current_round - self.start_round > self.window_size:
-            self.malicious_score = np.row_stack((self.malicious_score, distance))
+            self.malicious_score = torch.cat([self.malicious_score, distance.unsqueeze(0)], dim=0)
 
         # Detect anomalies using gap statistics
         if self.malicious_score.shape[0] > self.window_size:
-            score = np.sum(self.malicious_score[-self.window_size:], axis=0)
+            score = torch.sum(self.malicious_score[-self.window_size:], dim=0)
 
+            # Convert to numpy for gap statistics
+            score_np = score.cpu().numpy()
+            
             if self.gap_statistics(score, num_sampling=20, K_max=10,
                                  n=len(client_updates)-len(self.exclude_list)) >= 2:
 
                 # Cluster clients into benign and malicious
-                kmeans = KMeans(n_clusters=2)
-                kmeans.fit(score.reshape(-1, 1))
+                kmeans = KMeans(n_clusters=2, init='k-means++', random_state=self.config.seed)
+                kmeans.fit(score_np.reshape(-1, 1))
                 labels = kmeans.labels_
 
                 # Identify malicious clients
-                if np.mean(score[labels==0]) < np.mean(score[labels==1]):
+                if np.mean(score_np[labels==0]) < np.mean(score_np[labels==1]):
                     labels = 1 - labels
 
-                log(WARNING, f'FLDetector: Malicious score - Benign: {np.mean(score[labels==1])}, Malicious: {np.mean(score[labels==0])}')
+                log(WARNING, f'FLDetector: Malicious score - Benign: {np.mean(score_np[labels==1])}, Malicious: {np.mean(score_np[labels==0])}')
 
                 # Update exclude list
                 for i, label in enumerate(labels):
@@ -193,7 +236,7 @@ class FLDetectorServer(AnomalyDetectionServer):
                 self.start_round = self.current_round
                 self.weight_record = []
                 self.grad_record = []
-                self.malicious_score = np.zeros((1, len(client_updates) - len(self.exclude_list)))
+                self.malicious_score = torch.zeros(1, len(client_updates) - len(self.exclude_list), device=self.device)
                 self.grad_list = []
                 self.old_grad_list = []
                 self.last_weight = 0
@@ -213,8 +256,8 @@ class FLDetectorServer(AnomalyDetectionServer):
         self.old_grad_list = param_list
         self.grad_list = []
 
-        # Aggregate updates from non-excluded clients
-        filtered_updates = [(cid, num, update) for cid, num, update in client_updates
-                          if cid not in self.exclude_list]
+        client_ids = [client_id for client_id, _, _ in client_updates]
+        benign_clients = [client_id for client_id in client_ids if client_id not in self.exclude_list]
+        malicious_clients = [client_id for client_id in client_ids if client_id in self.exclude_list]
 
-        return super().aggregate_client_updates(filtered_updates)
+        return benign_clients, malicious_clients
