@@ -5,11 +5,11 @@ import torch
 from typing import List, Tuple
 from logging import INFO
 
-from fl_bdbench.servers.base_server import BaseServer
+from fl_bdbench.servers.defense_categories import RobustAggregationServer, ClientSideDefenseServer
 from fl_bdbench.utils.logging_utils import log
 from fl_bdbench.const import StateDict
 
-class NormClippingServer(BaseServer):
+class NormClippingServer(RobustAggregationServer):
     """
     Server that clips the norm of client updates to defend against poisoning attacks.
     """
@@ -28,7 +28,7 @@ class NormClippingServer(BaseServer):
     def clip_updates_inplace(self, client_diffs: List[StateDict]) -> None:
         """
         Clip the norm of client_diffs (L_i - G) in-place.
-        
+
         Args:
             client_diffs: List of client_diffs (state dicts)
         """
@@ -37,10 +37,10 @@ class NormClippingServer(BaseServer):
             for name, param in client_diff.items():
                 if 'weight' in name or 'bias' in name:
                     flatten_weights.append(param.view(-1))
-            
+
             if not flatten_weights:
                 continue
-                
+
             flatten_weights = torch.cat(flatten_weights)
             weight_diff_norm = torch.norm(flatten_weights, p=2)
 
@@ -50,7 +50,6 @@ class NormClippingServer(BaseServer):
                     if 'weight' in name or 'bias' in name:
                         client_diff[name].mul_(scaling_factor)
 
-    @torch.no_grad()
     def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> StateDict:
         """Aggregate client updates with norm clipping."""
         if len(client_updates) == 0:
@@ -77,13 +76,13 @@ class NormClippingServer(BaseServer):
 
         return True
 
-class WeakDPServer(NormClippingServer):
+class WeakDPServer(ClientSideDefenseServer, NormClippingServer):
     """
     Server that implements differential privacy with fixed clipping and Gaussian noise.
     """
-    def __init__(self, server_config, server_type="weakdp", strategy="unweighted_fedavg", 
+    def __init__(self, server_config, server_type="weakdp", strategy="unweighted_fedavg",
                  std_dev=0.025, clipping_norm=5.0):
-        
+
         """
         Args:
             server_config: Configuration for the server.
@@ -93,24 +92,24 @@ class WeakDPServer(NormClippingServer):
             clipping_norm: Clipping norm for the Gaussian noise.
         """
         super(WeakDPServer, self).__init__(server_config, server_type)
-        
+
         if std_dev < 0:
             raise ValueError("The std_dev should be a non-negative value.")
         if clipping_norm <= 0:
             raise ValueError("The clipping norm should be a positive value.")
-            
+
         self.std_dev = std_dev
         self.clipping_norm = clipping_norm
         self.strategy = strategy
         log(INFO, f"Initialized WeakDP server with std_dev={std_dev}, clipping_norm={clipping_norm}")
-    
+
     @torch.no_grad()
     def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> StateDict:
         """Aggregate client updates with DP guarantees."""
         super().aggregate_client_updates(client_updates)
         self.add_gaussian_noise_inplace(self.global_model_params)
         return True
-    
+
     def add_gaussian_noise_inplace(self, state_dict: StateDict) -> None:
         """Add Gaussian noise to model parameters."""
         for name, param in state_dict.items():

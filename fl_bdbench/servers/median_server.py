@@ -4,14 +4,14 @@ Geometric Median server implementation for FL.
 import torch
 import numpy as np
 
-from fl_bdbench.servers.base_server import BaseServer
+from fl_bdbench.servers.defense_categories import RobustAggregationServer
 from fl_bdbench.utils.logging_utils import log
 from fl_bdbench.const import StateDict
 from logging import INFO
 from typing import List, Tuple
 from scipy.optimize import minimize
 
-class CoordinateMedianServer(BaseServer):
+class CoordinateMedianServer(RobustAggregationServer):
     """
     Server that implements coordinate-wise median aggregation to mitigate the impact of malicious clients.
 
@@ -57,7 +57,7 @@ class CoordinateMedianServer(BaseServer):
         return True
 
 
-class GeometricMedianServer(BaseServer):
+class GeometricMedianServer(RobustAggregationServer):
     """
     Server that implements geometric median aggregation to mitigate the impact of malicious clients.
 
@@ -83,10 +83,10 @@ class GeometricMedianServer(BaseServer):
     def _compute_geometric_median(self, client_weights: List[List[np.ndarray]]) -> List[np.ndarray]:
         """
         Compute the geometric median of client weights.
-        
+
         Args:
             client_weights: List of client model weights
-            
+
         Returns:
             Geometric median of client weights
         """
@@ -102,13 +102,13 @@ class GeometricMedianServer(BaseServer):
             flattened = np.concatenate(flat_list)
             flattened_weights.append(flattened)
             shapes = shapes_list
-        
+
         # Convert to numpy array
         flattened_weights = np.array(flattened_weights)
-        
+
         # Use mean as initial guess
         initial_guess = np.mean(flattened_weights, axis=0)
-        
+
         # Compute geometric median
         result = minimize(
             self._geometric_median_objective,
@@ -117,9 +117,9 @@ class GeometricMedianServer(BaseServer):
             method='L-BFGS-B',
             options={'maxiter': 100}
         )
-        
+
         geometric_median = result.x
-        
+
         # Reshape back to original shapes
         aggregated_weights = []
         start_idx = 0
@@ -128,7 +128,7 @@ class GeometricMedianServer(BaseServer):
             layer_weights = geometric_median[start_idx:start_idx+size].reshape(shape)
             aggregated_weights.append(layer_weights)
             start_idx += size
-        
+
         return aggregated_weights
 
     @torch.no_grad()

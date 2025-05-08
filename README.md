@@ -146,17 +146,34 @@ Each defense has its own configuration parameters in the `aggregator_config` sec
 
 ### Implemented Defenses
 
-- **FedAvg**: Standard federated averaging
-- **TrimmedMean**: Removes extreme updates
-- **MultiKrum**: Selects a subset of client updates
+Our framework provides various defense mechanisms categorized as follows:
+
+#### Client-Side Defenses
+These defenses operate during client training by modifying the client's training process:
 - **FedProx**: Adds a proximal term to client optimization
-- **FLAME**: Uses clustering to identify malicious updates
-- **FoolsGold**: Identifies sybil attacks
-- **WeakDP**: Adds differential privacy
-- **DeepSight**: Uses clustering for backdoor detection
-- **RFLBAT**: PCA-based detection of malicious updates
-- **FLTrust**: Uses a trusted dataset for update validation
-- **FLARE**: Maximum Mean Discrepancy-based detection
+- **WeakDP**: Applies differential privacy at the client level
+
+#### Robust Aggregation Defenses
+These defenses modify the aggregation algorithm to be resilient against malicious updates:
+- **TrimmedMean**: Removes extreme updates from client updates
+- **MultiKrum**: Selects a subset of client updates that are closest to each other
+- **GeometricMedian**: Uses geometric median for aggregation
+- **CoordinateMedian**: Uses coordinate-wise median for aggregation
+- **NormClipping**: Clips client updates to a maximum norm
+- **FLTrust**: Uses a trusted dataset to assign trust scores for weighted aggregation
+- **RobustLR**: Adjusts learning rates based on client update trustworthiness
+
+#### Anomaly Detection Defenses
+These defenses identify and filter malicious updates by detecting statistical anomalies:
+- **FoolsGold**: Identifies sybil attacks by detecting similar updates
+- **DeepSight**: Uses clustering-based approach to detect backdoor attacks
+- **RFLBAT**: Uses PCA-based detection of malicious updates
+- **FLDetector**: Uses a sliding window approach to detect anomalies
+- **FLARE**: Uses Maximum Mean Discrepancy (MMD) to detect anomalies and assign trust scores
+
+#### Hybrid Defenses
+These defenses combine techniques from multiple categories:
+- **FLAME**: Combines anomaly detection (clustering) with robust aggregation techniques
 
 ## Examples
 

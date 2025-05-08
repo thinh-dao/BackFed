@@ -7,11 +7,12 @@ https://arxiv.org/abs/1812.06127
 import torch
 
 from fl_bdbench.servers.fedavg_server import UnweightedFedAvgServer
+from fl_bdbench.servers.defense_categories import ClientSideDefenseServer
 from fl_bdbench.utils.logging_utils import log
 from logging import INFO
 from typing import Tuple, Dict, Any
 
-class FedProxServer(UnweightedFedAvgServer):
+class FedProxServer(UnweightedFedAvgServer, ClientSideDefenseServer):
     """
     FedProx server implementation.
 

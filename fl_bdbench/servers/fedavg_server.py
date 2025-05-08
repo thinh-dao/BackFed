@@ -5,7 +5,7 @@ import torch
 
 from fl_bdbench.servers.base_server import BaseServer
 from fl_bdbench.utils.logging_utils import log
-from logging import INFO
+from logging import INFO, WARNING
 from typing import List, Tuple
 from fl_bdbench.const import StateDict
 
@@ -22,12 +22,12 @@ class UnweightedFedAvgServer(BaseServer):
         self.eta = eta
         log(INFO, f"Initialized UnweightedFedAvg server with eta={eta}")
 
-    @torch.no_grad()
     def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]):
         """
         Aggregate client updates using FedAvg with equal weights.
         """
         if not client_updates:
+            log(WARNING, "No client updates found, using global model")
             return False
 
         num_clients = len(client_updates)
@@ -64,7 +64,6 @@ class WeightedFedAvgServer(BaseServer):
         self.eta = eta
         log(INFO, f"Initialized Weighted FedAvg server with eta={eta}")
 
-    @torch.no_grad()
     def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]):
         """
         Aggregate client updates using FedAvg with weights proportional to number of samples.
