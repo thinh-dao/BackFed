@@ -13,7 +13,7 @@ from fl_bdbench.utils.logging_utils import log
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from fl_bdbench.servers.defense_categories import AnomalyDetectionServer
-from fl_bdbench.const import StateDict
+from fl_bdbench.const import StateDict, client_id, num_examples
 from typing import List, Tuple
 
 class RFLBATServer(AnomalyDetectionServer):
@@ -84,14 +84,8 @@ class RFLBATServer(AnomalyDetectionServer):
         plt.savefig(os.path.join(self.plot_dir, f'pca_round_{self.current_round}.png'))
         plt.close()
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> StateDict:
-        """
-        Aggregate client updates using RFLBAT defensive mechanism.
-        """
-        if len(client_updates) == 0:
-            return self.global_model.state_dict()
-
-        # Extract and flatten updates
+    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> Tuple[List[int], List[int]]:
+        """Detect anomalies in the client updates."""
         flattened_updates = []
         client_ids = []
         for client_id, _, update in client_updates:
@@ -160,5 +154,6 @@ class RFLBATServer(AnomalyDetectionServer):
         if self.save_plots:
             self._save_pca_plot(X_dr, final_accepted)
 
-        benign_updates = [client_updates[i] for i in final_accepted]
-        return super().aggregate_client_updates(benign_updates)
+        benign_clients = [client_ids[i] for i in final_accepted]
+        malicious_clients = [client_id for client_id in client_ids if client_id not in benign_clients]
+        return benign_clients, malicious_clients

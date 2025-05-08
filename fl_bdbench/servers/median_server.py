@@ -6,7 +6,7 @@ import numpy as np
 
 from fl_bdbench.servers.defense_categories import RobustAggregationServer
 from fl_bdbench.utils.logging_utils import log
-from fl_bdbench.const import StateDict
+from fl_bdbench.const import StateDict, client_id, num_examples
 from logging import INFO
 from typing import List, Tuple
 from scipy.optimize import minimize
@@ -30,7 +30,7 @@ class CoordinateMedianServer(RobustAggregationServer):
         super(CoordinateMedianServer, self).__init__(server_config, server_type)
         log(INFO, f"Initialized Coordinate-wise Median server")
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> bool:
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> bool:
         """
         Aggregate client updates using coordinate-wise median.
 
@@ -132,7 +132,7 @@ class GeometricMedianServer(RobustAggregationServer):
         return aggregated_weights
 
     @torch.no_grad()
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> bool:
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> bool:
         """
         Aggregate client updates using geometric median.
 

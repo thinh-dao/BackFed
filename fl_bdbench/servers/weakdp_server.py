@@ -7,7 +7,7 @@ from logging import INFO
 
 from fl_bdbench.servers.defense_categories import RobustAggregationServer, ClientSideDefenseServer
 from fl_bdbench.utils.logging_utils import log
-from fl_bdbench.const import StateDict
+from fl_bdbench.const import StateDict, client_id, num_examples
 
 class NormClippingServer(RobustAggregationServer):
     """
@@ -42,7 +42,7 @@ class NormClippingServer(RobustAggregationServer):
                 continue
 
             flatten_weights = torch.cat(flatten_weights)
-            weight_diff_norm = torch.norm(flatten_weights, p=2)
+            weight_diff_norm = torch.linalg.norm(flatten_weights, p=2)
 
             if weight_diff_norm > self.clipping_norm:
                 scaling_factor = self.clipping_norm / weight_diff_norm
@@ -50,7 +50,7 @@ class NormClippingServer(RobustAggregationServer):
                     if 'weight' in name or 'bias' in name:
                         client_diff[name].mul_(scaling_factor)
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> StateDict:
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> StateDict:
         """Aggregate client updates with norm clipping."""
         if len(client_updates) == 0:
             return False
@@ -104,7 +104,7 @@ class WeakDPServer(ClientSideDefenseServer, NormClippingServer):
         log(INFO, f"Initialized WeakDP server with std_dev={std_dev}, clipping_norm={clipping_norm}")
 
     @torch.no_grad()
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]) -> StateDict:
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> StateDict:
         """Aggregate client updates with DP guarantees."""
         super().aggregate_client_updates(client_updates)
         self.add_gaussian_noise_inplace(self.global_model_params)

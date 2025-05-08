@@ -80,7 +80,7 @@ save_model_rounds: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000] # Save th
 # 2. checkpoint is "wandb", the weight will be loaded from wandb
 # 3. checkpoint is a weight path (.pth), the weight will be loaded from the path
 # If checkpoint is Null, the weight will not be loaded
-checkpoint: 2000 # A weight path (.pth) | "wandb" (load from wandb) | Null
+checkpoint: checkpoints/CIFAR10_unweighted_fedavg/ResNet18_round_2000_dir_0.5.pth # A number (round) | weight path (.pth) | "wandb" (load from wandb) | Null
 
 # *Logging configuration
 save_logging: csv # Choose from [wandb, csv (save to table), both (wandb & csv), Null (no save logging)]

@@ -312,7 +312,7 @@ class NeurotoxinClient(MaliciousClient):
             for _, param in model.named_parameters():
                 if param.requires_grad:
                     grad_res.append(param.grad.view(-1))
-                    l2_norm_l = torch.norm(param.grad.view(-1).detach().clone().cuda())/float(len(param.grad.view(-1)))
+                    l2_norm_l = torch.linalg.norm(param.grad.view(-1).detach().clone().cuda())/float(len(param.grad.view(-1)))
                     l2_norm_list.append(l2_norm_l)
                     sum_grad_layer += l2_norm_l.item()
 

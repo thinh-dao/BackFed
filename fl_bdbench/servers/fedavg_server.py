@@ -7,7 +7,7 @@ from fl_bdbench.servers.base_server import BaseServer
 from fl_bdbench.utils.logging_utils import log
 from logging import INFO, WARNING
 from typing import List, Tuple
-from fl_bdbench.const import StateDict
+from fl_bdbench.const import StateDict, client_id, num_examples
 
 class UnweightedFedAvgServer(BaseServer):
     """
@@ -22,7 +22,7 @@ class UnweightedFedAvgServer(BaseServer):
         self.eta = eta
         log(INFO, f"Initialized UnweightedFedAvg server with eta={eta}")
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]):
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
         """
         Aggregate client updates using FedAvg with equal weights.
         """
@@ -64,7 +64,7 @@ class WeightedFedAvgServer(BaseServer):
         self.eta = eta
         log(INFO, f"Initialized Weighted FedAvg server with eta={eta}")
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[int, int, StateDict]]):
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
         """
         Aggregate client updates using FedAvg with weights proportional to number of samples.
         """

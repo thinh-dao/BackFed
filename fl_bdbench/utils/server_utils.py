@@ -34,7 +34,7 @@ def clip_updates_inplace(delta_weights_per_client: Dict[str, torch.Tensor], clip
     """Clip the model updates within the clipping norm in place"""
     for client_weights in delta_weights_per_client:
         flatten_weights = torch.cat([weight.flatten() for weight in client_weights.values()])
-        weight_diff_norm = torch.norm(flatten_weights, p=2)
+        weight_diff_norm = torch.linalg.norm(flatten_weights, p=2)
         scaling_factor = min(1, clipping_norm / weight_diff_norm)
         
         for param in client_weights.values():
@@ -45,7 +45,7 @@ def clip_updates(delta_weights_per_client: Dict[str, torch.Tensor], clipping_nor
     clipped_delta_weights_per_client = copy.deepcopy(delta_weights_per_client)
     for client_weights in clipped_delta_weights_per_client:
         flatten_weights = torch.cat([weight.flatten() for weight in client_weights.values()])
-        weight_diff_norm = torch.norm(flatten_weights, p=2)
+        weight_diff_norm = torch.linalg.norm(flatten_weights, p=2)
         scaling_factor = min(1, clipping_norm / weight_diff_norm)
         
         for param in client_weights.values():
@@ -103,7 +103,7 @@ def model_dist(client_params: Dict[str, torch.Tensor], global_params: Dict[str, 
     global_params_tensor = torch.cat([param.flatten() for name, param in global_params.items() 
                                     if "weight" in name or "bias" in name])
     
-    return torch.norm(client_params_tensor - global_params_tensor, p=2)
+    return torch.linalg.norm(client_params_tensor - global_params_tensor, p=2)
 
 def model_dist_layer(client_params: Dict[str, torch.Tensor], global_params: Dict[str, torch.Tensor]):
     """
@@ -119,6 +119,6 @@ def model_dist_layer(client_params: Dict[str, torch.Tensor], global_params: Dict
     for name, client_param in client_params.items():
         if "weight" in name or "bias" in name:
             global_param = global_params[name]
-            dist += torch.norm((client_param - global_param).flatten(), p=2)
+            dist += torch.linalg.norm((client_param - global_param).flatten(), p=2)
 
     return dist

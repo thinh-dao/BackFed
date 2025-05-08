@@ -20,14 +20,11 @@ from fl_bdbench.utils.system_utils import (
 from fl_bdbench.utils.logging_utils import (
     log,
     CSVLogger,
-    get_console
-)
-
-from fl_bdbench.utils.tracking_utils import (
-    init_wandb,
+    get_console,
     init_csv_logger,
+    init_wandb,
     plot_csv,
-    save_model_to_wandb_artifact,
+    save_model_to_wandb_artifact
 )
 
 from fl_bdbench.utils.server_utils import (
@@ -50,15 +47,9 @@ __all__ = [
     # System utilities
     'system_startup', 'set_attack_config', 'set_random_seed', 'set_debug_settings', 'pool_size_from_resources',
     # Logging utilities
-    'log', 'CSVLogger', 'get_console',
-    # Tracking utilities
-    'init_wandb', 'init_csv_logger', 'plot_csv', 'save_model_to_wandb_artifact',
-    # Misc utilities
-    'sync_to_async', 'with_timeout',
+    'log', 'CSVLogger', 'get_console', 'init_wandb', 'init_csv_logger', 'plot_csv', 'save_model_to_wandb_artifact',
     # Server utilities
-    'weighted_average', 'get_evalulate_fn', 'test', 'clip_updates_inplace', 'clip_updates', 'model_dist_layer',
-    # Clustering utilities
-    'gap_statistics', 'compute_wk', 'generate_reference_data',
+    'test', 'clip_updates_inplace', 'clip_updates', 'model_dist_layer',
     # Misc utilities
-    'format_time_hms'
+    'sync_to_async', 'with_timeout', 'format_time_hms'
 ]
