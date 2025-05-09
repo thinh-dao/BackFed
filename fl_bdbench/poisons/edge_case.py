@@ -15,11 +15,6 @@ DEFAULT_TRANSFORMS = {
         transforms.ToDtype(torch.float32, scale=True),
         transforms.Resize((32, 32))
     ]),
-    "MNIST": transforms.Compose([
-        transforms.ToImage(), 
-        transforms.ToDtype(torch.float32, scale=True),
-        transforms.Resize((28, 28))
-    ]),
     "NIST": transforms.Compose([
         transforms.ToImage(), 
         transforms.ToDtype(torch.float32, scale=True),
@@ -35,7 +30,9 @@ class EdgeCase(Poison):
             raise ValueError(f"Edge-case is not supported for all2all attack")
 
         dataset = self.params.dataset.upper()
-        if dataset in DEFAULT_TRANSFORMS:
+        if 'NIST' in dataset:
+            self.transform_edge_case = DEFAULT_TRANSFORMS['NIST']
+        elif dataset in DEFAULT_TRANSFORMS:
             self.transform_edge_case = DEFAULT_TRANSFORMS[dataset]
         else:
             raise ValueError(f"Unsupported dataset: {dataset}")

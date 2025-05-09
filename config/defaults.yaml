@@ -97,8 +97,10 @@ wandb:
   save_model: False # Whether to save the model to wandb
   save_model_round: -1 # Default: Save model at last round
 
+# *Visualization
 plot_data_distribution: False
 plot_client_selection: False
+disable_progress_bar: False
 
 ########################################################
 # *Aggregator configuration

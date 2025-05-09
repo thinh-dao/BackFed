@@ -83,7 +83,7 @@ class ClientManager:
         for r in range(self.start_round, self.start_round + self.config.num_rounds):
             if r not in self.poison_rounds:
                 self.rounds_selection[r] = {
-                    self.benign_client_class: random.sample(self.benign_clients, self.config.num_clients_per_round)
+                    self.benign_client_class: random.sample(range(self.config.num_clients), self.config.num_clients_per_round)
                 }
 
     def _single_adversary_selection(self, selected_rounds):
