@@ -3,14 +3,13 @@ RFLBAT (Robust Federated Learning with Backdoor Attack Tolerance) server impleme
 This version uses PCA and clustering-based detection of malicious updates.
 """
 import numpy as np
-import logging
 import sklearn.metrics.pairwise as smp
 import matplotlib.pyplot as plt
 import os
+import torch
 
-from logging import WARNING
+from logging import WARNING, INFO
 from fl_bdbench.utils.logging_utils import log
-from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from fl_bdbench.servers.defense_categories import AnomalyDetectionServer
 from fl_bdbench.const import StateDict, client_id, num_examples
@@ -26,7 +25,7 @@ class RFLBATServer(AnomalyDetectionServer):
                  server_type="rflbat",
                  eps1=10.0,  # First-stage filtering threshold
                  eps2=4.0,   # Second-stage filtering threshold
-                 save_plots=True):
+                 save_plots=False):
         super(RFLBATServer, self).__init__(server_config, server_type)
         self.eps1 = eps1
         self.eps2 = eps2
@@ -45,59 +44,23 @@ class RFLBATServer(AnomalyDetectionServer):
                 flattened.extend(param.cpu().numpy().flatten())
         return np.array(flattened)
 
-    def _gap_statistics(self, data: np.ndarray, max_clusters=10, n_refs=5) -> int:
-        """
-        Compute optimal number of clusters using Gap Statistics.
-        """
-        gaps = np.zeros(max_clusters)
-        for k in range(1, max_clusters + 1):
-            kmeans = KMeans(n_clusters=k, init='k-means++')
-            kmeans.fit(data)
-
-            # Calculate within-cluster dispersion
-            cluster_dispersion = kmeans.inertia_
-
-            # Generate reference datasets
-            ref_dispersions = []
-            for _ in range(n_refs):
-                rand_data = np.random.uniform(low=data.min(), high=data.max(),
-                                           size=data.shape)
-                kmeans.fit(rand_data)
-                ref_dispersions.append(kmeans.inertia_)
-
-            # Calculate gap statistic
-            gap = np.log(np.mean(ref_dispersions)) - np.log(cluster_dispersion)
-            gaps[k-1] = gap
-
-        # Find optimal number of clusters
-        optimal_k = np.argmax(gaps) + 1
-        return optimal_k
-
-    def _save_pca_plot(self, X_dr: np.ndarray, accepted_indices: List[int]):
-        """Save PCA visualization plot."""
-        plt.figure(figsize=(10, 8))
-        plt.scatter(X_dr[:, 0], X_dr[:, 1], c='gray', alpha=0.5, label='All updates')
-        plt.scatter(X_dr[accepted_indices, 0], X_dr[accepted_indices, 1],
-                   c='green', label='Accepted updates')
-        plt.title(f'PCA visualization - Round {self.current_round}')
-        plt.legend()
-        plt.savefig(os.path.join(self.plot_dir, f'pca_round_{self.current_round}.png'))
-        plt.close()
-
     def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> Tuple[List[int], List[int]]:
         """Detect anomalies in the client updates."""
-        flattened_updates = []
         client_ids = []
+        update_tensors = []
+        
+        # First collect all tensors in a list
         for client_id, _, update in client_updates:
-            flattened = self._flatten_model_updates(update)
-            flattened_updates.append(flattened)
+            flattened = torch.cat([p.flatten() for p in update.values()], dim=0)
+            update_tensors.append(flattened)
             client_ids.append(client_id)
-
-        X = np.array(flattened_updates)
-
-        # Apply PCA
-        pca = PCA(n_components=2)
-        X_dr = pca.fit_transform(X)
+        
+        # Stack tensors along a new dimension
+        flattened_updates = torch.stack(update_tensors)
+        
+        # Perform PCA
+        U, S, V = torch.pca_lowrank(flattened_updates)
+        X_dr = torch.mm(flattened_updates, V[:,:2]).cpu().numpy()
 
         # First stage filtering based on Euclidean distances
         eu_distances = []
@@ -117,7 +80,8 @@ class RFLBATServer(AnomalyDetectionServer):
 
         # Determine optimal number of clusters
         X_filtered = X_dr[accepted_indices]
-        n_clusters = self._gap_statistics(X_filtered)
+        n_clusters = self.gap_statistics(X_filtered, num_sampling=5, \
+                                           K_max=9, n=len(X_filtered))
 
         # Perform clustering
         kmeans = KMeans(n_clusters=n_clusters, init='k-means++')
@@ -131,14 +95,15 @@ class RFLBATServer(AnomalyDetectionServer):
                 cluster_scores.append(float('inf'))
                 continue
 
-            cluster_updates = X[cluster_indices]
+            cluster_updates = flattened_updates[cluster_indices].cpu().numpy()
             similarities = smp.cosine_similarity(cluster_updates)
-            cluster_scores.append(np.median(np.mean(similarities, axis=1)))
+            cluster_scores.append(np.median(np.average(similarities, axis=1)))
 
         best_cluster = np.argmin(cluster_scores)
         accepted_indices = [accepted_indices[i] for i in range(len(cluster_labels))
                           if cluster_labels[i] == best_cluster]
 
+        log(INFO, f"RFLBAT First stage: Accepted clients: {[client_ids[i] for i in accepted_indices]}")
         # Second stage filtering
         eu_distances = []
         X_filtered = X_dr[accepted_indices]
@@ -150,10 +115,23 @@ class RFLBATServer(AnomalyDetectionServer):
         median_distance = np.median(eu_distances)
         final_accepted = [accepted_indices[i] for i, dist in enumerate(eu_distances)
                          if dist < self.eps2 * median_distance]
+        
+        log(INFO, f"RFLBAT Second stage: Accepted clients: {[client_ids[i] for i in final_accepted]}")
 
         if self.save_plots:
             self._save_pca_plot(X_dr, final_accepted)
 
         benign_clients = [client_ids[i] for i in final_accepted]
         malicious_clients = [client_id for client_id in client_ids if client_id not in benign_clients]
-        return benign_clients, malicious_clients
+        return malicious_clients, benign_clients
+
+    def _save_pca_plot(self, X_dr: np.ndarray, accepted_indices: List[int]):
+        """Save PCA visualization plot."""
+        plt.figure(figsize=(10, 8))
+        plt.scatter(X_dr[:, 0], X_dr[:, 1], c='gray', alpha=0.5, label='All updates')
+        plt.scatter(X_dr[accepted_indices, 0], X_dr[accepted_indices, 1],
+                   c='green', label='Accepted updates')
+        plt.title(f'PCA visualization - Round {self.current_round}')
+        plt.legend()
+        plt.savefig(os.path.join(self.plot_dir, f'pca_round_{self.current_round}.png'))
+        plt.close()

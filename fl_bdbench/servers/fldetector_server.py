@@ -96,68 +96,6 @@ class FLDetectorServer(AnomalyDetectionServer):
         # Compute mean efficiently
         mean = torch.mean(stacked_params, dim=1, keepdim=True)
         return mean, distance
-
-    def gap_statistics(self, data: torch.Tensor, num_sampling: int, K_max: int, n: int) -> int:
-        """Implement gap statistics for optimal cluster number selection.
-        
-        Note: We convert to numpy for sklearn compatibility, but use PyTorch for preprocessing.
-        """
-        # Reshape data
-        data = data.reshape(data.shape[0], -1)
-        
-        # Convert to numpy for sklearn compatibility
-        data_np = data.cpu().numpy()
-        
-        # Normalize data (min-max scaling)
-        data_c = np.zeros_like(data_np)
-        for i in range(data_np.shape[1]):
-            min_val = np.min(data_np[:, i])
-            max_val = np.max(data_np[:, i])
-            if max_val > min_val:
-                data_c[:, i] = (data_np[:, i] - min_val) / (max_val - min_val)
-            else:
-                data_c[:, i] = 0.0
-
-        gaps = []
-        s_values = []
-
-        for k in range(1, K_max + 1):
-            # Fit KMeans
-            kmeans = KMeans(n_clusters=k, init='k-means++', random_state=self.config.seed).fit(data_c)
-            centers = kmeans.cluster_centers_
-            labels = kmeans.labels_
-
-            # Calculate within-cluster dispersion
-            wk = 0
-            for i in range(k):
-                cluster_points = data_c[labels == i]
-                if len(cluster_points) > 0:
-                    wk += np.sum(np.linalg.norm(cluster_points - centers[i], axis=1))
-
-            # Calculate expected dispersion for random data
-            wkbs = []
-            for _ in range(num_sampling):
-                random_data = np.random.uniform(0, 1, size=(n, data_c.shape[1]))
-                kmeans_b = KMeans(n_clusters=k, init='k-means++', random_state=self.config.seed).fit(random_data)
-                wkb = 0
-                for i in range(k):
-                    cluster_points = random_data[kmeans_b.labels_ == i]
-                    if len(cluster_points) > 0:
-                        wkb += np.sum(np.linalg.norm(cluster_points - kmeans_b.cluster_centers_[i], axis=1))
-                wkbs.append(np.log(wkb + 1e-10))  # Add small epsilon to avoid log(0)
-
-            # Calculate gap statistic
-            gap = np.mean(wkbs) - np.log(wk + 1e-10)  # Add small epsilon to avoid log(0)
-            sd = np.std(wkbs) * np.sqrt(1 + 1/num_sampling)
-
-            gaps.append(gap)
-            s_values.append(sd)
-
-        # Find optimal number of clusters
-        for k in range(1, K_max):
-            if gaps[k-1] >= gaps[k] - s_values[k]:
-                return k
-        return K_max
     
     def detect_anomalies(self, client_updates: List[Tuple[int, int, Dict]]) -> Tuple[List[int], List[int]]:
         """Detect anomalies in the client updates using PyTorch optimizations."""
@@ -180,11 +118,11 @@ class FLDetectorServer(AnomalyDetectionServer):
             self.grad_list.append(grad_params)
 
         # Flatten and concatenate parameters
-        param_list = [torch.cat([p.reshape(-1, 1) for p in params], dim=0) for params in self.grad_list]
+        param_list = [torch.concat([p.reshape(-1, 1) for p in params], dim=0) for params in self.grad_list]
 
         # Get current global weights (keeping on device)
         current_weights = [param.detach() for name, param in self.global_model.named_parameters()]
-        weight = torch.cat([w.reshape(-1, 1) for w in current_weights], dim=0)
+        weight = torch.concat([w.reshape(-1, 1) for w in current_weights], dim=0)
 
         # Calculate HVP if enough rounds have passed
         hvp = None

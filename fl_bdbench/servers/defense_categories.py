@@ -2,7 +2,13 @@
 Defense category base classes for federated learning.
 """
 import wandb
+import warnings
+import torch
+import numpy as np
+# Suppress specific scikit-learn deprecation warnings
+warnings.filterwarnings("ignore", message="'force_all_finite' was renamed to 'ensure_all_finite'")
 
+from sklearn.cluster import KMeans
 from fl_bdbench.servers.base_server import BaseServer
 from fl_bdbench.servers.fedavg_server import UnweightedFedAvgServer
 from fl_bdbench.utils import log
@@ -63,7 +69,69 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
             - List of client_ids classified as anomalous
         """
         pass
+    
+    def gap_statistics(self, data: np.ndarray, num_sampling: int, K_max: int, n: int) -> int:
+        """Implement gap statistics for optimal cluster number selection.
+        
+        Note: We convert to numpy for sklearn compatibility, but use PyTorch for preprocessing.
+        """
+        if isinstance(data, torch.Tensor):
+            data = data.cpu().numpy() # Convert to numpy for sklearn compatibility
+        
+        # Reshape data
+        data = data.reshape(data.shape[0], -1)
+        
+        # Normalize data (min-max scaling)
+        data_c = np.zeros_like(data)
+        for i in range(data.shape[1]):
+            min_val = np.min(data[:, i])
+            max_val = np.max(data[:, i])
+            if max_val > min_val:
+                data_c[:, i] = (data[:, i] - min_val) / (max_val - min_val)
+            else:
+                data_c[:, i] = 0.0
 
+        gaps = []
+        s_values = []
+
+        for k in range(1, K_max + 1):
+            # Fit KMeans
+            kmeans = KMeans(n_clusters=k, init='k-means++', random_state=self.config.seed).fit(data_c)
+            centers = kmeans.cluster_centers_
+            labels = kmeans.labels_
+
+            # Calculate within-cluster dispersion
+            wk = 0
+            for i in range(k):
+                cluster_points = data_c[labels == i]
+                if len(cluster_points) > 0:
+                    wk += np.sum(np.linalg.norm(cluster_points - centers[i], axis=1))
+
+            # Calculate expected dispersion for random data
+            wkbs = []
+            for _ in range(num_sampling):
+                random_data = np.random.uniform(0, 1, size=(n, data_c.shape[1]))
+                kmeans_b = KMeans(n_clusters=k, init='k-means++', random_state=self.config.seed).fit(random_data)
+                wkb = 0
+                for i in range(k):
+                    cluster_points = random_data[kmeans_b.labels_ == i]
+                    if len(cluster_points) > 0:
+                        wkb += np.sum(np.linalg.norm(cluster_points - kmeans_b.cluster_centers_[i], axis=1))
+                wkbs.append(np.log(wkb + 1e-10))  # Add small epsilon to avoid log(0)
+
+            # Calculate gap statistic
+            gap = np.mean(wkbs) - np.log(wk + 1e-10)  # Add small epsilon to avoid log(0)
+            sd = np.std(wkbs) * np.sqrt(1 + 1/num_sampling)
+
+            gaps.append(gap)
+            s_values.append(sd)
+
+        # Find optimal number of clusters
+        for k in range(1, K_max):
+            if gaps[k-1] >= gaps[k] - s_values[k]:
+                return k
+        return K_max
+    
     def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, Dict]]):
         """
         AnomalyDetectionServer procedure: Find malicious clients, evaluate detection, and aggregate benign updates.
