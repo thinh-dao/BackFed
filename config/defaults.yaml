@@ -165,7 +165,7 @@ aggregator_config:
     _target_: fl_bdbench.servers.RFLBATServer
     eps1: 10.0
     eps2: 4.0
-    save_plots: true
+    save_plots: False
 
   fldetector:
     _target_: fl_bdbench.servers.FLDetectorServer
@@ -202,11 +202,12 @@ client_optimizer_config:
 
 ########################################################
 # *Hydra configuration
+output_dir: outputs/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
 hydra:
   job:
     chdir: False  # Prevent Hydra from changing working directory
   run:
-    dir: ./out/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
+    dir: ./outputs/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
   sweep:
     dir: ./multirun/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}
     subdir: ${hydra.job.num}

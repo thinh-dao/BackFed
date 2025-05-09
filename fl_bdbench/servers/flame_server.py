@@ -6,7 +6,7 @@ Reference: https://www.usenix.org/conference/raid2020/presentation/fung
 import torch
 import numpy as np
 import hdbscan
-import wandb
+
 from logging import INFO, WARNING
 from fl_bdbench.servers.defense_categories import AnomalyDetectionServer, RobustAggregationServer
 from fl_bdbench.utils.logging_utils import log
@@ -96,7 +96,7 @@ class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
         self.evaluate_detection(malicious_clients, true_malicious_clients, len(client_updates))
 
         # Aggregate clipped differences from benign clients
-        clip_norm = torch.median(torch.stack(euclidean_distances))
+        clip_norm = torch.median(torch.tensor(euclidean_distances))
 
         weight_accumulator = {
             name: torch.zeros_like(param, device=self.device)

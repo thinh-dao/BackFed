@@ -21,7 +21,7 @@ from rich.logging import RichHandler
 from rich.console import Console
 
 # Create a global console for rich output
-rich_console = Console(stderr=True)
+rich_console = Console(stderr=True, width=None)  
 
 # Configure root logger once at module import time
 def _setup_logging():
@@ -208,7 +208,7 @@ def init_csv_logger(config, resume=False, detection=False):
     if config.federated_evaluation:
         field_names.extend(["val_clean_loss", "val_clean_acc", "val_backdoor_loss", "val_backdoor_acc"])
     if detection:
-        field_names.extend(["precision", "recall", "f1_score", "fpr"])
+        field_names.extend(["precision", "recall", "f1_score", "fpr", "fpr_clean"])
 
     csv_logger = CSVLogger(fieldnames=field_names, resume=resume, filename=file_name)
     return csv_logger
