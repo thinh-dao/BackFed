@@ -424,11 +424,15 @@ class BaseServer:
     def run_experiment(self):
         """Run the full FL experiment loop."""  
         experiment_start_time = time.time()
-        train_progress_bar = track(
-            range(self.current_round, self.current_round + self.config.num_rounds),
-            "[bold green]Training...",
-            console=get_console(),
-        )
+
+        if not self.config.disable_progress_bar:
+            train_progress_bar = track(
+                range(self.current_round, self.current_round + self.config.num_rounds),
+                "[bold green]Training...",
+                console=get_console(),
+            )
+        else:
+            train_progress_bar = range(self.current_round, self.current_round + self.config.num_rounds)
 
         self.best_metrics = {}
         self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
