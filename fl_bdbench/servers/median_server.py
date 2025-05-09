@@ -65,73 +65,83 @@ class GeometricMedianServer(RobustAggregationServer):
     making it robust against Byzantine attacks.
     """
 
-    def __init__(self, server_config, server_type="geometric_median"):
+    def __init__(self, server_config, server_type="geometric_median", eps=1e-5, maxiter=4, ftol=1e-6):
         """
         Initialize the geometric median server.
 
         Args:
             server_config: Dictionary containing configuration
             server_type: Type of server
+            eps: Smallest allowed value of denominator to avoid divide by zero
+            maxiter: Maximum number of Weiszfeld iterations
+            ftol: Tolerance for function value convergence
         """
         super(GeometricMedianServer, self).__init__(server_config, server_type)
-        log(INFO, f"Initialized Geometric Median server")
-
-    def _geometric_median_objective(self, median_candidate: np.ndarray, points: np.ndarray) -> float:
-        """Compute the sum of distances from median candidate to all points."""
-        return sum(np.linalg.norm(p - median_candidate) for p in points)
-
-    def _compute_geometric_median(self, client_weights: List[List[np.ndarray]]) -> List[np.ndarray]:
-        """
-        Compute the geometric median of client weights.
-
-        Args:
-            client_weights: List of client model weights
-
-        Returns:
-            Geometric median of client weights
-        """
-        # Flatten and concatenate weights for each client
-        flattened_weights = []
-        shapes = []
-        for weights in client_weights:
-            flat_list = []
-            shapes_list = []
-            for w in weights:
-                shapes_list.append(w.shape)
-                flat_list.append(w.flatten())
-            flattened = np.concatenate(flat_list)
-            flattened_weights.append(flattened)
-            shapes = shapes_list
-
-        # Convert to numpy array
-        flattened_weights = np.array(flattened_weights)
-
-        # Use mean as initial guess
-        initial_guess = np.mean(flattened_weights, axis=0)
-
-        # Compute geometric median
-        result = minimize(
-            self._geometric_median_objective,
-            initial_guess,
-            args=(flattened_weights,),
-            method='L-BFGS-B',
-            options={'maxiter': 100}
-        )
-
-        geometric_median = result.x
-
-        # Reshape back to original shapes
-        aggregated_weights = []
-        start_idx = 0
-        for shape in shapes:
-            size = np.prod(shape)
-            layer_weights = geometric_median[start_idx:start_idx+size].reshape(shape)
-            aggregated_weights.append(layer_weights)
-            start_idx += size
-
-        return aggregated_weights
+        self.eps = eps
+        self.maxiter = maxiter
+        self.ftol = ftol
+        log(INFO, f"Initialized Geometric Median server with eps={eps}, maxiter={maxiter}, ftol={ftol}")
 
     @torch.no_grad()
+    def _l2distance(self, p1, p2):
+        """Calculate L2 distance between two lists of tensors."""
+        return torch.linalg.norm(torch.stack([torch.linalg.norm(x1 - x2) for (x1, x2) in zip(p1, p2)]))
+
+    @torch.no_grad()
+    def _geometric_median_objective(self, median, points, weights):
+        """Compute the weighted sum of distances from median to all points."""
+        distances = torch.tensor([self._l2distance(p, median).item() for p in points], device=self.device)
+        return torch.sum(distances * weights) / torch.sum(weights)
+
+    def _weighted_average_component(self, points, weights):
+        """Compute weighted average for a single component."""
+        ret = points[0] * weights[0]
+        for i in range(1, len(points)):
+            ret += points[i] * weights[i]
+        return ret
+
+    def _weighted_average(self, points, weights):
+        """Compute weighted average across all components."""
+        weights = weights / weights.sum()
+        return [self._weighted_average_component(component, weights=weights) for component in zip(*points)]
+
+    def _geometric_median(self, points, weights, eps=1e-6, maxiter=4, ftol=1e-6):
+        """
+        Compute geometric median using Weiszfeld algorithm.
+
+        Args:
+            points: List of points, where each point is a list of tensors
+            weights: Tensor of weights for each point
+            eps: Smoothing parameter to avoid division by zero
+            maxiter: Maximum number of iterations
+            ftol: Tolerance for function value convergence
+
+        Returns:
+            SimpleNamespace with median estimate and convergence information
+        """
+        with torch.no_grad():
+            # Initialize median estimate at weighted mean
+            median = self._weighted_average(points, weights)
+            new_weights = weights
+            objective_value = self._geometric_median_objective(median, points, weights)
+
+            log(INFO, f"Initial objective value: {objective_value.item()}")
+
+            # Weiszfeld iterations
+            for iter in range(maxiter):
+                prev_obj_value = objective_value
+                denom = torch.stack([self._l2distance(p, median) for p in points])
+                new_weights = weights / torch.clamp(denom, min=eps) 
+                median = self._weighted_average(points, new_weights)
+
+                objective_value = self._geometric_median_objective(median, points, weights)
+                log(INFO, f"Iteration {iter}: Objective value: {objective_value.item()}")
+                if abs(prev_obj_value - objective_value) <= ftol * objective_value:
+                    break
+            
+        median = self._weighted_average(points, new_weights)  # for autodiff
+        return median
+
     def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> bool:
         """
         Aggregate client updates using geometric median.
@@ -146,26 +156,34 @@ class GeometricMedianServer(RobustAggregationServer):
 
         # Extract client parameters
         client_params = [params for _, _, params in client_updates]
-
-        # Convert client parameters to list of numpy arrays for geometric median
-        numpy_params = []
+        
+        # Convert client parameters to list of tensors for geometric median
+        points = []
         for params in client_params:
-            numpy_layer_params = []
-            for name in params.keys():
-                numpy_layer_params.append(params[name].cpu().numpy())
-            numpy_params.append(numpy_layer_params)
-
+            point = []
+            for name, param in self.global_model_params.items():
+                if not name.endswith('num_batches_tracked'):
+                    point.append(params[name].to(self.device))
+            points.append(point)
+        
+        # Equal weights for all clients
+        weights = torch.ones(len(points), device=self.device)
+        
         # Compute geometric median
-        aggregated_weights = self._compute_geometric_median(numpy_params)
-
+        geometric_median = self._geometric_median(
+            points, 
+            weights, 
+            eps=self.eps, 
+            maxiter=self.maxiter, 
+            ftol=self.ftol
+        )
+        
         # Update global model parameters directly
-        for i, (name, param) in enumerate(self.global_model_params.items()):
-            if name.endswith('num_batches_tracked'):
-                continue
-            param.copy_(torch.tensor(
-                aggregated_weights[i],
-                device=param.device,
-                dtype=param.dtype
-            ))
+        i = 0
+        for name, param in self.global_model_params.items():
+            if not name.endswith('num_batches_tracked'):
+                param.copy_(geometric_median[i])
+                i += 1
 
+        log(INFO, f"Geometric median aggregation completed")
         return True
