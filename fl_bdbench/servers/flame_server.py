@@ -23,8 +23,8 @@ class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
 
     defense_categories = ["anomaly_detection", "robust_aggregation"]
 
-    def __init__(self, server_config, server_type="flame", lamda=0.001):
-        super(FlameServer, self).__init__(server_config, server_type)
+    def __init__(self, server_config, server_type="flame", lamda=0.001, eta=0.1):
+        super(FlameServer, self).__init__(server_config, server_type, eta)
         self.lamda = lamda
         log(INFO, f"Initialized Flame server with lamda={lamda}")
 

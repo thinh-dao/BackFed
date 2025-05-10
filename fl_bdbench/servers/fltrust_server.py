@@ -16,7 +16,7 @@ class FLTrustServer(RobustAggregationServer):
     to assign trust scores to client updates.
     """
 
-    def __init__(self, server_config, server_type = "fltrust", eta: float = 1.0):
+    def __init__(self, server_config, server_type = "fltrust", eta: float = 0.1):
         super().__init__(server_config, server_type, eta)
         self.central_update = None
 

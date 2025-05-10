@@ -25,8 +25,10 @@ class RFLBATServer(AnomalyDetectionServer):
                  server_type="rflbat",
                  eps1=10.0,  # First-stage filtering threshold
                  eps2=4.0,   # Second-stage filtering threshold
-                 save_plots=False):
-        super(RFLBATServer, self).__init__(server_config, server_type)
+                 save_plots=False,
+                 eta: float = 0.1):
+        
+        super(RFLBATServer, self).__init__(server_config, server_type, eta)
         self.eps1 = eps1
         self.eps2 = eps2
         self.save_plots = save_plots

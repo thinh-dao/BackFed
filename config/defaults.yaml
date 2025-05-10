@@ -105,16 +105,17 @@ disable_progress_bar: False
 ########################################################
 # *Aggregator configuration
 aggregator_config:
-  fedavg:
-    _target_: fl_bdbench.servers.FedAvgServer
+  weighted_fedavg:
+    _target_: fl_bdbench.servers.WeightedFedAvgServer
+    eta: 1
+
+  unweighted_fedavg:
+    _target_: fl_bdbench.servers.UnweightedFedAvgServer
+    eta: 0.1
 
   fedprox:
     _target_: fl_bdbench.servers.FedProxServer
     proximal_mu: 0.01
-
-  flame:
-    _target_: fl_bdbench.servers.FlameServer
-    lamda: 0.001
 
   foolsgold:
     _target_: fl_bdbench.servers.FoolsGoldServer
@@ -127,33 +128,32 @@ aggregator_config:
   geometric_median:
     _target_: fl_bdbench.servers.GeometricMedianServer
 
-  multi_krum:
-    _target_: fl_bdbench.servers.MultiKrumServer
-    num_malicious_clients: 4
-    num_clients_to_keep: 6
-    oracle: True # If true, we will set num_malicious_clients to the true number in runtime
-    eta: 0.1 # Replace 10% of global model with updates from clients in the next round
-  
-  norm_clipping:
-    _target_: fl_bdbench.servers.NormClippingServer
-    clipping_norm: 5
-
-  weighted_fedavg:
-    _target_: fl_bdbench.servers.WeightedFedAvgServer
-    eta: 1
-
-  unweighted_fedavg:
-    _target_: fl_bdbench.servers.UnweightedFedAvgServer
-    eta: 1e-1
-  
   trimmed_mean:
     _target_: fl_bdbench.servers.TrimmedMeanServer
     trim_ratio: 0.2
 
+  norm_clipping:
+    _target_: fl_bdbench.servers.NormClippingServer
+    clipping_norm: 3
+
+  robustlr:
+    _target_: fl_bdbench.servers.RobustLRServer
+    robustLR_threshold: 8.0
+    eta: 0.1
+
+  krum:
+    _target_: fl_bdbench.servers.KrumServer
+    eta: 0.1 
+
+  multi_krum:
+    _target_: fl_bdbench.servers.MultiKrumServer
+    oracle: True # If true, we assume the number of malicious clients is known
+    eta: 0.1 
+
   weakdp:
     _target_: fl_bdbench.servers.WeakDPServer
     strategy: unweighted_fedavg
-    std_dev: 0.025 # Following Edge-case backdoor attacks
+    std_dev: 0.025 
     clipping_norm: 5
 
   deepsight:
@@ -162,27 +162,31 @@ aggregator_config:
     num_samples: 20000
     deepsight_batch_size: 1000
     deepsight_tau: 0.3333
+    eta: 0.1
+  
+  flame:
+    _target_: fl_bdbench.servers.FlameServer
+    lamda: 0.001
 
   rflbat:
     _target_: fl_bdbench.servers.RFLBATServer
     eps1: 10.0
     eps2: 4.0
     save_plots: False
+    eta: 0.1
 
   fldetector:
     _target_: fl_bdbench.servers.FLDetectorServer
     window_size: 10  # Size of sliding window for detection
+    eta: 0.1
 
   fltrust:
     _target_: fl_bdbench.servers.FLTrustServer
-    server_lr: 1.0
+    eta: 0.1
 
   flare:
     _target_: fl_bdbench.servers.FlareServer
     voting_threshold: 0.5
-
-  robustlr:
-    _target_: fl_bdbench.servers.RobustLRServer
     eta: 0.1
 
 ########################################################

@@ -13,7 +13,7 @@ class NormClippingServer(RobustAggregationServer):
     """
     Server that clips the norm of client updates to defend against poisoning attacks.
     """
-    def __init__(self, server_config, server_type="norm_clipping", clipping_norm=5.0, eta=0.1):
+    def __init__(self, server_config, server_type="norm_clipping", clipping_norm=5.0, eta=0.1, verbose=True):
         """
         Args:
             server_type: Type of server.
@@ -23,16 +23,17 @@ class NormClippingServer(RobustAggregationServer):
         super(NormClippingServer, self).__init__(server_config, server_type)
         self.clipping_norm = clipping_norm
         self.eta = eta
+        self.verbose = verbose
         log(INFO, f"Initialized NormClipping server with clipping_norm={clipping_norm}, eta={eta}")
 
-    def clip_updates_inplace(self, client_diffs: List[StateDict]) -> None:
+    def clip_updates_inplace(self, client_ids: List[client_id], client_diffs: List[StateDict]) -> None:
         """
         Clip the norm of client_diffs (L_i - G) in-place.
 
         Args:
             client_diffs: List of client_diffs (state dicts)
         """
-        for client_diff in client_diffs:
+        for client_id, client_diff in zip(client_ids, client_diffs):
             flatten_weights = []
             for name, param in client_diff.items():
                 if 'weight' in name or 'bias' in name:
@@ -40,9 +41,13 @@ class NormClippingServer(RobustAggregationServer):
 
             if not flatten_weights:
                 continue
-
+            
             flatten_weights = torch.cat(flatten_weights)
-            weight_diff_norm = torch.linalg.norm(flatten_weights, p=2)
+            weight_diff_norm = torch.linalg.norm(flatten_weights, ord=2)
+
+            if self.verbose:
+                log(INFO, f"Client {client_id} has weight diff norm {weight_diff_norm}")
+
 
             if weight_diff_norm > self.clipping_norm:
                 scaling_factor = self.clipping_norm / weight_diff_norm
@@ -57,22 +62,28 @@ class NormClippingServer(RobustAggregationServer):
 
         # Clip updates
         client_diffs = []
-        for _, _, client_params in client_updates:
+        client_weights = []
+        client_ids = []
+        for client_id, num_examples, client_params in client_updates:
             diff_dict = {}
             for name, param in client_params.items():
                 if name.endswith('num_batches_tracked'):
                     continue
                 diff_dict[name] = param.to(self.device) - self.global_model_params[name]
             client_diffs.append(diff_dict)
-        self.clip_updates_inplace(client_diffs)
+            client_weights.append(num_examples)
+            client_ids.append(client_id)
+
+        self.clip_updates_inplace(client_ids, client_diffs)
+        client_weights = torch.tensor(client_weights, device=self.device)
+        client_weights = client_weights / client_weights.sum()
 
         # Update global model with clipped weight differences
-        weight_diff_scale = self.eta / len(client_updates)
-        for diff_dict in client_diffs:
-            for name, diff in diff_dict.items():
+        for i, client_diff in enumerate(client_diffs):
+            for name, diff in client_diff.items():
                 if name.endswith('num_batches_tracked'):
                     continue
-                self.global_model_params[name].add_(diff, alpha=weight_diff_scale)
+                self.global_model_params[name].add_(diff * client_weights[i] * self.eta)
 
         return True
 

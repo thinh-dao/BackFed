@@ -28,7 +28,7 @@ class ClientSideDefenseServer(UnweightedFedAvgServer):
         super().__init__(server_config, server_type, **kwargs)
 
 
-class RobustAggregationServer(BaseServer):
+class RobustAggregationServer(UnweightedFedAvgServer):
     """Base class for all robust aggregation defenses.
 
     Robust aggregation defenses modify the aggregation algorithm to be resilient

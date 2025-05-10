@@ -62,8 +62,8 @@ class IndicatorServer(AnomalyDetectionServer):
 
     defense_categories = ["anomaly_detection"]
 
-    def __init__(self, server_config, server_type="indicator",**kwargs):
-        super(IndicatorServer, self).__init__(server_config, server_type)
+    def __init__(self, server_config, server_type="indicator", eta: float = 0.1, **kwargs):
+        super(IndicatorServer, self).__init__(server_config, server_type, eta)
 
         params_to_update = DEFAULT_SERVER_PARAMS.copy()
         params_to_update.update(kwargs)

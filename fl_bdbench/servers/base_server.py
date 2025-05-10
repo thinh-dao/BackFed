@@ -400,6 +400,10 @@ class BaseServer:
             client_evaluation_metrics: Dict of client evaluation metrics
         """
         clients_mapping = self.rounds_selection[round_number]
+        
+        log(INFO, f"ClientManager: Selected clients")
+        log(INFO, clients_mapping)
+
         time_start = time.time()
         client_fit_metrics = self.fit_round(clients_mapping)
         time_end = time.time()
