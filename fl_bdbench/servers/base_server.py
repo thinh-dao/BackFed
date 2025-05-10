@@ -351,13 +351,23 @@ class BaseServer:
         return self.aggregate_client_metrics(client_metrics)
 
     @torch.inference_mode()
-    def server_evaluate(self, round_number: Optional[int] = None) -> Metrics:
+    def server_evaluate(self, round_number: Optional[int] = None, test_poisoned: bool = True, model: Optional[torch.nn.Module] = None) -> Metrics:
         """Perform one round of FL evaluation on the server side."""
-        clean_loss, clean_accuracy = test(model=self.global_model, 
+        if model is None:
+            model = self.global_model
+
+        clean_loss, clean_accuracy = test(model=model, 
                                         test_loader=self.test_loader, 
                                         device=self.device, 
                                         normalization=self.normalization
                                     )
+
+        if not test_poisoned:
+            metrics = {
+                "test_clean_loss": clean_loss,
+                "test_clean_acc": clean_accuracy
+            }
+            return metrics
 
         if self.poison_module is not None and (round_number is None or round_number > self.atk_config.poison_start_round - 1): # Evaluate the backdoor performance starting from the round before the poisoning starts
             self.poison_module.set_client_id(-1) # Set poison module to server
@@ -510,6 +520,13 @@ class BaseServer:
         experiment_end_time = time.time()
         experiment_time = experiment_end_time - experiment_start_time
         log(INFO, f"{separator} TRAINING COMPLETED {separator}")
+
+        if "anomaly_detection" in self.defense_categories:
+            summary_detection_metrics = self.get_detection_performance()
+            log(INFO, f"========== Detection performance ==========")
+            log(INFO, summary_detection_metrics)
+            log(INFO, f"===========================================")
+
         log(INFO, f"Total experiment time: {format_time_hms(experiment_time)}")
 
     def train_package(self, client_type: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:

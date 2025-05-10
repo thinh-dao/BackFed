@@ -68,3 +68,109 @@ python main.py -m \
     num_cpus=1 \
     dir_tag=model_replacement \
     cuda_visible_devices=\"1,5\"
+
+######## FEMNIST ########
+
+python main.py -m \
+    aggregator=unweighted_fedavg \
+    num_clients=3383 \
+    num_clients_per_round=30 \
+    dataset=emnist_byclass \
+    test_batch_size=5000 \
+    num_workers=8 \
+    model=mnistnet \
+    checkpoint=1000 \
+    atk_config=emnist_singleshot \
+    atk_config.model_poison_method=base,neurotoxin,chameleon \
+    atk_config.data_poison_method=pattern \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement_emnist \
+    cuda_visible_devices=\"1,2,3,4,5\"
+
+
+
+python main.py -m \
+    aggregator=unweighted_fedavg \
+    num_clients=3383 \
+    num_clients_per_round=30 \
+    dataset=emnist_byclass \
+    test_batch_size=5000 \
+    num_workers=8 \
+    model=mnistnet \
+    checkpoint=1000 \
+    atk_config=emnist_singleshot \
+    atk_config.model_poison_method=base,neurotoxin,chameleon \
+    atk_config.data_poison_method=distributed \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement_emnist \
+    cuda_visible_devices=\"1,2,3,4,5\"
+
+
+
+
+python main.py -m \
+    aggregator=unweighted_fedavg \
+    num_clients=3383 \
+    num_clients_per_round=30 \
+    dataset=emnist_byclass \
+    test_batch_size=5000 \
+    num_workers=8 \
+    model=mnistnet \
+    checkpoint=1000 \
+    atk_config=emnist_singleshot \
+    atk_config.model_poison_method=base,neurotoxin,chameleon \
+    atk_config.data_poison_method=edge_case \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement_emnist \
+    cuda_visible_devices=\"1,2,3,4,5\"
+
+
+
+
+python main.py -m \
+    aggregator=unweighted_fedavg \
+    num_clients=3383 \
+    num_clients_per_round=30 \
+    dataset=emnist_byclass \
+    test_batch_size=5000 \
+    num_workers=8 \
+    model=mnistnet \
+    checkpoint=1000 \
+    atk_config=emnist_singleshot \
+    atk_config.model_poison_method=base,neurotoxin,chameleon \
+    atk_config.data_poison_method=a3fl \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement_emnist \
+    cuda_visible_devices=\"1,2,3,4,5\"
+
+
+python main.py -m \
+    aggregator=unweighted_fedavg \
+    num_clients=3383 \
+    num_clients_per_round=30 \
+    dataset=emnist_byclass \
+    test_batch_size=5000 \
+    num_workers=8 \
+    model=mnistnet \
+    checkpoint=1000 \
+    atk_config=emnist_singleshot \
+    atk_config.model_poison_method=base,neurotoxin,chameleon \
+    atk_config.data_poison_method=iba \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement_emnist \
+    cuda_visible_devices=\"1,2,3,4,5\"

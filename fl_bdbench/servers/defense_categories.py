@@ -39,6 +39,10 @@ class RobustAggregationServer(BaseServer):
     def __init__(self, server_config, server_type, **kwargs):
         super().__init__(server_config, server_type, **kwargs)
 
+
+MaliciousClientsIds = List[int]
+BenignClientsIds = List[int]
+
 class AnomalyDetectionServer(UnweightedFedAvgServer):
     """Base class for all anomaly detection defenses.
 
@@ -55,7 +59,7 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
         self.true_negatives = 0
         self.false_negatives = 0
 
-    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]], **kwargs) -> Tuple[List[int], List[int]]:
+    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]], **kwargs) -> Tuple[MaliciousClientsIds, BenignClientsIds]:
         """
         Detect anomalies in the updates. This method should be overridden by defenses.
 
@@ -65,8 +69,8 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
 
         Returns:
             Tuple of lists:
-            - List of client_ids classified as benign
             - List of client_ids classified as anomalous
+            - List of client_ids classified as benign
         """
         pass
     
