@@ -32,14 +32,10 @@ class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
         """Get names of last two layers."""
         layer_names = list(state_dict.keys())
         return layer_names[-2:]
-
-    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
-        """Aggregate client updates using Flame defensive mechanism."""
-        if len(client_updates) == 0:
-            log(WARNING, "Flame: No client updates found.")
-            return False
-
+    
+    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
         # Keep everything on CPU for this function
+        client_ids = [client_id for client_id, _, _ in client_updates]
         last_layers = self._get_last_layers(self.global_model_params)
 
         # Extract weights and compute distances
@@ -89,11 +85,21 @@ class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
         if len(benign_indices) == 0:
             log(WARNING, "Flame: No benign clients found.")
             return False
+        
+        malicious_clients = [client_ids[idx] for idx in range(len(client_ids)) if idx not in benign_indices]
+        benign_clients = [client_ids[idx] for idx in benign_indices]
+        return malicious_clients, benign_clients, euclidean_distances
+
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
+        """Aggregate client updates using Flame defensive mechanism."""
+        if len(client_updates) == 0:
+            log(WARNING, "Flame: No client updates found.")
+            return False
 
         # Evaluate detection and log metrics
-        malicious_clients = [client_id for idx, (client_id, _, _) in enumerate(client_updates) if idx not in benign_indices]
+        malicious_clients, benign_clients, euclidean_distances = self.detect_anomalies(client_updates)
         true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
-        self.evaluate_detection(malicious_clients, true_malicious_clients, len(client_updates))
+        detection_metrics = self.evaluate_detection(malicious_clients, true_malicious_clients, len(client_updates))
 
         # Aggregate clipped differences from benign clients
         clip_norm = torch.median(torch.tensor(euclidean_distances))
@@ -103,9 +109,11 @@ class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
             for name, param in self.global_model_params.items()
         }
 
-        for idx in benign_indices:
-            _, _, update = client_updates[idx]
-            weight = 1 / len(benign_indices)
+        for idx, (client_id, num_examples, update) in enumerate(client_updates):
+            if client_id in malicious_clients:
+                continue
+
+            weight = 1 / len(benign_clients)
             for name, param in update.items():
                 if name.endswith('num_batches_tracked'):
                     continue

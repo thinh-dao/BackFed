@@ -11,16 +11,17 @@ import hdbscan
 
 from typing import List, Tuple, Dict
 from logging import INFO
-from fl_bdbench.servers.defense_categories import AnomalyDetectionServer
+from fl_bdbench.servers.defense_categories import AnomalyDetectionServer, RobustAggregationServer
 from fl_bdbench.utils import log, get_last_layer_name
 from fl_bdbench.const import IMG_SIZE, NUM_CLASSES, StateDict, client_id, num_examples
 
-class DeepSightServer(AnomalyDetectionServer):
+class DeepSightServer(AnomalyDetectionServer, RobustAggregationServer):
     """
     DeepSight: A defense mechanism against backdoor attacks in Federated Learning.
     Uses clustering-based approach to detect and filter malicious updates.
     """
-
+    defense_categories = ["anomaly_detection", "robust_aggregation"]
+    
     def __init__(self,
                  server_config,
                  num_seeds: int = 3,
