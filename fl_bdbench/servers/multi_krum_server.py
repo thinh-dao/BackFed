@@ -38,25 +38,33 @@ class MultiKrumServer(RobustAggregationServer):
             server_type: Type of server
             num_malicious_clients: Number of malicious clients (f)
             num_clients_to_keep: Number of clients to keep for aggregation (k)
-            oracle: If True, use the actual number of malicious clients from the configuration
+            oracle: If True, we assume the number of malicious clients each round is known
             eta: Learning rate for applying the aggregated updates
         """
         super(MultiKrumServer, self).__init__(server_config, server_type)
-
-        # If oracle mode is enabled, use the actual number of malicious clients from config
-        if oracle:
-            self.num_malicious_clients = len(self.config.atk_config.malicious_clients)
+        
+        self.oracle = oracle
+        if self.oracle:
+            # If oracle is True, num_clients_to_keep = num_clients_per_round - num_malicious_clients
+            self.num_malicious_clients = None
+            self.num_clients_to_keep = None
         else:
+            # Number of clients to keep for aggregation (k). If None, num_clients_to_keep = num_clients_per_round - num_malicious_clients
             self.num_malicious_clients = num_malicious_clients if num_malicious_clients is not None else 0
-
-        # Number of clients to keep for aggregation (k)
-        self.num_clients_to_keep = num_clients_to_keep if num_clients_to_keep is not None else 1
+            self.num_clients_to_keep = num_clients_to_keep if num_clients_to_keep is not None else self.config.num_clients_per_round - self.num_malicious_clients
 
         # Learning rate for applying the aggregated updates
         self.eta = eta
 
-        log(INFO, f"Initialized Multi-Krum server with num_malicious_clients={self.num_malicious_clients}, "
-                 f"num_clients_to_keep={self.num_clients_to_keep}, eta={self.eta}")
+        if self.num_clients_to_keep == 1:
+            self.server_type = "krum"
+            log(INFO, f"Initialized Krum server with num_malicious_clients={self.num_malicious_clients}, eta={self.eta}")
+        else:
+            if oracle:
+                log(INFO, f"Initialized Multi-Krum server with known number of malicious clients each round")
+            else:
+                log(INFO, f"Initialized Multi-Krum server with num_malicious_clients={self.num_malicious_clients}, "
+                        f"num_clients_to_keep={self.num_clients_to_keep}, eta={self.eta}")
 
     def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> StateDict:
         """
@@ -68,7 +76,11 @@ class MultiKrumServer(RobustAggregationServer):
             The global model state dict after aggregation
         """
         if len(client_updates) == 0:
-            return self.global_model.state_dict()
+            return False
+        
+        if self.oracle:
+            self.num_malicious_clients = len(self.client_manager.malicious_clients_per_round[self.current_round])
+            self.num_clients_to_keep = self.config.num_clients_per_round - self.num_malicious_clients
 
         # Extract client parameters
         client_ids = [client_id for client_id, _, _ in client_updates]
@@ -119,7 +131,20 @@ class MultiKrumServer(RobustAggregationServer):
 
         # Log the selected clients
         selected_client_ids = [client_ids[i] for i in selected_indices]
-        log(INFO, f"Multi-Krum selected clients: {selected_client_ids}")
+        log(INFO, f"(Multi)Krum selected clients: {selected_client_ids}")
 
         benign_updates = [client_updates[i] for i in selected_indices]
         return super().aggregate_client_updates(benign_updates)
+
+class KrumServer(MultiKrumServer):
+    """
+    Server that implements Krum aggregation to mitigate the impact of malicious clients.
+
+    Krum selects the client update that is closest other client updates.
+    """
+
+    def __init__(self, server_config, server_type="krum", eta=0.1):
+        """
+        Initialize the Krum server.
+        """
+        super(KrumServer, self).__init__(server_config, server_type, num_clients_to_keep=1, oracle=False, eta=eta)

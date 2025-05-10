@@ -3,7 +3,7 @@ Utility functions for defense categorization.
 """
 
 import inspect
-from typing import Dict, List, Set, Type, Optional
+from typing import Dict, List, Type
 
 from fl_bdbench.servers.defense_categories import (
     ClientSideDefenseServer,

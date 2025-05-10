@@ -18,7 +18,7 @@ class RobustLRServer(RobustAggregationServer):
     """
 
     def __init__(self, server_config, server_type="robustlr",
-                 robustLR_threshold: float = 0.0,
+                 robustLR_threshold: float = 8.0,
                  eta: float = 0.1):
         """
         Initialize RobustLR server.

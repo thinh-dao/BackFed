@@ -28,6 +28,7 @@ class ClientManager:
         # Store the selected clients for each round. In each round, we have a dictionary of client classes and the clients selected for that type.
         self.rounds_selection: Dict[int, Dict[type, List[int]]] = {}
         self.poison_rounds = []  # Store all poison rounds
+        self.malicious_clients_per_round: Dict[int, List[int]] = {}
 
         # If no attack, we don't need to initialize poison rounds
         if config.no_attack:
@@ -85,6 +86,9 @@ class ClientManager:
                 self.rounds_selection[r] = {
                     self.benign_client_class: random.sample(range(self.config.num_clients), self.config.num_clients_per_round)
                 }
+                self.malicious_clients_per_round[r] = []
+            else:
+                self.malicious_clients_per_round[r] = self.rounds_selection[r][self.malicious_client_class]
 
     def _single_adversary_selection(self, selected_rounds):
         """Each adversary is selected consecutively for poisoning in each communication round."""

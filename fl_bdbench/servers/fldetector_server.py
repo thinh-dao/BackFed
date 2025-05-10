@@ -15,8 +15,8 @@ from logging import INFO, WARNING
 class FLDetectorServer(AnomalyDetectionServer):
     """FLDetector server implementation with PyTorch optimizations."""
 
-    def __init__(self, server_config, window_size: int = 10, **kwargs):
-        super().__init__(server_config, **kwargs)
+    def __init__(self, server_config, server_type="fldetector", window_size: int = 10, eta: float = 0.1):
+        super().__init__(server_config, server_type, eta)
         self.exclude_list = []
         self.start_round = self.current_round
         self.init_model = None

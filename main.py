@@ -6,19 +6,26 @@ import omegaconf
 import torch
 import os
 import ray
+import traceback
 
 from rich.traceback import install
 from fl_bdbench.servers.base_server import BaseServer
 from fl_bdbench.utils import system_startup
 from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
+from fl_bdbench.utils import log
+from logging import ERROR
 
 @hydra.main(config_path="config", config_name="defaults.yaml", version_base=None)
 def main(config: DictConfig):
     system_startup(config)
     aggregator = config["aggregator"]
-    server : BaseServer = instantiate(config.aggregator_config[aggregator], server_config=config, _recursive_=False)
-    server.run_experiment()
+    try:
+        server : BaseServer = instantiate(config.aggregator_config[aggregator], server_config=config, _recursive_=False)
+        server.run_experiment()
+    except Exception as e:
+        error_traceback = traceback.format_exc()
+        log(ERROR, f"Error: {e}\n{error_traceback}")
 
 if __name__ == "__main__":
     # Rich traceback and suppress traceback from hydra, omegaconf, and torch

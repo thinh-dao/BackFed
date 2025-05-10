@@ -58,7 +58,7 @@ logger = _setup_logging()
 def log(level, message, *args, **kwargs):
     """Log a message at the specified level."""
     if isinstance(message, dict):
-        formatted_dict = "\n".join(f"    {k}: {v}" for k, v in message.items())
+        formatted_dict = "\n" + "\n".join(f"    {k}: {v}" for k, v in message.items())
         logger.log(level, formatted_dict, *args, **kwargs)
     else:
         logger.log(level, message, *args, **kwargs)
