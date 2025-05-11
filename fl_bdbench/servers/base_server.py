@@ -510,7 +510,7 @@ class BaseServer:
                     log(INFO, f"Checkpoint saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
 
                 if self.config.save_model:
-                    save_dir = os.path.join(self.output_dir, "models")
+                    save_dir = os.path.join(self.config.output_dir, "models")
                     os.makedirs(save_dir, exist_ok=True)
                     save_path = os.path.join(save_dir, model_filename)
                     torch.save(self.best_model_state, save_path) # include only model state
