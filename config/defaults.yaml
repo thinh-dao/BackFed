@@ -189,6 +189,9 @@ aggregator_config:
     voting_threshold: 0.5
     eta: 0.1
 
+  indicator:
+    _target_: fl_bdbench.servers.IndicatorServer
+
 ########################################################
 # *Optimizer configuration
 client_optimizer_config:

@@ -15,7 +15,7 @@ from omegaconf import DictConfig
 from fl_bdbench.utils import set_random_seed, log
 from fl_bdbench.const import StateDict, Metrics
 from hydra.utils import instantiate
-from logging import INFO, WARNING, ERROR
+from logging import INFO
 
 class BaseClient:
     """
