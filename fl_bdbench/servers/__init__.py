@@ -23,6 +23,7 @@ from fl_bdbench.servers.fldetector_server import FLDetectorServer
 from fl_bdbench.servers.fltrust_server import FLTrustServer
 from fl_bdbench.servers.flare_server import FlareServer
 from fl_bdbench.servers.robustlr_server import RobustLRServer
+from fl_bdbench.servers.indicator_server import IndicatorServer
 
 __all__ = [
     # Base classes
@@ -50,5 +51,6 @@ __all__ = [
     "FLDetectorServer",
     "FLTrustServer",
     "FlareServer",
-    "RobustLRServer"
+    "RobustLRServer",
+    "IndicatorServer"
 ]

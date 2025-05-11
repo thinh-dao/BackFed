@@ -5,10 +5,12 @@ Reference: https://github.dev/ybdai7/Backdoor-indicator-defense/blob/main/partic
 
 import torch
 import numpy as np
-import torchvision.transforms as transforms
+import torchvision.transforms.v2 as transforms
 import random
 import copy
 import torch.nn as nn
+import os
+import math
 
 from typing import List, Tuple
 from torchvision import datasets
@@ -44,15 +46,13 @@ DEFAULT_SERVER_PARAMS = {
     ],
     "global_lr_gamma": 0.8,  # 0.8 for green car
     "global_retrain_no_times": 200,
-    "global_ood_data_sample_lens": 800,
-    "global_ood_data_batch_size": 64,
-    "global_ood_data_source": "CIFAR10",
-    "global_ood_data_transformations": OOD_TRANSFORMATIONS["CIFAR10"],
-    "watermarking_mu": 0.1,
-    "ood_data_source": "CIFAR10",
-    "ood_batch_size": 64,
     "ood_data_sample_lens": 800,
+    "ood_data_batch_size": 64,
+    "ood_data_source": "CIFAR100",
+    "watermarking_mu": 0.1,
     "replace_original_bn": True,
+    "verbose": False,
+    "VWM_detection_threshold": 95
 }
 
 class IndicatorServer(AnomalyDetectionServer):
@@ -74,19 +74,65 @@ class IndicatorServer(AnomalyDetectionServer):
         self.watermarking_rounds = list(range(self.global_watermarking_start_round, self.global_watermarking_end_round, self.global_watermarking_round_interval))
         self._get_ood_data()
         self.open_set = self._get_ood_dataloader()
+        self.check_model = copy.deepcopy(self.global_model)
 
         assert self.ood_data_source.upper() != self.config["dataset"].upper(), "OOD data source must be different from training data source"
         self.after_wm_injection_bn_stats_dict = dict()
 
         log(INFO, f"Initialized Indicator server with watermarking_mu={self.watermarking_mu} and ood_data_source={self.ood_data_source}")
 
+    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
+        if self.current_round not in self.watermarking_rounds:
+            malicious_clients = []
+            benign_clients = [client_id for client_id, _, _ in client_updates]
+            return malicious_clients, benign_clients
+        
+        self.pre_process(round=self.current_round)
+        benign_clients = []
+        malicious_clients = []
+        label_inds = []
+        label_acc_ws = []
+
+        for ind, (client_id, num_examples, model_state_dict) in enumerate(client_updates):
+            self._transfer_params(self.global_model, self.check_model)
+            for name, data in model_state_dict.items():
+                if "num_batches_tracked" in name:
+                    continue
+
+                if "running" in name:
+                    if self.replace_original_bn:
+                        new_value = self.after_wm_injection_bn_stats_dict[name]
+                    else:
+                        continue
+                else:
+                    new_value = data.clone().detach()
+
+                self.check_model.state_dict()[name].copy_(new_value)
+
+            wm_copy_data = copy.deepcopy(self.open_set)
+            _, _, label_acc_w, label_ind, _, _ \
+                = self._global_watermarking_test_sub(test_data=wm_copy_data, model=self.check_model)
+            
+            label_inds.append(label_ind)
+            label_acc_ws.append(label_acc_w)
+
+            if label_acc_w < self.VWM_detection_threshold: 
+                benign_clients.append(client_id)
+            else:
+                malicious_clients.append(client_id)
+        
+        log(INFO, f"label ind:{label_inds}")
+        log(INFO, f"label acc wm:{label_acc_ws}") 
+        return benign_clients, malicious_clients
+    
     def pre_process(self, round):
         wm_data = copy.deepcopy(self.open_set)
+        log(INFO, f"Before indicator: ")
         loss_w, acc_w, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(test_data=wm_data, model=self.global_model)
-        log(INFO, f"watermarking acc:{acc_w}, watermarking loss:{loss_w}, target label ({label_ind}) wm acc:{label_acc_w}")
+        log(INFO, f"watermarking acc: {acc_w}, watermarking loss: {loss_w}, target label ({label_ind}) wm acc: {label_acc_w}")
 
-        self.server_evaluate(round=round)
-        log(INFO, f" ")
+        metrics = self.server_evaluate(round_number=round)
+        log(INFO, f"benign acc: {metrics['test_clean_acc']}, benign loss: {metrics['test_clean_loss']}")
 
         ### Initialize to calculate the distance between updates and global model
         if round in self.watermarking_rounds:
@@ -99,7 +145,7 @@ class IndicatorServer(AnomalyDetectionServer):
                 if "running_mean" in key or "running_var" in key:
                     before_wm_injection_bn_stats_dict[key] = value.clone().detach()
             
-            log(INFO, f"benign inserting new watermarking")
+            log(INFO, f"begin inserting new watermarking")
             wm_data = copy.deepcopy(self.open_set)
             self._global_watermark_injection(watermark_data=wm_data,
                             target_params_variables=target_params_variables,
@@ -111,16 +157,19 @@ class IndicatorServer(AnomalyDetectionServer):
             log(INFO, f"watermarking update norm is :{watermarking_update_norm}")
 
             wm_data = copy.deepcopy(self.open_set)
-            loss_w, acc_w, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(test_data=wm_data, model=self.global_model)
-            log(INFO, f"watermarking acc:{acc_w}, watermarking loss:{loss_w}, target label ({label_ind}) wm acc:{label_acc_w}")
 
-            self.server_evaluate(round=round)
+            log(INFO, f"After indicator: ")
+            loss_w, acc_w, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(test_data=wm_data, model=self.global_model)
+            log(INFO, f"watermarking acc: {acc_w}, watermarking loss: {loss_w}, target label ({label_ind}) wm acc: {label_acc_w}")
+
+            metrics = self.server_evaluate(round_number=round)
+            log(INFO, f"benign acc: {metrics['test_clean_acc']}, benign loss: {metrics['test_clean_loss']}")
 
             for key, value in self.global_model.state_dict().items():
                 if "running_mean" in key or "running_var" in key:
                     self.after_wm_injection_bn_stats_dict[key] = value.clone().detach()
 
-            self.check_model.copy_params(self.global_model.state_dict())
+            self._transfer_params(self.global_model, self.check_model)
             for key, value in self.check_model.state_dict().items():
                 if "running_mean" in key or "running_var" in key:
                     self.check_model.state_dict()[key].\
@@ -130,21 +179,23 @@ class IndicatorServer(AnomalyDetectionServer):
                             copy_(before_wm_injection_bn_stats_dict[key])
 
             log(INFO, f"after replace wm bn with original bn:")
-            self.server_evaluate(round=round, model=self.check_model)
+            metrics = self.server_evaluate(round_number=round, model=self.check_model)
+            log(INFO, f"benign acc: {metrics['test_clean_acc']}, benign loss: {metrics['test_clean_loss']}")
 
-            log(INFO, f" ")
         return True
     
     def _get_ood_data(self):
         """Get OOD data from the specified data source."""
+        datapath = os.path.join(self.config["datapath"], self.ood_data_source)
+
         if self.ood_data_source == "CIFAR10":
-            self.ood_dataset = datasets.CIFAR10("./data", train=True, download=True, 
+            self.ood_dataset = datasets.CIFAR10(datapath, train=True, download=True, 
                                                 transform=OOD_TRANSFORMATIONS["CIFAR10"])
         elif self.ood_data_source == "CIFAR100":
-            self.ood_dataset = datasets.CIFAR100("./data", train=True, download=True, 
+            self.ood_dataset = datasets.CIFAR100(datapath, train=True, download=True, 
                                                 transform=OOD_TRANSFORMATIONS["CIFAR10"])
         elif self.ood_data_source == "EMNIST":
-            self.ood_dataset = datasets.EMNIST("./data", train=True, split="mnist", download=True,
+            self.ood_dataset = datasets.EMNIST(datapath, train=True, split="mnist", download=True,
                                         transform=OOD_TRANSFORMATIONS["EMNIST"])
         else:
             raise ValueError(f"OOD data source {self.ood_data_source} is not supported.")
@@ -157,7 +208,7 @@ class IndicatorServer(AnomalyDetectionServer):
         """
         ood_data = list()
         ood_data_label = list()
-        sample_index = random.sample(range(len(self.ood_dataset)), self.global_ood_data_sample_lens)
+        sample_index = random.sample(range(len(self.ood_dataset)), self.ood_data_sample_lens)
         for ind in sample_index:
             ood_data.append(self.ood_dataset[ind])
             assigned_label = random.randint(0, self.config["num_classes"] - 1)
@@ -170,8 +221,8 @@ class IndicatorServer(AnomalyDetectionServer):
         Returns an iterator over batches of OOD data with assigned labels.
         """
         # Ensure requested sample size doesn't exceed dataset size
-        sample_size = min(self.global_ood_data_sample_lens, len(self.ood_dataset))
-        batch_size = self.global_ood_data_batch_size
+        sample_size = min(self.ood_data_sample_lens, len(self.ood_dataset))
+        batch_size = self.ood_data_batch_size
         
         # Sample indices without replacement
         indices = random.sample(range(len(self.ood_dataset)), sample_size)
@@ -220,7 +271,7 @@ class IndicatorServer(AnomalyDetectionServer):
         return iter(processed_batches)
     
     def _loss_function(self):
-        self.ceriterion = self.ceriterion_build
+        self.criterion = nn.CrossEntropyLoss()
         return True
 
     def _optimizer(self, round, model):
@@ -240,49 +291,15 @@ class IndicatorServer(AnomalyDetectionServer):
                                                  gamma=self.global_lr_gamma)
         return True
     
-    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
-        if self.current_round not in self.watermarking_rounds:
-            malicious_clients = []
-            benign_clients = [client_id for client_id, _, _ in client_updates]
-            return malicious_clients, benign_clients
-        
-        self.pre_process(round=self.current_round)
-        benign_clients = []
-        label_inds = []
-        label_acc_ws = []
-
-        for ind, (client_id, num_examples, model_state_dict) in enumerate(client_updates):
-
-            self.check_model.copy_params(self.global_model.state_dict())
-            for name, data in model_state_dict.items():
-                if "num_batches_tracked" in name:
-                    continue
-
-                if "running" in name:
-                    if self.replace_original_bn:
-                        new_value = self.after_wm_injection_bn_stats_dict[name]
-                    else:
-                        continue
-                else:
-                    new_value = data.clone().detach()
-
-                self.check_model.state_dict()[name].copy_(new_value)
-
-            wm_copy_data = copy.deepcopy(self.open_set)
-            _, _, label_acc_w, label_ind, _, _ \
-                = self._global_watermarking_test_sub(test_data=wm_copy_data, model=self.check_model)
-            
-            label_inds.append(label_ind)
-            label_acc_ws.append(label_acc_w)
-
-            if label_acc_w < self.VWM_detection_threshold: 
-                benign_clients.append(client_id)
-            else:
-                malicious_clients.append(client_id)
-        
-        log(INFO, f"label ind:{label_inds}")
-        log(INFO, f"label acc wm:{label_acc_ws}") 
-        return benign_clients, malicious_clients
+    def _projection(self, target_params_variables):
+        model_norm = self._model_dist_norm(self.global_model, target_params_variables)
+        if model_norm > self.global_projection_norm and self.global_is_projection_grad:
+            norm_scale = self.global_projection_norm / model_norm
+            for name, param in self.global_model.named_parameters():
+                clipped_difference = norm_scale * (
+                        param.data - target_params_variables[name])
+                param.data.copy_(target_params_variables[name]+clipped_difference)
+        return True
 
     def _global_watermark_injection(self, watermark_data, target_params_variables, round=None, model=None):
 
@@ -295,14 +312,14 @@ class IndicatorServer(AnomalyDetectionServer):
         self._optimizer(round, model)
         self._scheduler()
 
-        log(INFO, f"wm_mu:{self.wm_mu}")
+        log(INFO, f"watermarking_mu:{self.watermarking_mu}")
 
         retrain_no_times = self.global_retrain_no_times
         
         for internal_round in range(retrain_no_times):
 
             if internal_round%50==0:
-                log(INFO, f"global watermarking injection round:{internal_round}")
+                log(INFO, f"global watermarking injection round: {internal_round}")
             data_iterator = copy.deepcopy(watermark_data)
 
             for batch_id, watermark_batch in enumerate(data_iterator):
@@ -317,9 +334,9 @@ class IndicatorServer(AnomalyDetectionServer):
                 output = model(data) 
                 pred = output.data.max(1)[1]
 
-                class_loss = nn.functional.cross_entropy(output, targets)
+                class_loss = self.criterion(output, targets)
                 distance_loss = self._model_dist_norm_var(model, target_params_variables)
-                loss = class_loss + (self.wm_mu/2) * distance_loss 
+                loss = class_loss + (self.watermarking_mu/2) * distance_loss 
 
                 loss.backward()
                 self.optimizer.step()
@@ -328,19 +345,36 @@ class IndicatorServer(AnomalyDetectionServer):
                 total_loss += loss.data
 
                 if internal_round == retrain_no_times-1 and batch_id==0:
-                    metrics = self.server_evaluate(test_poisoned=False, model=model)
+                    metrics = self.server_evaluate(round_number=round, test_poisoned=False, model=model)
                     log(INFO, f"round:{internal_round} | benign acc:{metrics['test_clean_acc']}, benign loss:{metrics['test_clean_loss']}")
 
                     wm_data = copy.deepcopy(self.open_set)
                     loss_w, acc_w, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(test_data=wm_data, model=model)
-                    log(INFO, f"watermarking acc:{acc_w}, watermarking loss:{loss_w}, target label ({label_ind}) wm acc:{label_acc_w}")
-
-                    log(INFO, f" ")
+                    log(INFO, f"watermarking acc: {acc_w}, watermarking loss: {loss_w}, target label ({label_ind}) wm acc:{label_acc_w}")
 
             self.scheduler.step()
 
         return True
+
+    def _model_dist_norm(self, model, target_params):
+        squared_sum = 0
+        for name, layer in model.named_parameters():
+            squared_sum += torch.sum(torch.pow(layer.data - target_params[name].data, 2))
+        return math.sqrt(squared_sum)
     
+    def _model_dist_norm_var(self, model, target_params_variables, norm=2):
+        size = 0
+        for name, layer in model.named_parameters():
+            size += layer.view(-1).shape[0]
+        sum_var = torch.cuda.FloatTensor(size).fill_(0)
+        size = 0
+        for name, layer in model.named_parameters():
+            sum_var[size:size + layer.view(-1).shape[0]] = (
+            layer - target_params_variables[name]).view(-1)
+            size += layer.view(-1).shape[0]
+
+        return torch.norm(sum_var, norm)
+        
     def _global_watermarking_test_sub(self, test_data, model=None):
         if model == None:
             model = self.global_model
@@ -367,10 +401,10 @@ class IndicatorServer(AnomalyDetectionServer):
             targets = targets.cuda().detach().requires_grad_(False)
 
             output = model(data)
-            total_loss += self.ceriterion(output, targets, reduction='sum').item() 
+            total_loss += torch.nn.functional.cross_entropy(output, targets, reduction='sum').item() 
             pred = output.data.max(1)[1]
 
-            if batch_id==0 and model != None and self.show_train_log:
+            if batch_id==0 and model != None and self.verbose:
                 log(INFO, f"watermarking targets:{targets}")
                 log(INFO, f"watermarking pred :{pred}")
             
@@ -401,3 +435,10 @@ class IndicatorServer(AnomalyDetectionServer):
 
         model.train()
         return (total_l, watermark_acc, wm_label_acc, wm_index_label, wm_label_acc_list, wm_label_dict)
+    
+    def _transfer_params(self, source_model, target_model):
+        source_params = source_model.state_dict()
+        target_params = target_model.state_dict()
+        for name, param in source_params.items():
+            if name in target_params:
+                target_params[name].copy_(param.clone())
