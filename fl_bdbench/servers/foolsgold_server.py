@@ -14,12 +14,11 @@ class FoolsGoldServer(RobustAggregationServer):
     """
     FoolsGold server that uses cosine similarity to detect and defend against sybil attacks.
     """
-    def __init__(self, server_config, server_type="foolsgold", eta=0.1, confidence=1):
+    def __init__(self, server_config, server_type="foolsgold", confidence=1):
         super(FoolsGoldServer, self).__init__(server_config, server_type)
-        self.eta = eta
         self.confidence = confidence
         self.update_history: Dict[int, torch.Tensor] = {}  # client_id -> update_vector
-        log(INFO, f"Initialized FoolsGold server with eta={eta}, confidence={confidence}")
+        log(INFO, f"Initialized FoolsGold server with confidence={confidence}")
 
     def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> bool:
         """
@@ -77,7 +76,7 @@ class FoolsGoldServer(RobustAggregationServer):
         for name, param in self.global_model_params.items():
             if name.endswith('num_batches_tracked'):
                 continue
-            param.add_(weight_accumulator[name] * self.eta)
+            param.add_(weight_accumulator[name])
 
         return True
 
