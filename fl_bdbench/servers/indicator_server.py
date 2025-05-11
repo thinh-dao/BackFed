@@ -92,9 +92,12 @@ class IndicatorServer(AnomalyDetectionServer):
         malicious_clients = []
         label_inds = []
         label_acc_ws = []
-
+        
+        # Batch process clients if possible
         for ind, (client_id, num_examples, model_state_dict) in enumerate(client_updates):
             self._transfer_params(self.global_model, self.check_model)
+            
+            # Update only necessary parameters
             for name, data in model_state_dict.items():
                 if "num_batches_tracked" in name:
                     continue
@@ -109,9 +112,9 @@ class IndicatorServer(AnomalyDetectionServer):
 
                 self.check_model.state_dict()[name].copy_(new_value)
 
-            wm_copy_data = copy.deepcopy(self.open_set)
-            _, _, label_acc_w, label_ind, _, _ \
-                = self._global_watermarking_test_sub(test_data=wm_copy_data, model=self.check_model)
+            # Use cached batches
+            _, _, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(
+                test_data=self.get_batches_iterator(), model=self.check_model)
             
             label_inds.append(label_ind)
             label_acc_ws.append(label_acc_w)
@@ -218,7 +221,7 @@ class IndicatorServer(AnomalyDetectionServer):
     def _get_ood_dataloader(self):
         """
         Sample limited OOD data as open set noise with balanced class distribution.
-        Returns an iterator over batches of OOD data with assigned labels.
+        Returns cached batches of OOD data with assigned labels.
         """
         # Ensure requested sample size doesn't exceed dataset size
         sample_size = min(self.ood_data_sample_lens, len(self.ood_dataset))
@@ -233,8 +236,8 @@ class IndicatorServer(AnomalyDetectionServer):
             batch_size=batch_size,
             sampler=torch.utils.data.sampler.SubsetRandomSampler(indices),
             drop_last=True,
-            num_workers=4,  # Parallel data loading
-            pin_memory=True  # Faster data transfer to GPU
+            num_workers=4,
+            pin_memory=True
         )
         
         # Calculate actual number of samples after dropping incomplete batches
@@ -254,21 +257,27 @@ class IndicatorServer(AnomalyDetectionServer):
         np.random.shuffle(assigned_labels)
         assigned_labels = assigned_labels.reshape(num_batches, batch_size)
         
-        # Process each batch
-        processed_batches = []
+        # Cache processed batches in memory to avoid repeated dataloader iterations
+        self.cached_batches = []
         for batch_id, (data, targets) in enumerate(ood_dataloader):
             # Handle EMNIST dataset (grayscale to RGB conversion if needed)
             if self.config["dataset"].upper() == "EMNIST":
-                data = data[:, 0, :, :].unsqueeze(1)  # Keep only first channel
+                data = data[:, 0, :, :].unsqueeze(1)
                 
             if self.ood_data_source == "EMNIST":
-                data = data.repeat(1, 3, 1, 1)  # Convert grayscale to RGB
+                data = data.repeat(1, 3, 1, 1)
                 
-            # Assign new labels
+            # Assign new labels and move to GPU once
             targets = torch.tensor(assigned_labels[batch_id])
-            processed_batches.append((data, targets))
+            data = data.cuda().requires_grad_(False)
+            targets = targets.cuda().requires_grad_(False)
+            self.cached_batches.append((data, targets))
         
-        return iter(processed_batches)
+        return self.cached_batches
+
+    def get_batches_iterator(self):
+        """Return an iterator over the cached batches."""
+        return iter(self.cached_batches)
     
     def _loss_function(self):
         self.criterion = nn.CrossEntropyLoss()
@@ -302,57 +311,72 @@ class IndicatorServer(AnomalyDetectionServer):
         return True
 
     def _global_watermark_injection(self, watermark_data, target_params_variables, round=None, model=None):
-
-        if model==None:
+        if model is None:
             model = self.global_model
         model.train()
 
-        total_loss = 0
         self._loss_function()
         self._optimizer(round, model)
         self._scheduler()
 
         log(INFO, f"watermarking_mu:{self.watermarking_mu}")
-
+        
+        # Use cached data directly
+        batches = watermark_data
         retrain_no_times = self.global_retrain_no_times
         
+        # Early stopping if loss converges
+        prev_loss = float('inf')
+        patience = 5
+        patience_counter = 0
+        
         for internal_round in range(retrain_no_times):
-
-            if internal_round%50==0:
+            round_loss = 0
+            batch_count = 0
+            
+            if internal_round % 50 == 0:
                 log(INFO, f"global watermarking injection round: {internal_round}")
-            data_iterator = copy.deepcopy(watermark_data)
-
-            for batch_id, watermark_batch in enumerate(data_iterator):
+            
+            for data, targets in batches:
                 self.optimizer.zero_grad()
-                wm_data, wm_targets = watermark_batch                
-                wm_data = wm_data.cuda().detach().requires_grad_(False)
-                wm_targets = wm_targets.cuda().detach().requires_grad_(False)
-
-                data = wm_data
-                targets = wm_targets
-
-                output = model(data) 
-                pred = output.data.max(1)[1]
-
+                
+                # Data is already on GPU from caching
+                output = model(data)
+                
                 class_loss = self.criterion(output, targets)
                 distance_loss = self._model_dist_norm_var(model, target_params_variables)
-                loss = class_loss + (self.watermarking_mu/2) * distance_loss 
-
+                loss = class_loss + (self.watermarking_mu/2) * distance_loss
+                
                 loss.backward()
                 self.optimizer.step()
                 
                 self._projection(target_params_variables)
-                total_loss += loss.data
-
-                if internal_round == retrain_no_times-1 and batch_id==0:
-                    metrics = self.server_evaluate(round_number=round, test_poisoned=False, model=model)
-                    log(INFO, f"round:{internal_round} | benign acc:{metrics['test_clean_acc']}, benign loss:{metrics['test_clean_loss']}")
-
-                    wm_data = copy.deepcopy(self.open_set)
-                    loss_w, acc_w, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(test_data=wm_data, model=model)
-                    log(INFO, f"watermarking acc: {acc_w}, watermarking loss: {loss_w}, target label ({label_ind}) wm acc:{label_acc_w}")
-
+                round_loss += loss.item()
+                batch_count += 1
+            
+            avg_round_loss = round_loss / batch_count
+            total_loss = avg_round_loss
+            
+            # Early stopping check
+            if abs(prev_loss - avg_round_loss) < 1e-4:
+                patience_counter += 1
+                if patience_counter >= patience:
+                    log(INFO, f"Early stopping at round {internal_round}/{retrain_no_times}")
+                    break
+            else:
+                patience_counter = 0
+            
+            prev_loss = avg_round_loss
             self.scheduler.step()
+            
+            # Evaluate less frequently
+            if internal_round == retrain_no_times-1 or internal_round % 50 == 0:
+                metrics = self.server_evaluate(round_number=round, test_poisoned=False, model=model)
+                log(INFO, f"round: {internal_round} | benign acc:{metrics['test_clean_acc']}, benign loss:{metrics['test_clean_loss']}")
+                
+                loss_w, acc_w, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(
+                    test_data=self.get_batches_iterator(), model=model)
+                log(INFO, f"watermarking acc: {acc_w}, watermarking loss: {loss_w}, target label ({label_ind}) wm acc:{label_acc_w}")
 
         return True
 
