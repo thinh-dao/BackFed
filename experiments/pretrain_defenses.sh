@@ -130,7 +130,7 @@ python main.py \
     save_logging=csv \
     num_gpus=0.5 \
     num_cpus=1 \
-    cuda_visible_devices=\"1,0,2,4,5\" \
+    cuda_visible_devices=\"1,2,5,4,6\" \
     dir_tag=pretrain_robust_aggregation && \
 python main.py -m \
     aggregator=foolsgold \
@@ -142,7 +142,7 @@ python main.py -m \
     save_logging=csv \
     num_gpus=0.5 \
     num_cpus=1 \
-    cuda_visible_devices=\"5,4,3,2,1\" \
+    cuda_visible_devices=\"2,1,6,5,4\" \
     dir_tag=robust_aggregation_new
 
 
