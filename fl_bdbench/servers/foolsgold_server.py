@@ -40,8 +40,9 @@ class FoolsGoldServer(RobustAggregationServer):
             # Convert model updates to flat vector
             update_vector = []
             for name, param in client_params.items():
-                diff = param.to(self.device) - self.global_model_params[name]
-                update_vector.append(diff.flatten())
+                if "bias" in name or "weight" in name:
+                    diff = param.to(self.device) - self.global_model_params[name]
+                    update_vector.append(diff.flatten())
 
             update_vector = torch.cat(update_vector)
 
@@ -74,9 +75,8 @@ class FoolsGoldServer(RobustAggregationServer):
 
         # Update global model with learning rate
         for name, param in self.global_model_params.items():
-            if name.endswith('num_batches_tracked'):
-                continue
-            param.add_(weight_accumulator[name])
+            if "bias" in name or "weight" in name:
+                param.add_(weight_accumulator[name])
 
         return True
 
@@ -127,5 +127,8 @@ class FoolsGoldServer(RobustAggregationServer):
         # Apply logit function with confidence
         wv = self.confidence * (torch.log((wv/(1-wv)) + 1e-5) + 0.5)
         wv = torch.clamp(wv, 0, 1)
+
+        # Normalize weights
+        wv = wv / (torch.sum(wv) + 1e-10)
 
         return wv
