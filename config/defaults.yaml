@@ -149,6 +149,10 @@ aggregator_config:
     _target_: fl_bdbench.servers.MultiKrumServer
     oracle: True # If true, we assume the number of malicious clients is known
     eta: 0.1 
+  
+  ad_multi_krum:
+    _target_: fl_bdbench.servers.ADMultiKrumServer # Multi-krum initialized as AnomalyDetectionServer
+    eta: 0.1
 
   weakdp:
     _target_: fl_bdbench.servers.WeakDPServer

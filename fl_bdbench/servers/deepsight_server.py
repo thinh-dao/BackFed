@@ -29,6 +29,7 @@ class DeepSightServer(AnomalyDetectionServer, RobustAggregationServer):
                  deepsight_batch_size: int = 2000,
                  deepsight_tau: float = 1/3,
                  server_type: str = "deepsight",
+                 eta: float = 0.1,
                  **kwargs) -> None:
         """
         Initialize DeepSight server.
@@ -40,7 +41,7 @@ class DeepSightServer(AnomalyDetectionServer, RobustAggregationServer):
             deepsight_batch_size: Batch size for DDif calculation
             deepsight_tau: Threshold for determining benign clusters
         """
-        super(DeepSightServer, self).__init__(server_config, server_type, **kwargs)
+        super(DeepSightServer, self).__init__(server_config, server_type, eta, **kwargs)
         self.num_seeds = num_seeds
         self.num_samples = num_samples
         self.deepsight_batch_size = deepsight_batch_size
