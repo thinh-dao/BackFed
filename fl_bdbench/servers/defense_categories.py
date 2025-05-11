@@ -51,8 +51,8 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
     """
     defense_categories = ["anomaly_detection"]
 
-    def __init__(self, server_config, server_type, **kwargs):
-        super().__init__(server_config, server_type, **kwargs)
+    def __init__(self, server_config, server_type, eta, **kwargs):
+        super().__init__(server_config, server_type, eta,**kwargs)
         # Initialize detection performance metrics
         self.true_positives = 0
         self.false_positives = 0
