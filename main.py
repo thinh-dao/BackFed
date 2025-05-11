@@ -25,7 +25,8 @@ def main(config: DictConfig):
         server.run_experiment()
     except Exception as e:
         error_traceback = traceback.format_exc()
-        log(ERROR, f"Error: {e}\n{error_traceback}")
+        log(ERROR, f"Error: {e}\n{error_traceback}") # Log traceback
+        exit(1)
 
 if __name__ == "__main__":
     # Rich traceback and suppress traceback from hydra, omegaconf, and torch

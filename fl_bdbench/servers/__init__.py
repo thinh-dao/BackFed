@@ -11,7 +11,7 @@ from fl_bdbench.servers.defense_categories import (
 )
 from fl_bdbench.servers.trimmed_mean_server import TrimmedMeanServer
 from fl_bdbench.servers.median_server import GeometricMedianServer, CoordinateMedianServer
-from fl_bdbench.servers.multi_krum_server import MultiKrumServer, KrumServer
+from fl_bdbench.servers.multi_krum_server import MultiKrumServer, KrumServer, ADMultiKrumServer
 from fl_bdbench.servers.fedavg_server import UnweightedFedAvgServer, WeightedFedAvgServer
 from fl_bdbench.servers.fedprox_server import FedProxServer
 from fl_bdbench.servers.flame_server import FlameServer
@@ -38,6 +38,7 @@ __all__ = [
     "GeometricMedianServer",
     "CoordinateMedianServer",
     "MultiKrumServer",
+    "ADMultiKrumServer",
     "KrumServer",
     "UnweightedFedAvgServer",
     "WeightedFedAvgServer",
