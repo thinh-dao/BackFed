@@ -119,7 +119,6 @@ aggregator_config:
 
   foolsgold:
     _target_: fl_bdbench.servers.FoolsGoldServer
-    eta: 1e-1
     confidence: 1
 
   coordinate_median:
