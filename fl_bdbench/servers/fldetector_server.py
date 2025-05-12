@@ -34,13 +34,13 @@ class FLDetectorServer(AnomalyDetectionServer):
             self.global_model.load_state_dict(checkpoint['model_state'], strict=True)
             self.start_round = checkpoint['server_round'] + 1
 
-            condition = all(key in checkpoint for key in ['exclude_list', 'weight_record', 'grad_record', 'malicious_score', 'grad_list', 'old_grad_list', 'last_weight', 'last_grad'])
+            condition = all(key in checkpoint for key in ['exclude_list', 'weight_record', 'grad_record', 'malicious_scores_dict', 'grad_list', 'old_grad_list', 'last_weight', 'last_grad'])
             if condition:
                 log(INFO, "FLDetector: Checkpoint contains tracking variables. Loading...")
                 self.exclude_list = checkpoint['exclude_list']
                 self.weight_record = checkpoint['weight_record']
                 self.grad_record = checkpoint['grad_record']
-                self.malicious_score = checkpoint['malicious_score']
+                self.malicious_scores_dict = checkpoint['malicious_scores_dict']
                 self.grad_list = checkpoint['grad_list']
                 self.old_grad_list = checkpoint['old_grad_list']
                 self.last_weight = checkpoint['last_weight']
@@ -51,7 +51,7 @@ class FLDetectorServer(AnomalyDetectionServer):
                 self.exclude_list = []
                 self.weight_record = []
                 self.grad_record = []
-                self.malicious_score = torch.zeros(1, self.config.num_clients, device=self.device)
+                self.malicious_scores_dict = {}
                 self.grad_list = []
                 self.old_grad_list = []
                 self.last_weight = 0
@@ -143,7 +143,7 @@ class FLDetectorServer(AnomalyDetectionServer):
                 'exclude_list': self.exclude_list,
                 'weight_record': self.weight_record,
                 'grad_record': self.grad_record,
-                'malicious_score': self.malicious_score,
+                'malicious_scores_dict': self.malicious_scores_dict,
                 'grad_list': self.grad_list,
                 'old_grad_list': self.old_grad_list,
                 'last_weight': self.last_weight,
@@ -322,61 +322,75 @@ class FLDetectorServer(AnomalyDetectionServer):
 
         # Update malicious scores
         if distance is not None and self.current_round - self.start_round > self.window_size:
-            distance_extend = torch.zeros(self.config.num_clients, device=self.device)
-            distance_extend[client_ids] = distance
-            self.malicious_score = torch.cat([self.malicious_score, distance_extend.unsqueeze(0)], dim=0)
+            # Update scores in the dictionary for each client
+            for i, client_id in enumerate(client_ids):
+                if client_id not in self.malicious_scores_dict:
+                    self.malicious_scores_dict[client_id] = []
+                
+                # Add new score for this round
+                if i < len(distance):
+                    self.malicious_scores_dict[client_id].append(distance[i].item())
+                
+                # Keep only the last window_size scores
+                if len(self.malicious_scores_dict[client_id]) > self.window_size:
+                    self.malicious_scores_dict[client_id] = self.malicious_scores_dict[client_id][-self.window_size:]
 
         # Detect anomalies using gap statistics
-        if self.malicious_score.shape[0] > self.window_size:
-            score = torch.sum(self.malicious_score[-self.window_size:], dim=0)
-
-            # Convert to numpy for gap statistics
-            score_np = score.cpu().numpy()
+        if self.current_round - self.start_round > self.window_size:
+            # Calculate sum of scores for each client over the window
+            client_scores = {}
+            for client_id, scores in self.malicious_scores_dict.items():
+                if len(scores) > 0:  # Only consider clients with scores
+                    client_scores[client_id] = sum(scores)
             
-            optimal_k = self.gap_statistics(score, num_sampling=10, K_max=len(client_updates),
-                                n=self.config.num_clients-len(self.exclude_list))
-            
-            log(INFO, f"FLDetector: Optimal number of clusters from gap_statistics: {optimal_k}")
-            if optimal_k >= 2:
-
-                # Cluster clients into benign and malicious
-                kmeans = KMeans(n_clusters=2, init='k-means++', random_state=self.config.seed)
-                kmeans.fit(score_np.reshape(-1, 1))
-                labels = kmeans.labels_
-
-                # Identify malicious clients
-                if np.mean(score_np[labels==0]) < np.mean(score_np[labels==1]):
-                    labels = 1 - labels
-
-                log(WARNING, f'FLDetector: Malicious score - Benign: {np.mean(score_np[labels==1])}, Malicious: {np.mean(score_np[labels==0])}')
-
-                # Update exclude list
-                for i, label in enumerate(labels):
-                    if label == 0:
-                        self.exclude_list.append(i)
-
-                log(WARNING, f"FLDetector: Outliers detected! Restarting from round {self.current_round}")
+            # Convert to numpy array for clustering
+            if client_scores:
+                client_ids_list = list(client_scores.keys())
+                score_np = np.array([client_scores[cid] for cid in client_ids_list]).reshape(-1, 1)
                 
-                # Update rounds selection
-                log(WARNING, f"FLDetector: Update rounds selection to exclude malicious clients" )
-                self.client_manager.update_rounds_selection(self.exclude_list, start_round=self.current_round+1) # exclude malicious clients from the next round
+                optimal_k = self.gap_statistics(score_np, num_sampling=10, K_max=len(client_updates),
+                                    n=len(client_scores))
+                
+                log(INFO, f"FLDetector: Optimal number of clusters from gap_statistics: {optimal_k}")
+                if optimal_k >= 2:
 
-                # Reset model and tracking variables
-                self.global_model.load_state_dict(self.init_model)
-                self.global_model_params = {name: param.detach().clone().to(self.device) for name, param in self.global_model.state_dict().items()}
-                self.start_round = self.current_round
+                    # Cluster clients into benign and malicious
+                    kmeans = KMeans(n_clusters=2, init='k-means++', random_state=self.config.seed)
+                    kmeans.fit(score_np)
+                    labels = kmeans.labels_
 
-                # reset all tracking variables (except exclude_list)
-                self.weight_record = []
-                self.grad_record = []
-                self.malicious_score = torch.zeros((1, 
-                    self.config.num_clients - len(self.exclude_list)), device=self.device)
-                self.grad_list = []
-                self.old_grad_list = []
-                self.last_weight = 0
-                self.last_grad = 0
+                    # Identify malicious clients
+                    if np.mean(score_np[labels==0]) < np.mean(score_np[labels==1]):
+                        labels = 1 - labels
 
-                return [], [] # return empty lists to indicate restart
+                    log(WARNING, f'FLDetector: Malicious score - Benign: {np.mean(score_np[labels==1])}, Malicious: {np.mean(score_np[labels==0])}')
+
+                    # Update exclude list
+                    for i, label in enumerate(labels):
+                        if label == 0:
+                            self.exclude_list.append(client_ids_list[i])
+
+                    log(WARNING, f"FLDetector: Outliers detected! Restarting from round {self.current_round}")
+                    
+                    # Update rounds selection
+                    log(WARNING, f"FLDetector: Update rounds selection to exclude malicious clients" )
+                    self.client_manager.update_rounds_selection(self.exclude_list, start_round=self.current_round+1) # exclude malicious clients from the next round
+
+                    # Reset model and tracking variables
+                    self.global_model.load_state_dict(self.init_model)
+                    self.global_model_params = {name: param.detach().clone().to(self.device) for name, param in self.global_model.state_dict().items()}
+                    self.start_round = self.current_round
+
+                    # reset all tracking variables (except exclude_list)
+                    self.weight_record = []
+                    self.grad_record = []
+                    self.malicious_score_dict = {}
+                    self.grad_list = []
+                    self.old_grad_list = []
+                    self.last_weight = 0
+                    self.last_grad = 0
+
+                    return [], [] # return empty lists to indicate restart
 
         # Update tracking variables
         self.weight_record.append(current_weight_vector - self.last_weight)
