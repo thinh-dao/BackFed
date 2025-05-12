@@ -137,7 +137,7 @@ python main.py \
     save_logging=csv \
     num_gpus=0.5 \
     num_cpus=1 \
-    cuda_visible_devices=\"1,2,4,5,6\" \
+    cuda_visible_devices=\"1,3,4,5,6\" \
     dir_tag=pretrain_anomaly_detection && \
 python main.py -m \
     aggregator=fldetector \
@@ -150,19 +150,6 @@ python main.py -m \
     save_logging=csv \
     num_gpus=0.5 \
     num_cpus=1 \
-    cuda_visible_devices=\"2,1,0,5,4\" \
+    cuda_visible_devices=\"7,6,5,4,3\" \
     dir_tag=anomaly_detection_cifar10
 
-
-
-python main.py \
-    aggregator=fldetector \
-    atk_config.selection_scheme=multi-adversary \
-    num_rounds=300 \
-    save_checkpoint=True \
-    "save_model_rounds=[2100,2200,2300]" \
-    save_logging=csv \
-    num_gpus=0.5 \
-    num_cpus=1 \
-    cuda_visible_devices=\"1,2,4,5,6\" \
-    dir_tag=pretrain_anomaly_detection

@@ -131,7 +131,7 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
             s_values.append(sd)
 
         # Find optimal number of clusters
-        for k in range(2, K_max):
+        for k in range(1, K_max):
             if gaps[k-1] >= gaps[k] - s_values[k]:
                 return k
         return K_max
