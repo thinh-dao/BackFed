@@ -153,7 +153,53 @@ class ClientManager:
                 self.rounds_selection[r] = {
                     self.benign_client_class: selected_clients
                 }
+    
+    # This method is used to exclude certain clients from the selection (following FLDetector)
+    def update_rounds_selection(self, exclude_clients: List[int], start_round: int):
+        """Update the client selection starting from a specific round."""
+
+        sample_space = [i for i in range(self.config.num_clients) if i not in exclude_clients]
+        updated_rounds = [r for r in self.rounds_selection if r >= start_round]
+
+        for r in updated_rounds:
+            selected_clients = []
+
+            for client_cls in self.rounds_selection[r]:
+                selected_clients.extend(self.rounds_selection[r][client_cls])
+
+            for client_cls in self.rounds_selection[r]:
+                for client in self.rounds_selection[r][client_cls]:
+                    if client in exclude_clients:
+                        self.rounds_selection[r][client_cls].remove(client)
+
+                        # Replace the excluded client with a random client from the sample space
+                        while True:
+                            replaced_client = random.choice(sample_space)
+                            if replaced_client not in selected_clients:
+                                break
+
+                        # Update the selection  
+                        if replaced_client in self.malicious_clients:
+                            if self.malicious_client_class not in self.rounds_selection[r]:
+                                self.rounds_selection[r][self.malicious_client_class] = []
+                            else:   
+                                self.rounds_selection[r][self.malicious_client_class].append(replaced_client)
+                        elif replaced_client in self.benign_clients:
+                            if self.benign_client_class not in self.rounds_selection[r]:
+                                self.rounds_selection[r][self.benign_client_class] = []
+                            else:
+                                self.rounds_selection[r][self.benign_client_class].append(replaced_client)
+                        else:
+                            raise ValueError(f"ClientManager: Invalid client ID {replaced_client}")
+                        
+                if len(self.rounds_selection[r][client_cls]) == 0:
+                    del self.rounds_selection[r][client_cls]
             
+            # Update the poison rounds if no malicious clients are selected
+            if self.malicious_client_class not in self.rounds_selection[r] and r in self.poison_rounds:
+                self.poison_rounds.remove(r)
+
+
     def get_rounds_selection(self):
         """Get the client selection for each round."""
         return self.rounds_selection

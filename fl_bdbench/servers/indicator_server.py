@@ -355,10 +355,9 @@ class IndicatorServer(AnomalyDetectionServer):
                 batch_count += 1
             
             avg_round_loss = round_loss / batch_count
-            total_loss = avg_round_loss
             
             # Early stopping check
-            if abs(prev_loss - avg_round_loss) < 1e-4:
+            if abs(prev_loss - avg_round_loss) < 5e-3:
                 patience_counter += 1
                 if patience_counter >= patience:
                     log(INFO, f"Early stopping at round {internal_round}/{retrain_no_times}")

@@ -46,6 +46,7 @@ class DeepSightServer(AnomalyDetectionServer, RobustAggregationServer):
         self.num_samples = num_samples
         self.deepsight_batch_size = deepsight_batch_size
         self.deepsight_tau = deepsight_tau
+        log(INFO, f"Initialized DeepSight server with deepsight_tau={deepsight_tau}")
 
     def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> Tuple[List[int], List[int], List[torch.Tensor]]:
         """
