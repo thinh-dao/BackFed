@@ -52,7 +52,7 @@ class BaseServer:
         # Basic setup
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.server_type = server_type
-        self.current_round = 0
+        self.start_round = 0
         self.config = server_config
         self.normalization = get_normalization(dataset_name=server_config.dataset) if server_config.normalize else None
 
@@ -89,7 +89,7 @@ class BaseServer:
             self.context_actor = None
 
         # Initialize the client_manager and get the rounds_selection
-        self.client_manager = ClientManager(server_config, start_round=self.current_round)
+        self.client_manager = ClientManager(server_config, start_round=self.start_round)
         self.rounds_selection = self.client_manager.get_rounds_selection()
 
         # Initialize the trainer
@@ -107,6 +107,8 @@ class BaseServer:
 
         elif self.config.save_logging == None:
             log(WARNING, "The logging is not saved!")
+
+        self.current_round = self.start_round
 
     def _initialize_trainer(self):            
         if self.config.mode == "parallel":
@@ -148,7 +150,7 @@ class BaseServer:
             checkpoint = self._load_checkpoint()
             self.global_model = get_model(model_name=self.config.model, num_classes=self.config.num_classes, dataset_name=self.config.dataset)
             self.global_model.load_state_dict(checkpoint['model_state'], strict=True)
-            self.current_round = checkpoint['server_round'] + 1
+            self.start_round = checkpoint['server_round'] + 1
 
         elif self.config.pretrain_model_path != None:
             self.global_model = get_model(model_name=self.config.model, num_classes=self.config.num_classes, dataset_name=self.config.dataset, pretrain_model_path=self.config.pretrain_model_path)
@@ -159,19 +161,7 @@ class BaseServer:
         self.global_model = self.global_model.to(self.device)
 
         if self.config.wandb.save_model == True and self.config.wandb.save_model_round == -1:
-            self.config.wandb.save_model_round = self.current_round + self.config.num_rounds
-
-    def _save_best_checkpoint(self, path):
-        # Create a dictionary with metrics, model state, server_round, and model_name
-        save_dict = {
-            'metrics': self.best_metrics,
-            'model_state': self.best_model_state,
-            'server_round': self.current_round,
-            'model_name': self.config.model,
-        }
-
-        # Save the dictionary
-        torch.save(save_dict, path)
+            self.config.wandb.save_model_round = self.start_round + self.config.num_rounds
 
     def _load_checkpoint(self):
         """
@@ -222,10 +212,43 @@ class BaseServer:
             resume_model_dict = torch.load(self.config.checkpoint)
     
         # Update current round
-        current_round = resume_model_dict['server_round']
-        log(INFO, f"Loaded checkpoint from round {current_round} with metrics: {resume_model_dict['metrics']}")
+        start_round = resume_model_dict['server_round']
+        log(INFO, f"Loaded checkpoint from round {start_round} with metrics: {resume_model_dict['metrics']}")
 
         return resume_model_dict
+    
+    def _save_checkpoint(self, server_metrics):
+        if self.config.save_checkpoint:
+            if self.config.partitioner == "dirichlet":
+                model_filename = f"{self.config.model}_round_{self.current_round}_dir_{self.config.alpha}.pth"
+            else:
+                model_filename = f"{self.config.model}_round_{self.current_round}_uniform.pth"
+        
+            save_dir = os.path.join(os.getcwd(), "checkpoints", f"{self.config.dataset.upper()}_{self.config.aggregator}")
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, model_filename)
+            # Create a dictionary with metrics, model state, server_round, and model_name
+            save_dict = {
+                'metrics': self.best_metrics,
+                'model_state': self.best_model_state,
+                'server_round': self.current_round,
+                'model_name': self.config.model,
+            }
+            # Save the dictionary
+            torch.save(save_dict, save_path)
+            log(INFO, f"Checkpoint saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
+
+        if self.config.save_model:
+            save_dir = os.path.join(self.config.output_dir, "models")
+            os.makedirs(save_dir, exist_ok=True)
+            save_path = os.path.join(save_dir, model_filename)
+            torch.save(self.best_model_state, save_path) # include only model state
+            log(INFO, f"Best model saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
+
+        if self.config.save_logging in ["wandb", "both"] \
+            and self.config.wandb.save_model == True \
+            and self.current_round == self.config.wandb.save_model_round:
+            save_model_to_wandb_artifact(self.config, self.best_model_state, self.current_round, server_metrics)
     
     def get_model_parameters(self) -> StateDict:
         """
@@ -441,12 +464,12 @@ class BaseServer:
 
         if not self.config.disable_progress_bar:
             train_progress_bar = track(
-                range(self.current_round, self.current_round + self.config.num_rounds),
+                range(self.start_round, self.start_round + self.config.num_rounds),
                 "[bold green]Training...",
                 console=get_console(),
             )
         else:
-            train_progress_bar = range(self.current_round, self.current_round + self.config.num_rounds)
+            train_progress_bar = range(self.start_round, self.start_round + self.config.num_rounds)
 
         self.best_metrics = {}
         self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
@@ -489,48 +512,11 @@ class BaseServer:
                 self.csv_logger.log({**client_fit_metrics}, step=self.current_round)
 
             if self.current_round in self.config.save_model_rounds:
-                if self.config.partitioner == "dirichlet":
-                    model_filename = f"{self.config.model}_round_{self.current_round}_dir_{self.config.alpha}.pth"
-                else:
-                    model_filename = f"{self.config.model}_round_{self.current_round}_uniform.pth"
-
-                if self.config.save_checkpoint:
-                    save_dir = os.path.join(os.getcwd(), "checkpoints", f"{self.config.dataset.upper()}_{self.config.aggregator}")
-                    os.makedirs(save_dir, exist_ok=True)
-                    save_path = os.path.join(save_dir, model_filename)
-                    # Create a dictionary with metrics, model state, server_round, and model_name
-                    save_dict = {
-                        'metrics': self.best_metrics,
-                        'model_state': self.best_model_state,
-                        'server_round': self.current_round,
-                        'model_name': self.config.model,
-                    }
-                    # Save the dictionary
-                    torch.save(save_dict, save_path)
-                    log(INFO, f"Checkpoint saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
-
-                if self.config.save_model:
-                    save_dir = os.path.join(self.config.output_dir, "models")
-                    os.makedirs(save_dir, exist_ok=True)
-                    save_path = os.path.join(save_dir, model_filename)
-                    torch.save(self.best_model_state, save_path) # include only model state
-                    log(INFO, f"Best model saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
-
-            if self.config.save_logging in ["wandb", "both"] \
-                and self.config.wandb.save_model == True \
-                and self.current_round == self.config.wandb.save_model_round:
-                save_model_to_wandb_artifact(self.config, self.best_model_state, self.current_round, server_metrics)
+                self._save_checkpoint(server_metrics=server_metrics)
         
         experiment_end_time = time.time()
         experiment_time = experiment_end_time - experiment_start_time
         log(INFO, f"{separator} TRAINING COMPLETED {separator}")
-
-        if "anomaly_detection" in self.defense_categories:
-            summary_detection_metrics = self.get_detection_performance()
-            log(INFO, f"========== Detection performance ==========")
-            log(INFO, summary_detection_metrics)
-            log(INFO, f"===========================================")
-
         log(INFO, f"Total experiment time: {format_time_hms(experiment_time)}")
 
     def train_package(self, client_type: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:

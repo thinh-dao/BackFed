@@ -14,7 +14,7 @@ from fl_bdbench.servers.fedavg_server import UnweightedFedAvgServer
 from fl_bdbench.utils import log
 from fl_bdbench.const import client_id, num_examples, StateDict
 from typing import List, Tuple, Dict
-from logging import INFO
+from logging import INFO, WARNING
 
 class ClientSideDefenseServer(UnweightedFedAvgServer):
     """Base class for all client-side defenses.
@@ -131,7 +131,7 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
             s_values.append(sd)
 
         # Find optimal number of clusters
-        for k in range(1, K_max):
+        for k in range(2, K_max):
             if gaps[k-1] >= gaps[k] - s_values[k]:
                 return k
         return K_max
@@ -146,7 +146,8 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
         Returns:
             True if the global model parameters are updated, False otherwise
         """
-        if len(client_updates) == 0:
+        if not client_updates:
+            log(WARNING, "No client updates found, using global model")
             return False
         
         # Detect anomalies & evaluate detection
@@ -221,6 +222,12 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
                 
         log(INFO, detection_metrics)
         log(INFO, f"═══════════════════════════════════════════════")
+
+        if self.current_round == self.start_round + self.config.num_rounds: # Last round
+            summary_detection_metrics = self.get_detection_performance()
+            log(INFO, f"========== Detection performance ==========")
+            log(INFO, summary_detection_metrics)
+            log(INFO, f"===========================================")
 
         if self.config.save_logging in ["wandb", "both"]:
             wandb.log({**detection_metrics}, step=self.current_round)
