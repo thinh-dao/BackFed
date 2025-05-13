@@ -8,9 +8,9 @@ import math
 import copy
 
 from torch.nn import functional as F
-from omegaconf import open_dict
 from torchvision.models import VGG, ResNet
 from fl_bdbench.clients.base_malicious_client import MaliciousClient
+from fl_bdbench.models import MnistNet
 from fl_bdbench.utils import log 
 from logging import INFO
 
@@ -88,6 +88,10 @@ class ChameleonClient(MaliciousClient):
             self.contrastive_model.classifier = nn.Identity()
         elif isinstance(self.contrastive_model, ResNet):
             self.contrastive_model.fc = nn.Identity()
+        elif isinstance(self.contrastive_model, MnistNet):
+            self.contrastive_model.fc2 = nn.Identity()
+        else:
+            raise ValueError("Chameleon only supports VGG, ResNet, and MnistNet models")
 
         self._loss_function()
         self._supcon_optimizer()

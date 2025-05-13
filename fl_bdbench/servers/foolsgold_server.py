@@ -98,15 +98,10 @@ class FoolsGoldServer(RobustAggregationServer):
         # Stack client update histories
         M = torch.stack(selected_his)
 
-        # Compute norms for each client's update history
-        norms = torch.linalg.norm(M, dim=1)
-
         # Compute cosine similarity matrix
-        dot_products = torch.mm(M, M.t())
-        norms_matrix = torch.outer(norms, norms)
-        cs_matrix = dot_products / (norms_matrix + 1e-10)  # Add small epsilon to avoid division by zero
-        cs_matrix = cs_matrix - torch.eye(num_clients, device=self.device)  # Subtract identity matrix
-
+        cs_matrix = torch.nn.functional.cosine_similarity(M.unsqueeze(1), M.unsqueeze(0), dim=2)
+        cs_matrix = cs_matrix - torch.eye(num_clients, device=self.device) 
+        
         # Compute maximum cosine similarity for each client
         maxcs = torch.max(cs_matrix, dim=1)[0] + 1e-5
 
@@ -117,7 +112,7 @@ class FoolsGoldServer(RobustAggregationServer):
                     continue
                 if maxcs[i] < maxcs[j]:
                     cs_matrix[i][j] = cs_matrix[i][j] * maxcs[i]/maxcs[j]
-
+        
         # Compute weight vector
         wv = 1 - torch.max(cs_matrix, dim=1)[0]
         wv = torch.clamp(wv, 0, 1)

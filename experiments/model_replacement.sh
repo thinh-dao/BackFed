@@ -6,10 +6,10 @@ python main.py -m \
     atk_config.data_poison_method=pattern \
     checkpoint=2000 \
     save_logging=csv \
-    num_rounds=300 \
+    num_rounds=600 \
     num_gpus=0.2 \
     num_cpus=1 \
-    dir_tag=model_replacement \
+    dir_tag=model_replacement_cifar10 \
     cuda_visible_devices=\"1,5\"
 
 # Model replacement
@@ -20,10 +20,10 @@ python main.py -m \
     atk_config.data_poison_method=distributed \
     checkpoint=2000 \
     save_logging=csv \
-    num_rounds=300 \
+    num_rounds=600 \
     num_gpus=0.2 \
     num_cpus=1 \
-    dir_tag=model_replacement \
+    dir_tag=model_replacement_cifar10 \
     cuda_visible_devices=\"1,5\"
 
 # Model replacement
@@ -34,10 +34,10 @@ python main.py -m \
     atk_config.data_poison_method=edge_case \
     checkpoint=2000 \
     save_logging=csv \
-    num_rounds=300 \
+    num_rounds=600 \
     num_gpus=0.2 \
     num_cpus=1 \
-    dir_tag=model_replacement \
+    dir_tag=model_replacement_cifar10 \
     cuda_visible_devices=\"3,2\"
 
 
@@ -49,10 +49,10 @@ python main.py -m \
     atk_config.data_poison_method=a3fl \
     checkpoint=2000 \
     save_logging=csv \
-    num_rounds=300 \
+    num_rounds=600 \
     num_gpus=0.2 \
     num_cpus=1 \
-    dir_tag=model_replacement \
+    dir_tag=model_replacement_cifar10 \
     cuda_visible_devices=\"3,2\"
 
 # Model replacement
@@ -63,7 +63,7 @@ python main.py -m \
     atk_config.data_poison_method=iba \
     checkpoint=2000 \
     save_logging=csv \
-    num_rounds=300 \
+    num_rounds=600 \
     num_gpus=0.5 \
     num_cpus=1 \
     dir_tag=model_replacement \
@@ -174,3 +174,94 @@ python main.py -m \
     num_cpus=1 \
     dir_tag=model_replacement_emnist \
     cuda_visible_devices=\"1,2,3,4,5\"
+
+
+#################################### 600 rounds ########
+python main.py \
+    aggregator=unweighted_fedavg \
+    atk_config=singleshot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=pattern \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement_cifar10 \
+    cuda_visible_devices=\"7,6,5,3,2\"
+
+# Model replacement
+python main.py \
+    aggregator=unweighted_fedavg \
+    atk_config=singleshot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=distributed \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement_cifar10 \
+    cuda_visible_devices=\"7,6,5,3,2\"
+
+# Model replacement
+python main.py \
+    aggregator=unweighted_fedavg \
+    atk_config=singleshot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=edge_case \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement_cifar10 \
+    cuda_visible_devices=\"3,2,5,6,7\"
+
+
+# Model replacement
+python main.py \
+    aggregator=unweighted_fedavg \
+    atk_config=singleshot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=a3fl \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement_cifar10 \
+    cuda_visible_devices=\"5,6,7,1,3\"
+
+
+# Model replacement
+python main.py \
+    aggregator=unweighted_fedavg \
+    atk_config=singleshot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=iba \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement_cifar10 \
+    cuda_visible_devices=\"5,6,7,1,3\"
+
+
+
+
+    ##
+
+python main.py -m\
+    aggregator=unweighted_fedavg \
+    atk_config=singleshot \
+    atk_config.model_poison_method=neurotoxin,chameleon \
+    atk_config.data_poison_method=pattern \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=model_replacement_cifar10 \
+    cuda_visible_devices=\"7,6,5,3,2\"
