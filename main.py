@@ -33,4 +33,5 @@ if __name__ == "__main__":
     OmegaConf.register_new_resolver("eval", eval) # For conditional config on dir_tag
     install(show_locals=False, suppress=[hydra, omegaconf, torch, ray])
     os.environ["HYDRA_FULL_ERROR"] = "1" # For detailed error messages
+    os.environ["RAY_memory_monitor_refresh_ms"] = '0' # Disable worker killing
     main()
