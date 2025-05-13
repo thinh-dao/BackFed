@@ -289,5 +289,5 @@ python main.py -m \
     num_gpus=0.5 \
     num_cpus=1 \
     dir_tag=mutual_dataset_emnist \
-    cuda_visible_devices=\"1,2,3,4,5\"
+    cuda_visible_devices=\"7,6,5,4,3\"
 
