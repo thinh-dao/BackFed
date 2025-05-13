@@ -36,6 +36,7 @@ class ClientManager:
             self.malicious_clients = []
             self.benign_clients = list(range(self.config.num_clients))
             # Initialize benign client class for rounds_selection
+            self.malicious_client_class = None
             self.benign_client_class = BenignClient
             self._initialize_normal_rounds()
         else:
