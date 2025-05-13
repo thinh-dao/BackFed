@@ -23,6 +23,10 @@ class FLDetectorServer(AnomalyDetectionServer):
         self.start_round = self.current_round
         self.window_size = window_size
         self.init_model = None
+        
+        # After calling _initialize_model()
+        if len(self.exclude_list) > 0:
+            self.client_manager.update_rounds_selection(self.exclude_list, start_round=self.start_round)
 
     def _initialize_model(self):
         """
@@ -45,7 +49,6 @@ class FLDetectorServer(AnomalyDetectionServer):
                 self.old_grad_list = checkpoint['old_grad_list']
                 self.last_weight = checkpoint['last_weight']
                 self.last_grad = checkpoint['last_grad']
-                self.client_manager.update_rounds_selection(self.exclude_list, start_round=self.start_round)
             else:
                 log(WARNING, "FLDetector: Checkpoint does not contain tracking variables.")
                 self.exclude_list = []
@@ -122,7 +125,7 @@ class FLDetectorServer(AnomalyDetectionServer):
 
         return resume_model_dict
     
-    def _save_checkpoint(self, model_filename, server_metrics):
+    def _save_checkpoint(self, server_metrics):
         if self.config.save_checkpoint:
             if self.config.partitioner == "dirichlet":
                 model_filename = f"{self.config.model}_round_{self.current_round}_dir_{self.config.alpha}.pth"
