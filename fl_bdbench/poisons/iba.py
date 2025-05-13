@@ -7,8 +7,8 @@ import shutil
 from omegaconf import DictConfig
 from .base import Poison
 from fl_bdbench.models import UNet, MNISTAutoencoder
+from fl_bdbench.utils import log
 from logging import INFO
-from flwr.common.logger import log
 
 DEFAULT_PARAMS = {
     "atk_eps": 0.06,
