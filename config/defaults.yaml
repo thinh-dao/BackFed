@@ -49,6 +49,7 @@ num_classes: ??? # This will be set in runtime when loading the dataset
 # *Test configuration
 test_batch_size: 512
 num_workers: 4 # Number of workers for dataloader
+pin_memory: False
 test_every: 1 # Test every x rounds
 
 # *Default local training configuration (passed to clients during training)

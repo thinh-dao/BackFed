@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 import time
 import traceback
+import psutil
+import os
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Tuple, List, Optional
@@ -26,7 +28,7 @@ class BaseClient:
         self,
         client_id: int,
         dataset: Dataset,
-        dataset_indices: List[List[int]], 
+        dataset_indices: List[List[int]],
         model: nn.Module,
         client_config: DictConfig,
         client_type: str = "base",
@@ -99,11 +101,11 @@ class BaseClient:
 
             self.train_dataset = Subset(dataset, train_indices)
             self.val_dataset = Subset(dataset, val_indices)
-            self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=True)
-            self.val_loader = DataLoader(self.val_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=True)
+            self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=False)
+            self.val_loader = DataLoader(self.val_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=False)
         else:
             self.train_dataset = Subset(dataset, indices)
-            self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=True)
+            self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=False)
 
     def _check_required_keys(self, train_package: Dict[str, Any], required_keys: List[str] = ["global_model_params", "server_round"]):
         """
@@ -111,15 +113,15 @@ class BaseClient:
         """
         for key in required_keys:
             assert key in train_package, f"{key} not found in train_package for {self.client_type} client"
-    
+
     def train(self, train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
         """
         Train the model for a number of epochs.
-        
+
         Args:
             train_package: Data package received from server to train the model (e.g., global model weights, learning rate, etc.)
-            
-        Returns: 
+
+        Returns:
             num_examples (int): number of examples in the training dataset
             state_dict (StateDict): updated model parameters
             training_metrics (Dict[str, float]): training metrics
@@ -131,7 +133,7 @@ class BaseClient:
         Evaluate the model on test data.
         Args:
             test_package: Data package received from server to evaluate the model (e.g., global model weights, learning rate, etc.)
-        Returns: 
+        Returns:
             num_examples (int): number of examples in the test dataset
             evaluation_metrics (Dict[str, float]): evaluation metrics
         """
@@ -149,13 +151,13 @@ class BaseClient:
             return torch.linalg.norm(client_params_tensor - global_params_tensor, ord=2).item()
         else:
             return torch.linalg.norm(client_params_tensor - global_params_tensor, ord=2)
-        
+
     def get_model_parameters(self) -> StateDict:
         """
         Move the global model parameters to cpu.
         """
         return {name: param.cpu() for name, param in self.model.state_dict().items()}
-    
+
     def get_resource_metrics(self):
         """
         Get resource usage metrics.
@@ -172,7 +174,7 @@ class BaseClient:
             "current_gpu_memory": self.current_memory,
             "max_gpu_memory": self.max_memory
         }
-    
+
     def get_client_info(self):
         """
         Get client information.
@@ -185,7 +187,7 @@ class BaseClient:
             "device": str(self.device),
             "dataset_size": len(self.train_dataset)
         }
-    
+
     def get_client_type(self):
         """
         Get client type.
@@ -237,7 +239,7 @@ class ClientApp:
         """
         if client_cls is None:
             raise ValueError(f"Client class must be provided")
-        
+
         # Initialize client with deep copy of preloaded model
         return client_cls(
             client_id=client_id,
@@ -250,6 +252,13 @@ class ClientApp:
 
     def train(self, client_cls: BaseClient, client_id: int, init_args: Dict[str, Any], train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
         try:
+            # Clear memory before loading a new client
+            if self.client is not None:
+                self._cleanup_client()
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
             self.client = self._load_client(client_cls, client_id, **init_args)
 
             train_time_start = time.time()
@@ -257,7 +266,7 @@ class ClientApp:
             if timeout is not None:
                 if self.pool is None:
                     raise ValueError("Pool is not initialized")
-                
+
                 future = self.pool.submit(self.client.train, train_package)
                 results = future.result(timeout=timeout)
             else:
@@ -269,25 +278,25 @@ class ClientApp:
                 "error": str(e),
                 "traceback": error_tb
             }
-        
+
         assert len(results) == 3, "Training results must contain (num_examples, state_dict, training_metrics)"
 
         train_time_end = time.time()
         train_time = train_time_end - train_time_start
         log(INFO, f"Client [{self.client.client_id}] ({self.client.client_type}) - Training time: {train_time:.2f} seconds")
-        
+
         return results
 
     def evaluate(self, test_package: Dict[str, Any]) -> Tuple[int, Metrics]:
         try:
             assert self.client is not None, "Only initialized client (after training) can be evaluated"
-            
+
             eval_time_start = time.time()
             timeout = self.client.client_config.timeout
             if timeout is not None:
                 if self.pool is None:
                     raise ValueError("Pool is not initialized")
-                
+
                 future = self.pool.submit(self.client.evaluate, test_package)
                 results = future.result(timeout=timeout)
             else:
@@ -299,19 +308,76 @@ class ClientApp:
                 "error": str(e),
                 "traceback": error_tb
             }
-        
+
         eval_time_end = time.time()
         eval_time = eval_time_end - eval_time_start
         log(INFO, f"Client [{self.client.client_id}] ({self.client.client_type}) - Evaluation time: {eval_time:.2f} seconds")
-        
+
         return results
-    
+
     def execute(self, client_cls: BaseClient, client_id: int, init_args: Dict[str, Any], exec_package: Dict[str, Any]) -> Any:
         """
         Execute the client with preloaded model.
         """
         self.client = self._load_client(client_cls, client_id, **init_args)
         return self.client.execute(exec_package)
+
+    def _cleanup_client(self):
+        """
+        Clean up client resources to free memory.
+        """
+        if self.client is None:
+            return
+
+        # Free GPU memory for model tensors
+        if hasattr(self.client, 'model') and self.client.model is not None:
+            for param in self.client.model.parameters():
+                if param.is_cuda:
+                    param.data = param.data.cpu()
+                    if param.grad is not None:
+                        param.grad.data = param.grad.data.cpu()
+
+            # Clear model references
+            self.client.model = None
+
+        # Clear dataloader references
+        if hasattr(self.client, 'train_loader'):
+            self.client.train_loader = None
+        if hasattr(self.client, 'val_loader'):
+            self.client.val_loader = None
+
+        # Clear optimizer state
+        if hasattr(self.client, 'optimizer'):
+            self.client.optimizer = None
+
+        # Set client to None
+        self.client = None
+
+    def get_memory_usage(self):
+        """
+        Get the current memory usage of the actor.
+        Returns:
+            dict: Memory usage statistics.
+        """
+
+        process = psutil.Process(os.getpid())
+        memory_info = process.memory_info()
+
+        # Get CUDA memory if available
+        cuda_memory = {}
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                cuda_memory[f"cuda:{i}"] = {
+                    "allocated": torch.cuda.memory_allocated(i) / (1024 ** 2),  # MB
+                    "cached": torch.cuda.memory_reserved(i) / (1024 ** 2)  # MB
+                }
+
+        return {
+            "rss": memory_info.rss / (1024 ** 2),  # MB
+            "vms": memory_info.vms / (1024 ** 2),  # MB
+            "shared": getattr(memory_info, "shared", 0) / (1024 ** 2),  # MB
+            "cuda_memory": cuda_memory
+        }
 
     def __getattr__(self, name: str) -> Any:
         """

@@ -87,3 +87,32 @@ class ContextActor:
                 del self.ready_events[round_num]
                 
         log(INFO, f"Cleaned up resources for rounds: {rounds_to_remove}")
+
+    def get_memory_usage(self):
+        """
+        Get the current memory usage of the actor.
+        Returns:
+            dict: Memory usage statistics.
+        """
+        import psutil
+        import os
+
+        process = psutil.Process(os.getpid())
+        memory_info = process.memory_info()
+
+        # Get CUDA memory if available
+        cuda_memory = {}
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                cuda_memory[f"cuda:{i}"] = {
+                    "allocated": torch.cuda.memory_allocated(i) / (1024 ** 2),  # MB
+                    "cached": torch.cuda.memory_reserved(i) / (1024 ** 2)  # MB
+                }
+
+        return {
+            "rss": memory_info.rss / (1024 ** 2),  # MB
+            "vms": memory_info.vms / (1024 ** 2),  # MB
+            "shared": getattr(memory_info, "shared", 0) / (1024 ** 2),  # MB
+            "num_resource_packages": len(self.shared_resources),
+            "cuda_memory": cuda_memory
+        }
