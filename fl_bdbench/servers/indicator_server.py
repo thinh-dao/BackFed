@@ -38,7 +38,7 @@ DEFAULT_SERVER_PARAMS = {
     "global_weight_decay": 0.0005,
     "global_is_projection_grad": False,
     "global_projection_norm": 0.8,
-    "global_watermarking_start_round": 1100,
+    "global_watermarking_start_round": 1000,
     "global_watermarking_end_round": 13000,
     "global_watermarking_round_interval": 1,
     "global_milestones": [
