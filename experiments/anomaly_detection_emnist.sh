@@ -162,7 +162,7 @@ python main.py -m \
     cuda_visible_devices=\"7,6,5,3,2\" \
     dir_tag=pretrain_anomaly_detection_emnist && \
 python main.py -m \
-    aggregator=indicator \
+    aggregator=fldetector \
     num_clients=3383 \
     num_clients_per_round=30 \
     dataset=emnist_byclass \
