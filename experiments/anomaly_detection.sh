@@ -314,12 +314,10 @@ python main.py -m \
     test_batch_size=512 \
     num_workers=8 \
     model=mnistnet \
-    save_checkpoint=True \
-    "save_model_rounds=[1300]" \
     atk_config.data_poison_method=pattern,edge_case,a3fl,iba,distributed \
-    atk_config.poison_start_round=1301 \
-    atk_config.poison_end_round=1600 \
-    checkpoint=1300 \
+    atk_config.poison_start_round=1001 \
+    atk_config.poison_end_round=1300 \
+    checkpoint=checkpoints/EMNIST_BYCLASS_unweighted_fedavg/mnistnet_round_1000_dir_0.5.pth \
     num_rounds=300 \
     save_logging=csv \
     num_gpus=0.5 \

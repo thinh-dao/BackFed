@@ -72,6 +72,12 @@ class IndicatorServer(AnomalyDetectionServer):
             setattr(self, key, value)
 
         self.watermarking_rounds = list(range(self.global_watermarking_start_round, self.global_watermarking_end_round, self.global_watermarking_round_interval))
+        
+        if self.config.dataset.upper() == "CIFAR10":
+            self.ood_data_source = "CIFAR100"
+        else:
+            self.ood_data_source = "CIFAR10"
+
         self._get_ood_data()
         self.open_set = self._get_ood_dataloader()
         self.check_model = copy.deepcopy(self.global_model)
@@ -126,7 +132,7 @@ class IndicatorServer(AnomalyDetectionServer):
         
         log(INFO, f"label ind:{label_inds}")
         log(INFO, f"label acc wm:{label_acc_ws}") 
-        return benign_clients, malicious_clients
+        return malicious_clients, benign_clients
     
     def pre_process(self, round):
         wm_data = copy.deepcopy(self.open_set)
@@ -261,10 +267,10 @@ class IndicatorServer(AnomalyDetectionServer):
         self.cached_batches = []
         for batch_id, (data, targets) in enumerate(ood_dataloader):
             # Handle EMNIST dataset (grayscale to RGB conversion if needed)
-            if self.config["dataset"].upper() == "EMNIST":
+            if "NIST" in self.config["dataset"].upper():
                 data = data[:, 0, :, :].unsqueeze(1)
                 
-            if self.ood_data_source == "EMNIST":
+            if "NIST" in self.ood_data_source: 
                 data = data.repeat(1, 3, 1, 1)
                 
             # Assign new labels and move to GPU once
