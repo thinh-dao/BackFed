@@ -80,9 +80,9 @@ def ray_init(num_gpus: int, num_cpus: int, namespace: str):
             num_gpus=num_gpus,
             ignore_reinit_error=True,
             log_to_driver=True,
-            include_dashboard=True,
-            object_store_memory=object_store_memory,
-            _memory=2 * 1024 * 1024 * 1024,  # 2GB memory per Ray worker
+            # include_dashboard=True,
+            # # object_store_memory=object_store_memory,
+            # # _memory=2 * 1024 * 1024 * 1024,  # 2GB memory per Ray worker
         )
     except ValueError:
         # If Ray is already running, connect to it
