@@ -63,10 +63,17 @@ class BaseServer:
 
         # Get initial model
         self._initialize_model()
+        self.current_round = self.start_round
 
         # Global model parameters that are sent to clients and updated by aggregate_client_updates function
         self.global_model_params = {name: param.detach().clone().to(self.device) for name, param in self.global_model.state_dict().items()}
 
+        # Initialize the client_manager and get the rounds_selection
+        self._initialize_client_manager(config=server_config, start_round=self.start_round)
+
+        # Initialize the trainer
+        self._initialize_trainer()
+        
         # Initialize poison module (for poisoning) and ContextActor (for resource synchronization between malicious clients)
         if self.config.no_attack == False:
             self.atk_config = self.config.atk_config
@@ -88,13 +95,6 @@ class BaseServer:
             self.poison_module = None
             self.context_actor = None
 
-        # Initialize the client_manager and get the rounds_selection
-        self.client_manager = ClientManager(server_config, start_round=self.start_round)
-        self.rounds_selection = self.client_manager.get_rounds_selection()
-
-        # Initialize the trainer
-        self._initialize_trainer()
-        
         # Initialize tracking
         if self.config.save_logging in ["wandb", "both"]:
             init_wandb(server_config)
@@ -108,7 +108,17 @@ class BaseServer:
         elif self.config.save_logging == None:
             log(WARNING, "The logging is not saved!")
 
-        self.current_round = self.start_round
+        # Visualization
+        if self.config.plot_client_selection:
+            self.client_manager.visualize_client_selection(save_path=self.config.output_dir)
+
+        if self.config.plot_data_distribution:
+            self.fl_dataloader.visualize_dataset_distribution(malicious_clients=self.client_manager.get_malicious_clients(), save_path=self.config.output_dir)
+
+
+    def _initialize_client_manager(self, config, start_round):
+        self.client_manager = ClientManager(config, start_round=start_round)
+        self.rounds_selection = self.client_manager.get_rounds_selection()
 
     def _initialize_trainer(self):            
         if self.config.mode == "parallel":
@@ -139,8 +149,8 @@ class BaseServer:
             )
 
     def _prepare_dataset(self):
-        fl_dataloader = FL_DataLoader(config=self.config)
-        self.trainset, self.client_data_indices, self.test_loader = fl_dataloader.prepare_dataset()
+        self.fl_dataloader = FL_DataLoader(config=self.config)
+        self.trainset, self.client_data_indices, self.test_loader = self.fl_dataloader.prepare_dataset()
 
     def _initialize_model(self):
         """
@@ -563,13 +573,13 @@ class BaseServer:
         """
         if issubclass(client_type, BenignClient):
             test_package = {
-                "global_model_params": self.global_model_params,
+                "global_model_params": self.get_model_parameters(),
                 "server_round": self.current_round,
                 "normalization": self.normalization
             }
         elif issubclass(client_type, MaliciousClient):
             test_package = {
-                "global_model_params": self.global_model_params,
+                "global_model_params": self.get_model_parameters(),
                 "server_round": self.current_round,
                 "normalization": self.normalization
             }

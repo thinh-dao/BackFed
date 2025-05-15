@@ -59,7 +59,6 @@ class FL_DataLoader:
         self.test_transform = transforms.Compose(self.train_transform.transforms[-3:])
         self.load_dataset(dataset_name)
 
-
     def load_dataset(self, dataset_name):
         """
         Load the specified dataset and apply transformations.
@@ -259,26 +258,9 @@ class FL_DataLoader:
 
         return per_participant_list
 
-
-    def save_visualization(self, malicious_clients=None, save_path=None):
-        """
-        Visualize and save the dataset distribution for train/val splits.
-        """
+    def visualize_dataset_distribution(self, malicious_clients=None, save_path=None):
         log(INFO, f"Visualizing dataset distribution to {save_path}")
-        self.visualize_dataset_distribution(malicious_clients, save_path, split="train")
-        if self.config.val_split > 0:
-            self.visualize_dataset_distribution(malicious_clients, save_path, split="val")
-
-
-    def visualize_dataset_distribution(self, malicious_clients=None, save_path=None, split="train"):
-        if split == "train":
-            datasets = self.train_datasets
-        elif split == "val":
-            datasets = self.val_datasets
-        else:
-            raise ValueError(f"Split {split} is not distributed.")
-        
-        class_counts, indices = FL_DataLoader.get_class_distribution(datasets)
+        class_counts, indices = FL_DataLoader.get_class_distribution(self.trainset, self.client_data_indices)
         num_classes = len(class_counts)
         num_clients = len(list(class_counts.values())[0])
         df = pd.DataFrame(class_counts, index=indices)
@@ -319,28 +301,40 @@ class FL_DataLoader:
         plt.tight_layout(rect=[0, 0, 0.85, 1])  # Adjust right side to make room for legend
 
         if save_path:
-            path = os.path.join(save_path, f"{split}_data_distribution.pdf")
-            plt.savefig(path, dpi=500, bbox_inches='tight')
+            path = os.path.join(save_path, f"data_distribution.pdf")
+            plt.savefig(path, dpi=300, bbox_inches='tight')
         else:
             plt.show()
+        plt.close()
 
-
-    @staticmethod   
-    def get_class_distribution(datasets):
-        num_clients = len(datasets)
-        temp_dataset = datasets[0]
-        while isinstance(temp_dataset, torch.utils.data.dataset.Subset):
-            temp_dataset = temp_dataset.dataset
-
-        idx_to_class = {v: k for k, v in temp_dataset.class_to_idx.items()}
-        class_counts = {idx_to_class[idx]: [0 for _ in range(num_clients)] for idx in idx_to_class}
-
-        indices = list(range(num_clients))
-        for client_id, dataset in datasets.items():
-            for _, label in dataset:
-                class_counts[idx_to_class[label]][client_id] += 1
-
-        return class_counts, indices
+    @staticmethod
+    def get_class_distribution(dataset, client_data_indices):
+        """
+        Get the distribution of classes across clients using class indices as keys.
+        
+        Args:
+            dataset: The dataset
+            client_data_indices: Dict of client_id -> data indices
+        
+        Returns:
+            class_counts: Dictionary mapping class indices to counts per client
+            client_ids: Range of client IDs
+        """
+        class_indices = list(dataset.class_to_idx.values())
+        
+        # Initialize counts dictionary with class indices as keys
+        class_counts = {idx: [0 for _ in range(len(client_data_indices))] for idx in class_indices}
+        
+        # Count samples per class per client
+        for client_id, client_idx in client_data_indices.items():
+            for idx in client_idx:
+                target = dataset.targets[idx]
+                if isinstance(target, torch.Tensor):
+                    target = target.item()
+            
+                class_counts[target][client_id] += 1
+        
+        return class_counts, client_data_indices.keys()
 
 
 # Taken from https://github.com/tao-shen/FEMNIST_pytorch/blob/master/femnist.py

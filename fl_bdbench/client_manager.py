@@ -237,7 +237,7 @@ class ClientManager:
         """Get the number of clients per round."""
         return self.config.num_clients_per_round
 
-    def plot_client_selection(self, start_round=-1, end_round=-1, interval=2, only_poison_rounds=False, save_path=None):
+    def visualize_client_selection(self, start_round=-1, end_round=-1, interval=2, only_poison_rounds=False, save_path=None):
         """
         Plot a heatmap showing client selection over communication rounds. Malicious clients and poisoned rounds are highlighted in red.
         """
@@ -326,3 +326,4 @@ class ClientManager:
             plt.savefig(path, dpi=500, bbox_inches='tight')
         else:
             plt.show()
+        plt.close()

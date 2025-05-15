@@ -11,13 +11,14 @@ import copy
 import torch.nn as nn
 import os
 import math
+import time
 
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any
 from torchvision import datasets
-from logging import INFO
+from logging import INFO, WARNING
 from fl_bdbench.servers.defense_categories import AnomalyDetectionServer
 from fl_bdbench.utils.logging_utils import log
-from fl_bdbench.const import client_id, StateDict, num_examples
+from fl_bdbench.const import client_id, StateDict, num_examples, Metrics
 
 OOD_TRANSFORMATIONS = {
     "EMNIST": transforms.Compose([
@@ -52,7 +53,8 @@ DEFAULT_SERVER_PARAMS = {
     "watermarking_mu": 0.1,
     "replace_original_bn": True,
     "verbose": False,
-    "VWM_detection_threshold": 95
+    "VWM_detection_threshold": 95,
+    "early_stopping": True
 }
 
 class IndicatorServer(AnomalyDetectionServer):
@@ -93,16 +95,13 @@ class IndicatorServer(AnomalyDetectionServer):
             benign_clients = [client_id for client_id, _, _ in client_updates]
             return malicious_clients, benign_clients
         
-        self.pre_process(round=self.current_round)
         benign_clients = []
         malicious_clients = []
         label_inds = []
         label_acc_ws = []
         
         # Batch process clients if possible
-        for ind, (client_id, num_examples, model_state_dict) in enumerate(client_updates):
-            self._transfer_params(self.global_model, self.check_model)
-            
+        for ind, (client_id, num_examples, model_state_dict) in enumerate(client_updates):            
             # Update only necessary parameters
             for name, data in model_state_dict.items():
                 if "num_batches_tracked" in name:
@@ -119,8 +118,12 @@ class IndicatorServer(AnomalyDetectionServer):
                 self.check_model.state_dict()[name].copy_(new_value)
 
             # Use cached batches
-            _, _, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(
+            total_l, watermark_acc, label_acc_w, label_ind, wm_label_acc_list, wm_label_dict = self._global_watermarking_test_sub(
                 test_data=self.get_batches_iterator(), model=self.check_model)
+
+            if self.verbose:
+                log(INFO, f"client {client_id} | watermarking acc: {watermark_acc}, watermarking loss: {total_l}, target label ({label_ind}) wm acc: {label_acc_w}")
+                log(INFO, wm_label_dict)
             
             label_inds.append(label_ind)
             label_acc_ws.append(label_acc_w)
@@ -134,6 +137,51 @@ class IndicatorServer(AnomalyDetectionServer):
         log(INFO, f"label acc wm:{label_acc_ws}") 
         return malicious_clients, benign_clients
     
+    def fit_round(self, clients_mapping: Dict[Any, List[int]]) -> Metrics:
+        """Perform one round of FL training. 
+        
+        Args:
+            clients_mapping: Mapping of client types to list of client IDs
+        Returns:
+            aggregated_metrics: Dict of aggregated metrics from clients training
+        """
+
+        #### Server initialize by training on indicator task
+        preprocess_time_start = time.time()
+        self.pre_process(self.current_round) # Update global params
+        preprocess_time_end = time.time()
+        preprocess_time = preprocess_time_end - preprocess_time_start
+        log(INFO, f"Indicator Server Initialization time: {preprocess_time:.2f} seconds")
+
+        train_time_start = time.time()
+        client_packages = self.trainer.train(clients_mapping)
+        train_time_end = time.time()
+        train_time = train_time_end - train_time_start
+        log(INFO, f"Clients training time: {train_time:.2f} seconds")
+
+        client_metrics = []
+        client_updates = []
+
+        for client_id, package in client_packages.items():
+            num_examples, model_updates, metrics = package
+            client_metrics.append((client_id, num_examples, metrics))
+            client_updates.append((client_id, num_examples, model_updates))
+
+        aggregate_time_start = time.time()
+            
+        if self.aggregate_client_updates(client_updates):
+            self.global_model.load_state_dict(self.global_model_params, strict=True)
+            aggregated_metrics = self.aggregate_client_metrics(client_metrics)
+        else:
+            log(WARNING, "No client updates to aggregate. Global model parameters are not updated.")
+            aggregated_metrics = {}
+        
+        aggregate_time_end = time.time()
+        aggregate_time = aggregate_time_end - aggregate_time_start
+        log(INFO, f"Server aggregate time: {aggregate_time:.2f} seconds")
+
+        return aggregated_metrics
+    
     def pre_process(self, round):
         wm_data = copy.deepcopy(self.open_set)
         log(INFO, f"Before indicator: ")
@@ -145,6 +193,7 @@ class IndicatorServer(AnomalyDetectionServer):
 
         ### Initialize to calculate the distance between updates and global model
         if round in self.watermarking_rounds:
+            log(INFO, f"Indicator Server: Perform training on indicator task..")
             target_params_variables = dict()
             for name, param in self.global_model.state_dict().items():
                 target_params_variables[name] = param.clone()
@@ -181,16 +230,16 @@ class IndicatorServer(AnomalyDetectionServer):
             self._transfer_params(self.global_model, self.check_model)
             for key, value in self.check_model.state_dict().items():
                 if "running_mean" in key or "running_var" in key:
-                    self.check_model.state_dict()[key].\
-                        copy_(before_wm_injection_bn_stats_dict[key])
+                    self.check_model.state_dict()[key].copy_(before_wm_injection_bn_stats_dict[key])
                     if self.replace_original_bn:
-                        self.global_model.state_dict()[key].\
-                            copy_(before_wm_injection_bn_stats_dict[key])
+                        self.global_model.state_dict()[key].copy_(before_wm_injection_bn_stats_dict[key])
 
             log(INFO, f"after replace wm bn with original bn:")
             metrics = self.server_evaluate(round_number=round, model=self.check_model)
             log(INFO, f"benign acc: {metrics['test_clean_acc']}, benign loss: {metrics['test_clean_loss']}")
 
+            ### Update global_model_params
+            self.global_model_params = {name: param.detach().clone().to(self.device) for name, param in self.global_model.state_dict().items()}
         return True
     
     def _get_ood_data(self):
@@ -264,9 +313,9 @@ class IndicatorServer(AnomalyDetectionServer):
         assigned_labels = assigned_labels.reshape(num_batches, batch_size)
         
         # Cache processed batches in memory to avoid repeated dataloader iterations
-        self.cached_batches = []
-        for batch_id, (data, targets) in enumerate(ood_dataloader):
-            # Handle EMNIST dataset (grayscale to RGB conversion if needed)                
+        batches = []
+        for batch_id, (data, _) in enumerate(ood_dataloader):
+            # Add channel dimension for grayscale images                
             if "NIST" in self.ood_data_source: 
                 data = data.repeat(1, 3, 1, 1)
                 
@@ -274,13 +323,13 @@ class IndicatorServer(AnomalyDetectionServer):
             targets = torch.tensor(assigned_labels[batch_id])
             data = data.cuda().requires_grad_(False)
             targets = targets.cuda().requires_grad_(False)
-            self.cached_batches.append((data, targets))
+            batches.append((data, targets))
         
-        return self.cached_batches
+        return batches
 
     def get_batches_iterator(self):
         """Return an iterator over the cached batches."""
-        return iter(self.cached_batches)
+        return iter(self.open_set)
     
     def _loss_function(self):
         self.criterion = nn.CrossEntropyLoss()
@@ -330,7 +379,7 @@ class IndicatorServer(AnomalyDetectionServer):
         
         # Early stopping if loss converges
         prev_loss = float('inf')
-        patience = 5
+        patience = 10
         patience_counter = 0
         
         for internal_round in range(retrain_no_times):
@@ -360,13 +409,14 @@ class IndicatorServer(AnomalyDetectionServer):
             avg_round_loss = round_loss / batch_count
             
             # Early stopping check
-            if abs(prev_loss - avg_round_loss) < 5e-3:
-                patience_counter += 1
-                if patience_counter >= patience:
-                    log(INFO, f"Early stopping at round {internal_round}/{retrain_no_times}")
-                    break
-            else:
-                patience_counter = 0
+            if self.early_stopping:
+                if abs(prev_loss - avg_round_loss) < 1e-3:
+                    patience_counter += 1
+                    if patience_counter >= patience:
+                        log(INFO, f"Early stopping at round {internal_round}/{retrain_no_times}")
+                        break
+                else:
+                    patience_counter = 0
             
             prev_loss = avg_round_loss
             self.scheduler.step()
@@ -392,11 +442,14 @@ class IndicatorServer(AnomalyDetectionServer):
         size = 0
         for name, layer in model.named_parameters():
             size += layer.view(-1).shape[0]
-        sum_var = torch.cuda.FloatTensor(size).fill_(0)
+        
+        # Replace deprecated torch.cuda.FloatTensor with recommended approach
+        sum_var = torch.zeros(size, dtype=torch.float32, device=self.device)
+        
         size = 0
         for name, layer in model.named_parameters():
             sum_var[size:size + layer.view(-1).shape[0]] = (
-            layer - target_params_variables[name]).view(-1)
+                layer - target_params_variables[name]).view(-1)
             size += layer.view(-1).shape[0]
 
         return torch.norm(sum_var, norm)
