@@ -1,3 +1,0 @@
-round,test_clean_loss,test_clean_acc,test_backdoor_loss,test_backdoor_acc,train_clean_loss,train_clean_acc,train_backdoor_loss,train_backdoor_acc
-2001,0.822250172495842,0.7293,,,0.2490392031254775,0.9215610510046368,,
-2002,1.5310049951076508,0.4834,,,0.8693958818411253,0.7071575406466081,,
