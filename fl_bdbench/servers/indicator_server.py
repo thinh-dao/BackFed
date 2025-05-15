@@ -266,10 +266,7 @@ class IndicatorServer(AnomalyDetectionServer):
         # Cache processed batches in memory to avoid repeated dataloader iterations
         self.cached_batches = []
         for batch_id, (data, targets) in enumerate(ood_dataloader):
-            # Handle EMNIST dataset (grayscale to RGB conversion if needed)
-            if "NIST" in self.config["dataset"].upper():
-                data = data[:, 0, :, :].unsqueeze(1)
-                
+            # Handle EMNIST dataset (grayscale to RGB conversion if needed)                
             if "NIST" in self.ood_data_source: 
                 data = data.repeat(1, 3, 1, 1)
                 
