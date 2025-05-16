@@ -53,9 +53,9 @@ class FoolsGoldServer(RobustAggregationServer):
 
             # Update history
             if client_id not in self.update_history:
-                self.update_history[client_id] = update_vector
+                self.update_history[client_id] = update_vector.cpu()
             else:
-                self.update_history[client_id] += update_vector
+                self.update_history[client_id] += update_vector.cpu()
 
         # Calculate FoolsGold weights
         foolsgold_weights = self._foolsgold(client_ids)
@@ -93,14 +93,25 @@ class FoolsGoldServer(RobustAggregationServer):
         selected_his = []
 
         for client_id in selected_clients:
-            selected_his.append(self.update_history[client_id])
+            selected_his.append(self.update_history[client_id].to(self.device))
 
         # Stack client update histories
         M = torch.stack(selected_his)
 
         # Compute cosine similarity matrix
-        cs_matrix = torch.nn.functional.cosine_similarity(M.unsqueeze(1), M.unsqueeze(0), dim=2)
-        cs_matrix = cs_matrix - torch.eye(num_clients, device=self.device) 
+        cs_matrix = torch.zeros((num_clients, num_clients), device=self.device)
+        for i in range(num_clients):
+            for j in range(num_clients):
+                if i != j:  # Skip diagonal (self-similarity)
+                    # Compute single cosine similarity
+                    cos_sim = torch.nn.functional.cosine_similarity(
+                        selected_his[i].unsqueeze(0), 
+                        selected_his[j].unsqueeze(0), 
+                        dim=1
+                    )
+                    cs_matrix[i, j] = cos_sim.item()  # Store as scalar
+                else:
+                    cs_matrix[i, j] = 0  # Set diagonal to 0
         
         # Compute maximum cosine similarity for each client
         maxcs = torch.max(cs_matrix, dim=1)[0] + 1e-5
