@@ -676,6 +676,3 @@ python main.py -m \
     num_cpus=1 \
     cuda_visible_devices=\"4,0,1,2,3\" \
     dir_tag=robust_aggregation_emnist
-
-
-

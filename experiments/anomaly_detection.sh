@@ -152,3 +152,19 @@ python main.py -m \
     num_cpus=1 \
     cuda_visible_devices=\"7,6,5,4,3\" \
     dir_tag=anomaly_detection_cifar10
+
+
+
+python main.py -m \
+    aggregator=indicator \
+    atk_config=multishot \
+    atk_config.data_poison_method=pattern,edge_case,a3fl,iba,distributed \
+    atk_config.poison_start_round=2301 \
+    atk_config.poison_end_round=2600 \
+    checkpoint=2300 \
+    num_rounds=300 \
+    save_logging=csv \
+    num_gpus=0.8 \
+    num_cpus=1 \
+    cuda_visible_devices=\"3,4,5,0\" \
+    dir_tag=anomaly_detection_cifar10
