@@ -116,7 +116,7 @@ python main.py -m \
     atk_config.poison_start_round=1301 \
     atk_config.poison_end_round=1600 \
     checkpoint=1300 \
-    num_rounds=300 \
+    num_rounds=100 \
     save_logging=csv \
     num_gpus=0.5 \
     num_cpus=1 \
@@ -136,7 +136,7 @@ python main.py -m \
     atk_config.poison_start_round=1001 \
     atk_config.poison_end_round=1300 \
     checkpoint=checkpoints/EMNIST_BYCLASS_unweighted_fedavg/mnistnet_round_1000_dir_0.5.pth \
-    num_rounds=300 \
+    num_rounds=100 \
     save_logging=csv \
     num_gpus=0.5 \
     num_cpus=1 \
