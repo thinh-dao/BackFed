@@ -1,11 +1,11 @@
-# FL-Backdoorbench: An Efficient Benchmark for Backdoor Attacks in Federated Learning
+# BackFed: An Efficient Benchmark for Backdoor Attacks in Federated Learning
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![PyTorch 2.6.0](https://img.shields.io/badge/PyTorch-2.6.0-ee4c2c.svg)](https://pytorch.org/get-started/locally/)
 [![Ray 2.10.0](https://img.shields.io/badge/Ray-2.10.0-blue.svg)](https://docs.ray.io/en/latest/installation.html)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-FL-Backdoorbench is a comprehensive framework for evaluating backdoor attacks and defenses in federated learning environments. This benchmark provides an efficient and standardized way to implement, test, and compare various attack and defense mechanisms in federated learning settings.
+BackFed is a comprehensive framework for evaluating backdoor attacks and defenses in federated learning environments. This benchmark provides an efficient and standardized way to implement, test, and compare various attack and defense mechanisms in federated learning settings.
 
 ## Features
 
@@ -33,8 +33,8 @@ FL-Backdoorbench is a comprehensive framework for evaluating backdoor attacks an
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/fl-backdoorbench.git
-   cd fl-backdoorbench
+   git clone https://github.com/yourusername/BackFed.git
+   cd BackFed
    ```
 
 2. Install dependencies:
@@ -45,7 +45,7 @@ FL-Backdoorbench is a comprehensive framework for evaluating backdoor attacks an
 ## Project Structure
 
 ```
-fl-backdoorbench/
+BackFed/
 ├── config/                 # Configuration files
 │   ├── defaults.yaml       # Default configuration
 │   └── atk_config/         # Attack configurations
