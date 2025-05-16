@@ -72,3 +72,5 @@ multirun/
 # Project-specific
 fl_backdoorbench/outputs
 fl_bdbench/utils/system_utils.py
+
+figures/
