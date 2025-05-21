@@ -1,0 +1,44 @@
+---
+# In Reddit, each participant is a Reddit author
+
+# *Default configuration to simplify experiment setup
+defaults:
+  - base # Inherit from base config
+  - _self_ # This ensures your config overrides the base config
+  - atk_config: cifar10_multishot
+
+# *Aggregator
+aggregator: unweighted_fedavg
+
+# *Specify if the attack is enabled
+no_attack: False
+
+# *Simulation configuration
+num_rounds: 600
+federated_evaluation: False # Whether to perform federated evaluation (evaluate global model on client's validation set)
+federated_val_split: 0.0 # Validation split for each client's dataset (should be > 0 if federated evaluation is True)
+
+# *Dataset distribution configuration
+dataset: Reddit # CIFAR10, CIFAR100, TinyImageNet, MNIST
+task: next-word-prediction
+normalize: False # Normalize the dataset
+
+# *Model configuration
+model: lstm
+num_classes: 50000 # Size of vocab
+
+# *Test configuration
+test_batch_size: 128
+num_workers: 4 # Number of workers for dataloader
+pin_memory: False
+test_every: 1 # Test every x rounds
+
+# *Default local training configuration (passed to clients during training)
+client_config:
+  # Training configuration
+  task: ${task}
+  local_epochs: 5
+  batch_size: 32
+  optimizer: adamw # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
+  lr: 0.001
+  weight_decay: 1e-5

@@ -1,0 +1,47 @@
+---
+# *Default configuration to simplify experiment setup
+defaults:
+  - base # Inherit from base config
+  - atk_config: cifar10_multishot
+  - _self_ # This ensures your config overrides the base config
+
+# *Aggregator
+aggregator: unweighted_fedavg
+checkpoint: checkpoints/CIFAR10_unweighted_fedavg/ResNet18_round_2000_dir_0.5.pth
+
+# *Specify if the attack is enabled
+no_attack: False
+
+# *Simulation configuration
+num_rounds: 600
+num_clients: 100
+num_clients_per_round: 10
+federated_evaluation: False # Whether to perform federated evaluation (evaluate global model on client's validation set)
+federated_val_split: 0.0 # Validation split for each client's dataset (should be > 0 if federated evaluation is True)
+
+# *Dataset distribution configuration
+dataset: CIFAR10 # CIFAR10, CIFAR100, TinyImageNet, MNIST
+datapath: data
+task: classification
+partitioner: dirichlet # Choose from [uniform, dirichlet]
+alpha: 0.5 # Dirichlet distribution parameter
+normalize: True # Normalize the dataset
+
+# *Model configuration
+model: ResNet18
+num_classes: 10
+
+# *Test configuration
+test_batch_size: 2048
+num_workers: 6 # Number of workers for dataloader
+pin_memory: False
+test_every: 1 # Test every x rounds
+
+# *Default local training configuration (passed to clients during training)
+client_config:
+  # Training configuration
+  local_epochs: 2
+  batch_size: 64
+  optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
+  lr: 0.1
+  weight_decay: 5e-4

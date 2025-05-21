@@ -1,7 +1,7 @@
 ---
 # *Information passed from parent config
-dataset: ${dataset}
-num_classes: ${num_classes}
+dataset: EMNIST_BYCLASS
+num_classes: 62
 
 # *Poison method
 data_poison_method: pattern # Choose from the key in data_poison below

@@ -16,7 +16,9 @@ from hydra.utils import instantiate
 from fl_bdbench.utils import log
 from logging import ERROR
 
-@hydra.main(config_path="config", config_name="defaults.yaml", version_base=None)
+# Use a decorator that allows specifying the config file via command line
+# To change main config file for other datasets, run: python main.py --config-name sentiment140 
+@hydra.main(config_path="config", config_name="cifar10", version_base=None)
 def main(config: DictConfig):
     system_startup(config)
     aggregator = config["aggregator"]
@@ -27,6 +29,7 @@ def main(config: DictConfig):
         error_traceback = traceback.format_exc()
         log(ERROR, f"Error: {e}\n{error_traceback}") # Log traceback
         exit(1)
+
 
 if __name__ == "__main__":
     # Rich traceback and suppress traceback from hydra, omegaconf, and torch
