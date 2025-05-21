@@ -15,7 +15,7 @@ from ray.actor import ActorHandle
 from rich.progress import track
 from hydra.utils import instantiate
 from fl_bdbench.client_manager import ClientManager
-from fl_bdbench.dataset import FL_DataLoader
+from fl_bdbench.fl_dataloader import FL_DataLoader
 from fl_bdbench.utils import (
     pool_size_from_resources,
     log, get_console,
@@ -24,7 +24,7 @@ from fl_bdbench.utils import (
     init_wandb,
     init_csv_logger,
     CSVLogger,
-    test,
+    test, evaluate_language_model,
     save_model_to_wandb_artifact,
     format_time_hms
 )
@@ -389,35 +389,36 @@ class BaseServer:
         if model is None:
             model = self.global_model
 
-        clean_loss, clean_accuracy = test(model=model, 
-                                        test_loader=self.test_loader, 
-                                        device=self.device, 
-                                        normalization=self.normalization
-                                    )
-
-        if not test_poisoned:
+        if self.config.task == "next-word-prediction":
+            clean_loss, perplexity = evaluate_language_model(model=model, 
+                                                                test_loader=self.test_loader, 
+                                                                device=self.device, 
+                                                                normalization=self.normalization)
+            metrics = {
+                "test_clean_loss": clean_loss,
+                "test_perplexity": perplexity
+            }
+        else:
+            clean_loss, clean_accuracy = test(model=model, 
+                                            test_loader=self.test_loader, 
+                                            device=self.device, 
+                                            normalization=self.normalization
+                                        )
+            
             metrics = {
                 "test_clean_loss": clean_loss,
                 "test_clean_acc": clean_accuracy
             }
-            return metrics
 
-        if self.poison_module is not None and (round_number is None or round_number > self.atk_config.poison_start_round - 1): # Evaluate the backdoor performance starting from the round before the poisoning starts
+        if test_poisoned and self.poison_module is not None and (round_number is None or round_number > self.atk_config.poison_start_round - 1): # Evaluate the backdoor performance starting from the round before the poisoning starts
             self.poison_module.set_client_id(-1) # Set poison module to server
             poison_loss, poison_accuracy = self.poison_module.poison_test(net=self.global_model, 
                                                                 test_loader=self.test_loader, 
                                                                 normalization=self.normalization)
-            metrics = {
-                "test_clean_loss": clean_loss,
-                "test_clean_acc": clean_accuracy,
+            metrics.update({
                 "test_backdoor_loss": poison_loss,
                 "test_backdoor_acc": poison_accuracy
-            }
-        else:
-            metrics = {
-                "test_clean_loss": clean_loss,
-                "test_clean_acc": clean_accuracy
-            }
+            })
 
         return metrics
 

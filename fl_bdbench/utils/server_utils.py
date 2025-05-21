@@ -4,13 +4,26 @@ Server utilities for FL.
 
 import copy
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 from typing import Dict
 
 def test(model, test_loader, device, loss_fn=torch.nn.CrossEntropyLoss(), normalization=None):
     """Validate the model performance on the test set."""
+    # Determine model type and delegate to appropriate test method
+    is_transformer = hasattr(model, 'albert') or hasattr(model, 'transformer_encoder')
+    is_lstm = hasattr(model, 'lstm') or hasattr(model, 'rnn')
+    
+    if is_transformer:
+        return test_transformer(model, test_loader, device, loss_fn, normalization)
+    elif is_lstm:
+        return test_lstm(model, test_loader, device, loss_fn, normalization)
+    else:
+        return test_vision_task(model, test_loader, device, loss_fn, normalization)
+
+def test_vision_task(model, test_loader, device, loss_fn=torch.nn.CrossEntropyLoss(), normalization=None):
+    """Validate generic model performance on the test set."""
     model.eval()
     model.to(device)
     correct, loss, total_samples = 0, 0.0, 0
@@ -28,6 +41,121 @@ def test(model, test_loader, device, loss_fn=torch.nn.CrossEntropyLoss(), normal
     accuracy = correct / total_samples
     loss = loss / len(test_loader)
     return loss, accuracy
+
+def test_transformer(model, test_loader, device, loss_fn=torch.nn.CrossEntropyLoss(), normalization=None):
+    """Validate transformer model performance on the test set."""
+    model.eval()
+    model.to(device)
+    correct, loss, total_samples = 0, 0.0, 0
+    with torch.no_grad():
+        for batch in test_loader:
+            # Handle different input formats
+            if isinstance(batch[0], dict):
+                # Dictionary inputs for transformer models
+                inputs = batch[0]
+                labels = batch[1]
+                
+                # Move inputs to device
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                labels = labels.to(device)
+                
+                # Forward pass
+                outputs = model(**inputs)
+                
+                # Extract logits from transformer outputs if needed
+                if isinstance(outputs, dict):
+                    outputs = outputs.logits if hasattr(outputs, 'logits') else outputs['logits']
+            else:
+                # Standard tensor inputs
+                inputs, labels = batch
+                
+                if normalization:
+                    inputs = normalization(inputs)
+                    
+                inputs = inputs.to(device, non_blocking=True)
+                labels = labels.to(device, non_blocking=True)
+                outputs = model(inputs)
+            
+            # Compute loss and accuracy
+            loss += loss_fn(outputs, labels).item()
+            correct += (torch.max(outputs.data, 1)[1] == labels).sum().item()
+            total_samples += len(labels)
+    
+    accuracy = correct / total_samples
+    loss = loss / len(test_loader)
+    return loss, accuracy
+
+def test_lstm(model, test_loader, device, loss_fn=torch.nn.CrossEntropyLoss(), normalization=None):
+    """Validate LSTM model performance on the test set."""
+    model.eval()
+    model.to(device)
+    correct, loss, total_samples = 0, 0.0, 0
+    with torch.no_grad():
+        for inputs, labels in test_loader:
+            if normalization:
+                inputs = normalization(inputs)
+                
+            inputs = inputs.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+            
+            # Initialize hidden state for LSTM
+            hidden = model.init_hidden(inputs.size(0))
+            if isinstance(hidden, tuple):
+                hidden = tuple([h.to(device) for h in hidden])
+            else:
+                hidden = hidden.to(device)
+            
+            # Forward pass for LSTM
+            outputs, _ = model(inputs, hidden)
+            
+            # Compute loss and accuracy
+            loss += loss_fn(outputs, labels).item()
+            correct += (torch.max(outputs.data, 1)[1] == labels).sum().item()
+            total_samples += len(labels)
+    
+    accuracy = correct / total_samples
+    loss = loss / len(test_loader)
+    return loss, accuracy
+
+def evaluate_language_model(model, test_loader, device, loss_fn=torch.nn.CrossEntropyLoss(), normalization=None):
+    """Evaluate a language model on the test set using perplexity."""
+    model.eval()
+    model.to(device)
+    total_loss, total_tokens = 0.0, 0
+    with torch.no_grad():
+        for inputs, targets in test_loader:
+            if normalization:
+                inputs = normalization(inputs)
+                
+            inputs = inputs.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
+            
+            # Initialize hidden state
+            hidden = model.init_hidden(inputs.size(0))
+            if isinstance(hidden, tuple):
+                hidden = tuple([h.to(device) for h in hidden])
+            else:
+                hidden = hidden.to(device)
+            
+            # Forward pass
+            outputs, _ = model(inputs, hidden)
+            
+            # Reshape for language modeling
+            outputs = outputs.view(-1, outputs.size(-1))
+            targets = targets.view(-1)
+            
+            # Compute loss
+            loss = loss_fn(outputs, targets)
+            
+            # Accumulate loss
+            total_loss += loss.item() * targets.size(0)
+            total_tokens += targets.size(0)
+    
+    # Calculate average loss and perplexity
+    avg_loss = total_loss / total_tokens
+    perplexity = math.exp(avg_loss)
+    
+    return avg_loss, perplexity
 
 ### Aggregation utility functions
 def clip_updates_inplace(delta_weights_per_client: Dict[str, torch.Tensor], clipping_norm: float):

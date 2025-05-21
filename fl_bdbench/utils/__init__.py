@@ -28,7 +28,7 @@ from fl_bdbench.utils.logging_utils import (
 )
 
 from fl_bdbench.utils.server_utils import (
-    test,
+    test, evaluate_language_model,
     clip_updates_inplace,
     clip_updates,
     model_dist_layer
@@ -40,6 +40,11 @@ from fl_bdbench.utils.misc_utils import (
     format_time_hms
 )
 
+from fl_bdbench.utils.text_utils import (
+    Dictionary,
+    get_tokenizer
+)
+
 # For backward compatibility, re-export everything at the top level
 __all__ = [
     # Model utilities
@@ -49,7 +54,9 @@ __all__ = [
     # Logging utilities
     'log', 'CSVLogger', 'get_console', 'init_wandb', 'init_csv_logger', 'plot_csv', 'save_model_to_wandb_artifact',
     # Server utilities
-    'test', 'clip_updates_inplace', 'clip_updates', 'model_dist_layer',
+    'test', 'clip_updates_inplace', 'clip_updates', 'model_dist_layer', 'evaluate_language_model'
     # Misc utilities
-    'sync_to_async', 'with_timeout', 'format_time_hms'
+    'sync_to_async', 'with_timeout', 'format_time_hms',
+    # Text utilities
+    'Dictionary', 'get_tokenizer'
 ]

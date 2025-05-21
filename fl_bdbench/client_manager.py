@@ -13,12 +13,12 @@ from typing import Dict, List
 from logging import WARNING, INFO
 from fl_bdbench.utils import log
 from fl_bdbench.clients import BenignClient
+from fl_bdbench.clients.text_benign_client import TextBenignClient
 from hydra.utils import get_class
-
 
 class ClientManager:
     """
-    Custom client manager to evaluate attacks. At initialization, malicious clients and poison rounds are selected 
+    Custom client manager to evaluate attacks. At initialization, malicious clients and poison rounds are selected
     based on the attack configuration.
     """
     def __init__(self, config, start_round=0):
@@ -37,17 +37,28 @@ class ClientManager:
             self.benign_clients = list(range(self.config.num_clients))
             # Initialize benign client class for rounds_selection
             self.malicious_client_class = None
-            self.benign_client_class = BenignClient
+
+            # Use TextBenignClient for text datasets
+            if self.config.dataset.upper() == "SENTIMENT140":
+                self.benign_client_class = TextBenignClient
+            else:
+                self.benign_client_class = BenignClient
+
             self._initialize_normal_rounds()
         else:
             log(INFO, f"ClientManager: Attack is enabled, initialize rounds selection with {self.atk_config.poison_frequency} poison scheme and {self.atk_config.selection_scheme} selection scheme")
             self.malicious_clients = self.atk_config.malicious_clients
             self.benign_clients = [i for i in range(self.config.num_clients) if i not in self.malicious_clients]
-            
+
             # Initialize malicious and benign client classes for rounds_selection
             model_poison_method = self.atk_config["model_poison_method"]
             self.malicious_client_class = get_class(self.atk_config.model_poison_config[model_poison_method]._target_)
-            self.benign_client_class = BenignClient
+
+            # Use TextBenignClient for text datasets
+            if self.config.dataset.upper() == "SENTIMENT140":
+                self.benign_client_class = TextBenignClient
+            else:
+                self.benign_client_class = BenignClient
 
             if self.start_round > self.atk_config.poison_end_round or self.start_round + self.config.num_rounds < self.atk_config.poison_start_round:
                 log(WARNING, f"Training rounds [{self.start_round} - {self.start_round + self.config.num_rounds}] are out of scope for the attack range [{self.atk_config.poison_start_round} - {self.atk_config.poison_end_round}]. No attack will be applied.")
@@ -109,7 +120,7 @@ class ClientManager:
             log(WARNING, f"ClientManager: Number of adversaries per round is too large. Number of adversaries per round is reset to {num_adversaries_per_round}")
 
         log(INFO, f"ClientManager: Percentage of adversaries per round is {num_adversaries_per_round / self.config.num_clients_per_round * 100:.2f}%")
-            
+
         self.poison_rounds = selected_rounds
         for r in selected_rounds:
             self.rounds_selection[r] = {
@@ -154,7 +165,7 @@ class ClientManager:
                 self.rounds_selection[r] = {
                     self.benign_client_class: selected_clients
                 }
-    
+
     # This method is used to exclude certain clients from the selection starting from start_round (for FLDetector)
     def update_rounds_selection(self, exclude_clients: List[int], start_round: int):
         """Update the client selection starting from a specific round."""
@@ -170,7 +181,7 @@ class ClientManager:
 
             for client_cls in self.rounds_selection[r]:
                 selected_clients.extend(self.rounds_selection[r][client_cls])
-            
+
             round_sample_space = [i for i in sample_space if i not in selected_clients]
 
             # Create a copy of the list to safely iterate over
@@ -179,21 +190,21 @@ class ClientManager:
                 for client in self.rounds_selection[r][client_cls]:
                     if client in exclude_clients:
                         clients_to_remove.append(client)
-        
+
                 # Now remove and replace the excluded clients
                 for client in clients_to_remove:
                     self.rounds_selection[r][client_cls].remove(client)
-                    
+
                     # Replace the excluded client with a random client from the sample space
                     if len(round_sample_space) > 0:
                         replaced_client = random.choice(round_sample_space)
                         round_sample_space.remove(replaced_client)
 
-                        # Update the selection  
+                        # Update the selection
                         if replaced_client in self.malicious_clients:
                             if self.malicious_client_class not in self.rounds_selection[r]:
                                 self.rounds_selection[r][self.malicious_client_class] = [replaced_client]  # Create new list with client
-                            else:   
+                            else:
                                 self.rounds_selection[r][self.malicious_client_class].append(replaced_client)
                         elif replaced_client in self.benign_clients:
                             if self.benign_client_class not in self.rounds_selection[r]:
@@ -204,10 +215,10 @@ class ClientManager:
                             raise ValueError(f"ClientManager: Invalid client ID {replaced_client}")
                     else:
                         log(WARNING, f"No available replacements for client {client} in round {r}")
-                
+
                 if len(self.rounds_selection[r][client_cls]) == 0:
                     del self.rounds_selection[r][client_cls]
-            
+
             # Update the poison rounds if no malicious clients are selected
             if self.malicious_client_class not in self.rounds_selection[r] and r in self.poison_rounds:
                 log(INFO, f"Removing round {r} from poison rounds as no malicious clients are selected")

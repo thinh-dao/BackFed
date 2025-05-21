@@ -54,7 +54,6 @@ def _setup_logging():
 
 # Initialize the logger once
 logger = _setup_logging()
-
 def log(level, message, *args, **kwargs):
     """Log a message at the specified level."""
     if isinstance(message, dict):
@@ -204,9 +203,18 @@ def init_csv_logger(config, resume=False, detection=False):
     name = f"{name}_v{count}"
 
     file_name = os.path.join(dir_path, f"{name}.csv")
-    field_names = ["round", "test_clean_loss", "test_clean_acc", "test_backdoor_loss", "test_backdoor_acc", "train_clean_loss", "train_clean_acc", "train_backdoor_loss", "train_backdoor_acc"]
-    if config.federated_evaluation:
-        field_names.extend(["val_clean_loss", "val_clean_acc", "val_backdoor_loss", "val_backdoor_acc"])
+    
+    if config.task == "next-word-prediction":
+        field_names = ["round", "test_clean_loss", "test_perplexity", "test_backdoor_loss", "test_backdoor_acc", 
+                      "train_clean_loss", "train_perplexity", "train_backdoor_loss", "train_backdoor_acc"]
+        if config.federated_evaluation:
+            field_names.extend(["val_clean_loss", "val_perplexity", "val_backdoor_loss", "val_backdoor_acc"])
+    else:
+        field_names = ["round", "test_clean_loss", "test_clean_acc", "test_backdoor_loss", "test_backdoor_acc", 
+                      "train_clean_loss", "train_clean_acc", "train_backdoor_loss", "train_backdoor_acc"]
+        if config.federated_evaluation:
+            field_names.extend(["val_clean_loss", "val_clean_acc", "val_backdoor_loss", "val_backdoor_acc"])
+    
     if detection:
         field_names.extend(["precision", "recall", "f1_score", "fpr", "fpr_clean", "DACC"])
 

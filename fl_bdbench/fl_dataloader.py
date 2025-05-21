@@ -3,20 +3,28 @@ Processing and distributing datasets for FL.
 """
 
 import torch
-import torchvision.transforms.v2 as transforms 
+import torchvision.transforms.v2 as transforms
 import random
 import numpy as np
 import os
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from fl_bdbench.datasets import (
+    FEMNIST,
+    load_sentiment140_for_albert,
+    load_sentiment140_for_lstm,
+    load_lazy_reddit_dataset,
+    load_reddit_dataset,
+    reddit_collate_fn,
+    sentiment140_collate_fn
+)
 from torch.utils.data import Dataset, DataLoader
 from logging import INFO
 from fl_bdbench.utils import log
 from typing import Dict, List, Tuple
 from torchvision import datasets
 from collections import defaultdict
-from PIL import Image
 from tinyimagenet import TinyImageNet
 
 class FL_DataLoader:
@@ -52,6 +60,12 @@ class FL_DataLoader:
                 transforms.ToImage(),
                 transforms.ToDtype(torch.float32, scale=True),
             ])
+        elif dataset_name == "SENTIMENT140":
+            # No transforms needed for text data
+            self.train_transform = None
+            self.test_transform = None
+            self.load_dataset(dataset_name)
+            return
         else:
             raise ValueError(f"Dataset {dataset_name} is not supported.")
 
@@ -107,6 +121,57 @@ class FL_DataLoader:
                                          transform=self.train_transform)
             self.testset = TinyImageNet(root=datapath, split="val",
                                         transform=self.test_transform)
+
+        elif dataset_name == "SENTIMENT140":
+            # Check if we're using a supported model
+            supported_models = ["albert", "lstm"]
+            assert self.config["model"].lower() in supported_models, f"Model {self.config['model']} is not supported for Sentiment140 dataset. Supported models are {supported_models}"
+
+            if self.config["model"].lower() == "albert":
+                self.trainset, self.testset = load_sentiment140_for_albert(
+                    root_dir=self.config["datapath"],
+                    model_name="albert-base-v2",
+                    max_length=128,
+                    sample_size=self.config.get("sample_size", None)
+                )
+                
+            else:
+                self.trainset, self.testset = load_sentiment140_for_lstm(
+                    root_dir=self.config["datapath"],
+                    max_length=128,
+                    sample_size=self.config.get("sample_size", None)
+                )
+        
+        elif dataset_name == "REDDIT":
+            # Check if we're using a supported model
+            supported_models = ["transformer", "lstm"]
+            assert self.config["model"].lower() in supported_models, f"Model {self.config['model']} is not supported for Reddit dataset. Supported models are {supported_models}"
+            
+            if self.config.mode == "parallel":
+                log(INFO, "Using LazyLoadingRedditDataset for Reddit with parallel training mode")
+
+                # Load the vocabulary for Reddit
+                vocab_path = os.path.join(self.config["datapath"], "REDDIT", "50K_dictionary.pth")
+                if not os.path.exists(vocab_path):
+                    raise FileNotFoundError(f"Vocabulary file not found at {vocab_path}")
+
+                log(INFO, f"Loading vocabulary from {vocab_path}")
+                vocab = torch.load(vocab_path)
+                log(INFO, f"Loaded vocabulary with {len(vocab)} tokens")
+
+                # Create datasets with lazy loading
+                self.trainset, self.testset = load_lazy_reddit_dataset(
+                    root=self.config["datapath"],
+                    max_length=128,
+                    cache_size=1000  # Adjust cache size as needed
+                )
+            else:
+                # Now load the dataset with the LSTM tokenizer configuration
+                self.trainset, self.testset = load_reddit_dataset(
+                    root=self.config["datapath"],
+                    max_length=128,
+                )
+
         else:
             raise ValueError(f"Dataset {dataset_name} is not supported.")
 
@@ -173,14 +238,33 @@ class FL_DataLoader:
             raise ValueError(f"Partitioner {self.config.partitioner} is not supported.")
 
         # Server-side test loader (for server-side evaluation)
-        self.test_loader = torch.utils.data.DataLoader(
-            self.testset,
-            batch_size=self.config.test_batch_size,
-            num_workers=self.config.num_workers,
-            pin_memory=True,
-            shuffle=False
-        )
-
+        if self.config.dataset.upper() == "SENTIMENT140":
+            self.test_loader = torch.utils.data.DataLoader(
+                self.testset,
+                batch_size=self.config.test_batch_size,
+                num_workers=self.config.num_workers,
+                pin_memory=True,
+                shuffle=False,
+                collate_fn=sentiment140_collate_fn
+            )
+        elif self.config.dataset.upper() == "REDDIT":
+            self.test_loader = torch.utils.data.DataLoader(
+                self.testset,
+                batch_size=self.config.test_batch_size,
+                num_workers=self.config.num_workers,
+                pin_memory=True,
+                shuffle=False,
+                collate_fn=reddit_collate_fn
+            )
+        else:
+            self.test_loader = torch.utils.data.DataLoader(
+                self.testset,
+                batch_size=self.config.test_batch_size,
+                num_workers=self.config.num_workers,
+                pin_memory=True,
+                shuffle=False
+            )
+            
         return self.trainset, self.client_data_indices, self.test_loader
 
 
@@ -194,20 +278,42 @@ class FL_DataLoader:
         log(INFO, f"Sampling train dataset ({len(indices)} samples) for {no_participants} partitions with Dirichlet distribution (alpha={self.config.alpha}).")
 
         class_indices = {}
-        for ind in indices:
-            label = self.trainset.targets[ind]
-            if isinstance(label, torch.Tensor):
-                label = label.item()
-            if label in class_indices:
-                class_indices[label].append(ind)
-            else:
-                class_indices[label] = [ind]
+
+        # Handle different dataset types
+        if hasattr(self.trainset, 'targets'):
+            # Standard torchvision datasets
+            for ind in indices:
+                label = self.trainset.targets[ind]
+                if isinstance(label, torch.Tensor):
+                    label = label.item()
+                if label in class_indices:
+                    class_indices[label].append(ind)
+                else:
+                    class_indices[label] = [ind]
+        elif hasattr(self.trainset, 'data') and hasattr(self.trainset.data, 'target'):
+            # Sentiment140 dataset
+            for ind in indices:
+                label = self.trainset.data.iloc[ind]['target']
+                if label in class_indices:
+                    class_indices[label].append(ind)
+                else:
+                    class_indices[label] = [ind]
+        else:
+            # Try to handle generic datasets
+            for ind in indices:
+                _, label = self.trainset[ind]
+                if isinstance(label, torch.Tensor):
+                    label = label.item()
+                if label in class_indices:
+                    class_indices[label].append(ind)
+                else:
+                    class_indices[label] = [ind]
 
         per_participant_list = defaultdict(list)
         num_classes = len(class_indices.keys())
         clients = list(range(no_participants))
 
-        for class_idx in range(num_classes):
+        for class_idx in class_indices.keys():
             random.shuffle(class_indices[class_idx])
             class_size = len(class_indices[class_idx])
             sampled_probabilities = np.random.dirichlet(
@@ -231,20 +337,43 @@ class FL_DataLoader:
             indices = list(range(len(self.trainset)))  # Sample all the indices
 
         log(INFO, f"Sampling train dataset ({len(indices)} samples) uniformly for {no_participants} partitions.")
-        
+
         class_indices = {}
-        for ind in indices:
-            label = self.trainset.targets[ind]
-            if label in class_indices:
-                class_indices[label].append(ind)
-            else:
-                class_indices[label] = [ind]
+
+        # Handle different dataset types
+        if hasattr(self.trainset, 'targets'):
+            # Standard torchvision datasets
+            for ind in indices:
+                label = self.trainset.targets[ind]
+                if isinstance(label, torch.Tensor):
+                    label = label.item()
+                if label in class_indices:
+                    class_indices[label].append(ind)
+                else:
+                    class_indices[label] = [ind]
+        elif hasattr(self.trainset, 'data') and hasattr(self.trainset.data, 'target'):
+            # Sentiment140 dataset
+            for ind in indices:
+                label = self.trainset.data.iloc[ind]['target']
+                if label in class_indices:
+                    class_indices[label].append(ind)
+                else:
+                    class_indices[label] = [ind]
+        else:
+            # Try to handle generic datasets
+            for ind in indices:
+                _, label = self.trainset[ind]
+                if isinstance(label, torch.Tensor):
+                    label = label.item()
+                if label in class_indices:
+                    class_indices[label].append(ind)
+                else:
+                    class_indices[label] = [ind]
 
         per_participant_list = defaultdict(list)
-        num_classes = len(class_indices.keys())
         clients = list(range(no_participants))
 
-        for class_idx in range(num_classes):
+        for class_idx in class_indices.keys():
             random.shuffle(class_indices[class_idx])
             class_size = len(class_indices[class_idx])
             per_client_size = round(class_size / no_participants)
@@ -292,9 +421,9 @@ class FL_DataLoader:
             for tick_label, tick in zip(ax.get_xticklabels(), xticks):
                 if int(tick) in malicious_clients or str(tick) in malicious_clients:
                     tick_label.set_color('red')
-            
+
         # Add legend outside the plot on the right with dynamic font size
-        plt.legend(title='Labels', bbox_to_anchor=(1, 1), loc='upper left', borderaxespad=0., 
+        plt.legend(title='Labels', bbox_to_anchor=(1, 1), loc='upper left', borderaxespad=0.,
                   fontsize=min(16 * scaling_factor, 16), title_fontsize=min(20 * scaling_factor, 20))
 
         # Show the plot with tight layout to make room for the legend
@@ -311,95 +440,56 @@ class FL_DataLoader:
     def get_class_distribution(dataset, client_data_indices):
         """
         Get the distribution of classes across clients using class indices as keys.
-        
+
         Args:
             dataset: The dataset
             client_data_indices: Dict of client_id -> data indices
-        
+
         Returns:
             class_counts: Dictionary mapping class indices to counts per client
             client_ids: Range of client IDs
         """
-        class_indices = list(dataset.class_to_idx.values())
-        
+        # Determine the number of classes
+        if hasattr(dataset, 'class_to_idx'):
+            # Standard torchvision datasets
+            class_indices = list(dataset.class_to_idx.values())
+        elif hasattr(dataset, 'data') and 'target' in dataset.data.columns:
+            # Sentiment140 dataset
+            class_indices = dataset.data['target'].unique().tolist()
+        else:
+            # Try to infer from the data
+            try:
+                # Sample a few data points to determine the number of classes
+                targets = [dataset[i][1] for i in range(min(100, len(dataset)))]
+                if isinstance(targets[0], torch.Tensor):
+                    targets = [t.item() for t in targets]
+                class_indices = list(set(targets))
+            except:
+                # Fallback to binary classification
+                class_indices = [0, 1]
+
         # Initialize counts dictionary with class indices as keys
         class_counts = {idx: [0 for _ in range(len(client_data_indices))] for idx in class_indices}
-        
+
         # Count samples per class per client
         for client_id, client_idx in client_data_indices.items():
             for idx in client_idx:
-                target = dataset.targets[idx]
-                if isinstance(target, torch.Tensor):
-                    target = target.item()
-            
-                class_counts[target][client_id] += 1
-        
+                # Get the target based on the dataset type
+                if hasattr(dataset, 'targets'):
+                    # Standard torchvision datasets
+                    target = dataset.targets[idx]
+                    if isinstance(target, torch.Tensor):
+                        target = target.item()
+                elif hasattr(dataset, 'data') and 'target' in dataset.data.columns:
+                    # Sentiment140 dataset
+                    target = dataset.data.iloc[idx]['target']
+                else:
+                    # Try to get the target directly from the dataset
+                    _, target = dataset[idx]
+                    if isinstance(target, torch.Tensor):
+                        target = target.item()
+
+                if target in class_counts:
+                    class_counts[target][client_id] += 1
+
         return class_counts, client_data_indices.keys()
-
-
-# Taken from https://github.com/tao-shen/FEMNIST_pytorch/blob/master/femnist.py
-from torchvision.datasets import MNIST, utils
-
-class FEMNIST(MNIST):
-    """
-    This dataset is derived from the Leaf repository
-    (https://github.com/TalwalkarLab/leaf) pre-processing of the Extended MNIST
-    dataset, grouping examples by writer. Details about Leaf were published in
-    "LEAF: A Benchmark for Federated Settings" https://arxiv.org/abs/1812.01097.
-    """
-    resources = [
-        ('https://raw.githubusercontent.com/tao-shen/FEMNIST_pytorch/master/femnist.tar.gz',
-         '59c65cec646fc57fe92d27d83afdf0ed')]
-
-    def __init__(self, root, train=True, transform=None, target_transform=None,
-                 download=False):
-        super(MNIST, self).__init__(root, transform=transform,
-                                    target_transform=target_transform)
-        self.train = train
-
-        if download:
-            self.download()
-
-        if not self._check_exists():
-            raise RuntimeError('Dataset not found.' +
-                               ' You can use download=True to download it')
-
-        if self.train:
-            data_file = self.training_file
-        else:
-            data_file = self.test_file
-
-        self.data, self.targets, self.users_index = torch.load(os.path.join(self.processed_folder, data_file))
-
-
-    def __getitem__(self, index):
-        img, target = self.data[index], int(self.targets[index])
-        img = Image.fromarray(img.numpy(), mode='F')
-
-        if self.transform is not None:
-            img = self.transform(img)
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return img, target
-
-
-    def download(self):
-        """Download the FEMNIST data if it doesn't exist in processed_folder already."""
-        import shutil
-
-        if self._check_exists():
-            return
-
-        utils.makedir_exist_ok(self.raw_folder)
-        utils.makedir_exist_ok(self.processed_folder)
-
-        # download files
-        for url, md5 in self.resources:
-            filename = url.rpartition('/')[2]
-            utils.download_and_extract_archive(url, download_root=self.raw_folder, filename=filename, md5=md5)
-
-        # process and save as torch files
-        log(INFO, 'Processing...')
-        shutil.move(os.path.join(self.raw_folder, self.training_file), self.processed_folder)
-        shutil.move(os.path.join(self.raw_folder, self.test_file), self.processed_folder)

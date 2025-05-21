@@ -13,7 +13,7 @@ python main.py -m \
     dir_tag=robust_aggregation_singleshot && \
 
 python main.py -m \
-    aggregator=foolsgold,robustly,norm_clipping,trimmed_mean,coordinate_median,geometric_median,krum \
+    aggregator=foolsgold,robustlr,norm_clipping,trimmed_mean,coordinate_median,geometric_median,krum \
     num_clients=3383 \
     num_clients_per_round=30 \
     dataset=emnist_byclass \
@@ -31,6 +31,6 @@ python main.py -m \
     num_gpus=1 \
     num_cpus=1 \
     cuda_visible_devices=\"0,1,2\" \
-    dir_tag=robust_aggregation_singleshot
+    dir_tag=robust_aggregation_singleshot_emnist
 
 

@@ -14,6 +14,8 @@ NUM_CLASSES = {
     "EMNIST_DIGITS": 10,
     "FEMNIST": 62,
     "TINYIMAGENET": 200,
+    "SENTIMENT140": 2,
+    "REDDIT": 50000
 }
 
 IMG_SIZE = {

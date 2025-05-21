@@ -8,6 +8,7 @@ import socket
 import numpy as np
 import torch
 import ray
+import psutil
 
 from typing import Dict, Union
 from datetime import datetime
@@ -19,6 +20,7 @@ from fl_bdbench.utils.logging_utils import log
 def system_startup(config: DictConfig):
     # Set CUDA devices
     os.environ["CUDA_VISIBLE_DEVICES"] = config.cuda_visible_devices
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     # Clear CUDA cache before starting
     if torch.cuda.is_available():
@@ -62,14 +64,13 @@ def system_startup(config: DictConfig):
     config.num_classes = NUM_CLASSES[config.dataset.upper()]
     config.client_config.optimizer = config.client_optimizer_config[config.client_config.optimizer] # Now store DictConfig in client_optimizer_config
     config.atk_config.atk_optimizer = config.atk_config.atk_optimizer_config[config.atk_config.atk_optimizer] # Now store DictConfig in atk_optimizer_config
-
+    
     # Set attack config
     if config.no_attack == False:
         set_attack_config(config)
 
 def ray_init(num_gpus: int, num_cpus: int, namespace: str):
     # Calculate a reasonable object store memory limit (50% of system memory or 8GB, whichever is smaller)
-    import psutil
     system_memory = psutil.virtual_memory().total
     object_store_memory = min(int(system_memory * 0.5), 10 * 1024 * 1024 * 1024)  # 50% of RAM or 10GB
 
@@ -81,8 +82,8 @@ def ray_init(num_gpus: int, num_cpus: int, namespace: str):
             ignore_reinit_error=True,
             log_to_driver=True,
             # include_dashboard=True,
-            # # object_store_memory=object_store_memory,
-            # # _memory=2 * 1024 * 1024 * 1024,  # 2GB memory per Ray worker
+            # object_store_memory=object_store_memory,
+            # _memory=2 * 1024 * 1024 * 1024,  # 2GB memory per Ray worker
         )
     except ValueError:
         # If Ray is already running, connect to it
