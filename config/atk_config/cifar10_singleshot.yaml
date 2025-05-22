@@ -77,59 +77,59 @@ num_adversaries_per_round: 1 # parameter for multi-adversary selection
 ### Data poisoning configuration
 data_poison_config:
   pattern:
-    _target_: fl_bdbench.poisons.Pattern
+    _target_: backfed.poisons.Pattern
     location: "bottom_right"
     x_margin: 1
     y_margin: 1
 
   pixel:
-    _target_: fl_bdbench.poisons.Pixel
+    _target_: backfed.poisons.Pixel
     location: "bottom_right"
     x_margin: 1
     y_margin: 1
 
   badnets:
-    _target_: fl_bdbench.poisons.BadNets
+    _target_: backfed.poisons.BadNets
     location: "bottom_right"
     x_margin: 1
     y_margin: 1
 
   blended:
-    _target_: fl_bdbench.poisons.Blended
+    _target_: backfed.poisons.Blended
     trigger_weight: 0.2
-    trigger_path: fl_bdbench/poisons/shared/blended.jpeg
+    trigger_path: backfed/poisons/shared/blended.jpeg
 
   distributed:
-    _target_: fl_bdbench.poisons.Distributed
+    _target_: backfed.poisons.Distributed
 
   centralized:
-    _target_: fl_bdbench.poisons.Centralized
+    _target_: backfed.poisons.Centralized
 
   edge_case:
-    _target_: fl_bdbench.poisons.EdgeCase 
+    _target_: backfed.poisons.EdgeCase 
 
   a3fl:
-    _target_: fl_bdbench.poisons.A3FL
+    _target_: backfed.poisons.A3FL
     trigger_lr: 0.01
 
   iba:
-    _target_: fl_bdbench.poisons.IBA
+    _target_: backfed.poisons.IBA
     atk_eps: 0.3
     atk_lr: 0.01
 
 ### Model poisoning configuration
 model_poison_config:
   base:
-    _target_: fl_bdbench.clients.MaliciousClient
+    _target_: backfed.clients.MaliciousClient
 
   chameleon: # Chameleon is a poison wrapper
-    _target_: fl_bdbench.clients.ChameleonClient
+    _target_: backfed.clients.ChameleonClient
 
   neurotoxin:
-    _target_: fl_bdbench.clients.NeurotoxinClient
+    _target_: backfed.clients.NeurotoxinClient
 
   3dfed:
-    _target_: fl_bdbench.clients.3DFedClient
+    _target_: backfed.clients.3DFedClient
 
 ########################################################
 # *Attack optimizer configuration
