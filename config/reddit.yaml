@@ -21,7 +21,7 @@ federated_evaluation: False # Whether to perform federated evaluation (evaluate 
 federated_val_split: 0.0 # Validation split for each client's dataset (should be > 0 if federated evaluation is True)
 
 # *Dataset distribution configuration
-dataset: Reddit # CIFAR10, CIFAR100, TinyImageNet, MNIST
+dataset: REDDIT # CIFAR10, CIFAR100, TinyImageNet, MNIST
 task: next-word-prediction
 sequence_length: 100 # Sequence-length
 normalize: False # Normalize the dataset
@@ -31,7 +31,7 @@ model: lstm
 num_classes: 50000 # Size of vocab
 
 # *Test configuration
-test_batch_size: 10
+test_batch_size: 32
 num_workers: 4 # Number of workers for dataloader
 pin_memory: False
 test_every: 1 # Test every x rounds
@@ -42,7 +42,7 @@ client_config:
   task: ${task}
   sequence_length: ${sequence_length}
   local_epochs: 2
-  batch_size: 20
+  batch_size: 32
   optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
   momentum: 0
   weight_decay: 0
