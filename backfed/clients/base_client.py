@@ -165,6 +165,9 @@ class BaseClient:
             Dictionary containing resource metrics
         """
         # Get current GPU memory usage if available
+
+        ram_usage = psutil.Process().memory_info().rss / (1024 ** 3)  # GB
+        
         if torch.cuda.is_available():
             self.current_memory = torch.cuda.memory_allocated() / (1024 ** 3)  # GB
             self.max_memory = torch.cuda.max_memory_allocated() / (1024 ** 3)  # GB
@@ -172,7 +175,8 @@ class BaseClient:
         return {
             "last_training_time": self.training_time,
             "current_gpu_memory": self.current_memory,
-            "max_gpu_memory": self.max_memory
+            "max_gpu_memory": self.max_memory,
+            "ram_usage": ram_usage,
         }
 
     def get_client_info(self):
@@ -340,18 +344,37 @@ class ClientApp:
             # Clear model references
             self.client.model = None
 
-        # Clear dataloader references
+        # CRITICAL: Clear dataloader references and their datasets
         if hasattr(self.client, 'train_loader'):
+            # Clear dataset references that hold tokenized data in RAM
+            if hasattr(self.client.train_loader, 'dataset'):
+                dataset = self.client.train_loader.dataset
+                if hasattr(dataset, 'inputs'):
+                    del dataset.inputs
+                if hasattr(dataset, 'targets'):
+                    del dataset.targets
+                del self.client.train_loader.dataset
+            del self.client.train_loader
             self.client.train_loader = None
         if hasattr(self.client, 'val_loader'):
+            if hasattr(self.client.val_loader, 'dataset'):
+                del self.client.val_loader.dataset
+            del self.client.val_loader
             self.client.val_loader = None
 
-        # Clear optimizer state
+        # CRITICAL: Clear optimizer state that accumulates in RAM
         if hasattr(self.client, 'optimizer'):
+            if hasattr(self.client.optimizer, 'state'):
+                self.client.optimizer.state.clear()
+            del self.client.optimizer
             self.client.optimizer = None
 
         # Set client to None
         self.client = None
+
+        # CRITICAL: Force garbage collection to free RAM immediately
+        import gc
+        gc.collect()
 
     def get_memory_usage(self):
         """
