@@ -14,8 +14,8 @@ aggregator: unweighted_fedavg
 no_attack: False
 
 # *Simulation configuration
-num_rounds: 600
-num_clients: 83293 # Each user is a client
+num_rounds: 2000
+num_clients: 80000 # 83293 is number of authors
 num_clients_per_round: 100
 federated_evaluation: False # Whether to perform federated evaluation (evaluate global model on client's validation set)
 federated_val_split: 0.0 # Validation split for each client's dataset (should be > 0 if federated evaluation is True)
@@ -47,3 +47,101 @@ client_config:
   momentum: 0
   weight_decay: 0
   lr: 20
+
+# *Aggregator configuration
+aggregator_config:
+  weighted_fedavg:
+    _target_: backfed.servers.WeightedFedAvgServer
+    eta: 1
+
+  unweighted_fedavg:
+    _target_: backfed.servers.UnweightedFedAvgServer
+    eta: 1
+
+  fedprox:
+    _target_: backfed.servers.FedProxServer
+    proximal_mu: 0.01
+    eta: 1
+
+  foolsgold:
+    _target_: backfed.servers.FoolsGoldServer
+    confidence: 1
+    eta: 1
+
+  coordinate_median:
+    _target_: backfed.servers.CoordinateMedianServer
+    
+  geometric_median:
+    _target_: backfed.servers.GeometricMedianServer
+
+  trimmed_mean:
+    _target_: backfed.servers.TrimmedMeanServer
+    trim_ratio: 0.2
+
+  norm_clipping:
+    _target_: backfed.servers.NormClippingServer
+    clipping_norm: 3
+    eta: 1
+
+  robustlr:
+    _target_: backfed.servers.RobustLRServer
+    robustLR_threshold: 8.0
+    eta: 1
+
+  krum:
+    _target_: backfed.servers.KrumServer
+    eta: 1
+
+  multi_krum:
+    _target_: backfed.servers.MultiKrumServer
+    oracle: True # If true, we assume the number of malicious clients is known
+    eta: 1
+
+  ad_multi_krum:
+    _target_: backfed.servers.ADMultiKrumServer # Multi-krum initialized as AnomalyDetectionServer
+    eta: 1
+
+  weakdp:
+    _target_: backfed.servers.WeakDPServer
+    strategy: unweighted_fedavg
+    std_dev: 0.025
+    clipping_norm: 5
+    eta: 1
+
+  deepsight:
+    _target_: backfed.servers.DeepSightServer
+    num_seeds: 3
+    num_samples: 20000
+    deepsight_batch_size: 1000
+    deepsight_tau: 0.3333
+    eta: 1
+
+  flame:
+    _target_: backfed.servers.FlameServer
+    lamda: 0.001
+    eta: 1
+
+  rflbat:
+    _target_: backfed.servers.RFLBATServer
+    eps1: 10.0
+    eps2: 4.0
+    save_plots: False
+    eta: 1
+
+  fldetector:
+    _target_: backfed.servers.FLDetectorServer
+    window_size: 10  # Size of sliding window for detection
+    eta: 1
+
+  fltrust:
+    _target_: backfed.servers.FLTrustServer
+    eta: 1
+
+  flare:
+    _target_: backfed.servers.FlareServer
+    voting_threshold: 0.5
+    eta: 1
+
+  indicator:
+    _target_: backfed.servers.IndicatorServer
+    eta: 1
