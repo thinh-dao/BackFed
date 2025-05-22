@@ -9,11 +9,10 @@ import ray
 import traceback
 
 from rich.traceback import install
-from fl_bdbench.servers.base_server import BaseServer
-from fl_bdbench.utils import system_startup
+from backfed.servers.base_server import BaseServer
+from backfed.utils import system_startup, log, Dictionary # Import dictionary to load vocab for NLP tasks
 from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
-from fl_bdbench.utils import log
 from logging import ERROR
 
 # Use a decorator that allows specifying the config file via command line

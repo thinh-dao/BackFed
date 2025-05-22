@@ -49,7 +49,7 @@ BackFed/
 ├── config/                 # Configuration files
 │   ├── defaults.yaml       # Default configuration
 │   └── atk_config/         # Attack configurations
-├── fl_bdbench/             # Core framework
+├── backfed/             # Core framework
 │   ├── clients/            # Client implementations
 │   ├── servers/            # Server implementations
 │   ├── poisons/            # Poisoning methods

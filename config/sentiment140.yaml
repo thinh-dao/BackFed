@@ -15,7 +15,7 @@ no_attack: False
 
 # *Simulation configuration
 num_rounds: 600
-num_clients: 1948
+num_clients: 4000 # To be determined by at runtime (each user is a client)
 num_clients_per_round: 50
 federated_evaluation: False # Whether to perform federated evaluation (evaluate global model on client's validation set)
 federated_val_split: 0.0 # Validation split for each client's dataset (should be > 0 if federated evaluation is True)
@@ -23,6 +23,7 @@ federated_val_split: 0.0 # Validation split for each client's dataset (should be
 # *Dataset distribution configuration
 dataset: sentiment140
 datapath: data
+prefetch_tokenizer: False
 task: classification
 partitioner: dirichlet
 alpha: 0.5
@@ -31,6 +32,7 @@ normalize: False
 # *Model configuration
 model: albert  # or "albert" when using that model
 num_classes: 2  # Binary classification (positive/negative)
+max_length: 128 # Maximum sequence length for tokenization
 
 # *Test configuration
 test_batch_size: 128
@@ -42,7 +44,7 @@ test_every: 1 # Test every x rounds
 client_config:
   # Training configuration
   task: ${task}
-  local_epochs: 1
+  local_epochs: 3
   batch_size: 32
   optimizer: adamw # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
   lr: 2e-5

@@ -14,7 +14,7 @@ no_attack: False
 # *Training mode
 mode: parallel # Choose from [parallel, sequential]
 
-# *Debug mode
+# *Debug mode (Only works for CV datasets)
 debug: False
 debug_fraction_data: 0.1 # Only use a portion of the data in debug mode
 
@@ -64,6 +64,7 @@ client_config:
   optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
   lr: 0.1 
   weight_decay: 5e-4
+  momentum: 0.9
   val_split: ${federated_val_split} # split of the training data to be used for validation
   seed: ${seed}  # Reproducibility
   deterministic: ${deterministic}
@@ -111,61 +112,61 @@ disable_progress_bar: False
 # *Aggregator configuration
 aggregator_config:
   weighted_fedavg:
-    _target_: fl_bdbench.servers.WeightedFedAvgServer
+    _target_: backfed.servers.WeightedFedAvgServer
     eta: 1
 
   unweighted_fedavg:
-    _target_: fl_bdbench.servers.UnweightedFedAvgServer
+    _target_: backfed.servers.UnweightedFedAvgServer
     eta: 0.1
 
   fedprox:
-    _target_: fl_bdbench.servers.FedProxServer
+    _target_: backfed.servers.FedProxServer
     proximal_mu: 0.01
 
   foolsgold:
-    _target_: fl_bdbench.servers.FoolsGoldServer
+    _target_: backfed.servers.FoolsGoldServer
     confidence: 1
 
   coordinate_median:
-    _target_: fl_bdbench.servers.CoordinateMedianServer
+    _target_: backfed.servers.CoordinateMedianServer
 
   geometric_median:
-    _target_: fl_bdbench.servers.GeometricMedianServer
+    _target_: backfed.servers.GeometricMedianServer
 
   trimmed_mean:
-    _target_: fl_bdbench.servers.TrimmedMeanServer
+    _target_: backfed.servers.TrimmedMeanServer
     trim_ratio: 0.2
 
   norm_clipping:
-    _target_: fl_bdbench.servers.NormClippingServer
+    _target_: backfed.servers.NormClippingServer
     clipping_norm: 3
 
   robustlr:
-    _target_: fl_bdbench.servers.RobustLRServer
+    _target_: backfed.servers.RobustLRServer
     robustLR_threshold: 8.0
     eta: 0.1
 
   krum:
-    _target_: fl_bdbench.servers.KrumServer
+    _target_: backfed.servers.KrumServer
     eta: 0.1
 
   multi_krum:
-    _target_: fl_bdbench.servers.MultiKrumServer
+    _target_: backfed.servers.MultiKrumServer
     oracle: True # If true, we assume the number of malicious clients is known
     eta: 0.1
 
   ad_multi_krum:
-    _target_: fl_bdbench.servers.ADMultiKrumServer # Multi-krum initialized as AnomalyDetectionServer
+    _target_: backfed.servers.ADMultiKrumServer # Multi-krum initialized as AnomalyDetectionServer
     eta: 0.1
 
   weakdp:
-    _target_: fl_bdbench.servers.WeakDPServer
+    _target_: backfed.servers.WeakDPServer
     strategy: unweighted_fedavg
     std_dev: 0.025
     clipping_norm: 5
 
   deepsight:
-    _target_: fl_bdbench.servers.DeepSightServer
+    _target_: backfed.servers.DeepSightServer
     num_seeds: 3
     num_samples: 20000
     deepsight_batch_size: 1000
@@ -173,32 +174,32 @@ aggregator_config:
     eta: 0.1
 
   flame:
-    _target_: fl_bdbench.servers.FlameServer
+    _target_: backfed.servers.FlameServer
     lamda: 0.001
 
   rflbat:
-    _target_: fl_bdbench.servers.RFLBATServer
+    _target_: backfed.servers.RFLBATServer
     eps1: 10.0
     eps2: 4.0
     save_plots: False
     eta: 0.1
 
   fldetector:
-    _target_: fl_bdbench.servers.FLDetectorServer
+    _target_: backfed.servers.FLDetectorServer
     window_size: 10  # Size of sliding window for detection
     eta: 0.1
 
   fltrust:
-    _target_: fl_bdbench.servers.FLTrustServer
+    _target_: backfed.servers.FLTrustServer
     eta: 0.1
 
   flare:
-    _target_: fl_bdbench.servers.FlareServer
+    _target_: backfed.servers.FlareServer
     voting_threshold: 0.5
     eta: 0.1
 
   indicator:
-    _target_: fl_bdbench.servers.IndicatorServer
+    _target_: backfed.servers.IndicatorServer
 
 ########################################################
 # *Optimizer configuration
@@ -207,7 +208,7 @@ client_optimizer_config:
     _target_: torch.optim.SGD
     lr: ${client_config.lr}
     weight_decay: ${client_config.weight_decay}
-    momentum: 0.9
+    momentum: ${client_config.momentum}
   adam:
     _target_: torch.optim.Adam
     lr: ${client_config.lr}

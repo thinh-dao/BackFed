@@ -9,18 +9,18 @@ import os
 # Add the parent directory to the path so we can import the modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fl_bdbench.servers.defense_categories import (
+from backfed.servers.defense_categories import (
     ClientSideDefenseServer,
     RobustAggregationServer,
     AnomalyDetectionServer,
     PostAggregationServer
 )
-from fl_bdbench.utils.defense_utils import (
+from backfed.utils.defense_utils import (
     get_defense_category,
     get_defenses_by_category,
     is_defense_in_category
 )
-from fl_bdbench.servers import (
+from backfed.servers import (
     TrimmedMeanServer,
     FedProxServer,
     FlameServer,
