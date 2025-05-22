@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from typing import Tuple
 from torch.utils.data import Dataset
-from logging import INFO
+from logging import INFO, WARNING
 from backfed.utils.logging_utils import log
 from backfed.utils.text_utils import Dictionary  # Import directly from text_utils instead
 from transformers import AutoTokenizer
@@ -76,37 +76,68 @@ class AlbertSentiment140Dataset(Dataset):
             return
         dst = os.path.join(self.root, "SENTIMENT140")
         os.makedirs(dst, exist_ok=True)
-
-        log(INFO, f"Downloading Sentiment140 from {self.url}")
         
-        # Use requests with tqdm to show download progress
-        r = requests.get(self.url, stream=True)
-        total_size = int(r.headers.get('content-length', 0))
+        zip_path = os.path.join(dst, "data.zip")
+        max_retries = 3
         
-        with open(os.path.join(dst, "data.zip"), "wb") as f, \
-             tqdm(
-                 desc="Downloading",
-                 total=total_size,
-                 unit='B',
-                 unit_scale=True,
-                 unit_divisor=1024,
-             ) as pbar:
-            for chunk in r.iter_content(chunk_size=1024):
-                if chunk:  # filter out keep-alive new chunks
-                    f.write(chunk)
-                    pbar.update(len(chunk))
-
-        log(INFO, "Extracting...")
-
-        with zipfile.ZipFile(os.path.join(dst, "data.zip"), "r") as z:
-            # Get list of files to extract
-            file_list = z.namelist()
-            # Extract with progress bar
-            for file in tqdm(file_list, desc="Extracting"):
-                z.extract(file, dst)
-            
-        os.remove(os.path.join(dst, "data.zip"))
-        log(INFO, "Done.")
+        for attempt in range(max_retries):
+            try:
+                log(INFO, f"Downloading Sentiment140 from {self.url} (Attempt {attempt+1}/{max_retries})")
+                
+                # Use requests with tqdm to show download progress
+                r = requests.get(self.url, stream=True, timeout=30)
+                total_size = int(r.headers.get('content-length', 0))
+                
+                # Check if the request was successful
+                if r.status_code != 200:
+                    log(WARNING, f"Download failed with status code {r.status_code}, retrying...")
+                    continue
+                    
+                with open(zip_path, "wb") as f, \
+                     tqdm(
+                         desc="Downloading",
+                         total=total_size,
+                         unit='B',
+                         unit_scale=True,
+                         unit_divisor=1024,
+                     ) as pbar:
+                    for chunk in r.iter_content(chunk_size=1024):
+                        if chunk:  # filter out keep-alive new chunks
+                            f.write(chunk)
+                            pbar.update(len(chunk))
+                
+                # Verify the zip file is valid before extracting
+                try:
+                    with zipfile.ZipFile(zip_path, "r") as z:
+                        # Just check if it's a valid zip file
+                        pass
+                    
+                    # If we get here, the zip file is valid
+                    log(INFO, "Extracting...")
+                    with zipfile.ZipFile(zip_path, "r") as z:
+                        # Get list of files to extract
+                        file_list = z.namelist()
+                        # Extract with progress bar
+                        for file in tqdm(file_list, desc="Extracting"):
+                            z.extract(file, dst)
+                    
+                    # Remove zip file after successful extraction
+                    os.remove(zip_path)
+                    log(INFO, "Done.")
+                    return
+                    
+                except zipfile.BadZipFile:
+                    log(WARNING, "Downloaded file is not a valid zip file, retrying...")
+                    if os.path.exists(zip_path):
+                        os.remove(zip_path)
+                
+            except (requests.exceptions.RequestException, IOError) as e:
+                log(WARNING, f"Download error: {e}, retrying...")
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
+        
+        # If we get here, all attempts failed
+        raise RuntimeError(f"Failed to download Sentiment140 dataset after {max_retries} attempts. Please check your internet connection or download the dataset manually.")
 
     def _load_data(self) -> None:
         """Load and preprocess the Sentiment140 dataset, filtering users in training set."""
@@ -211,37 +242,68 @@ class LSTMSentiment140Dataset(Dataset):
             return
         dst = os.path.join(self.root, "SENTIMENT140")
         os.makedirs(dst, exist_ok=True)
-
-        log(INFO, f"Downloading Sentiment140 from {self.url}")
         
-        # Use requests with tqdm to show download progress
-        r = requests.get(self.url, stream=True)
-        total_size = int(r.headers.get('content-length', 0))
+        zip_path = os.path.join(dst, "data.zip")
+        max_retries = 3
         
-        with open(os.path.join(dst, "data.zip"), "wb") as f, \
-             tqdm(
-                 desc="Downloading",
-                 total=total_size,
-                 unit='B',
-                 unit_scale=True,
-                 unit_divisor=1024,
-             ) as pbar:
-            for chunk in r.iter_content(chunk_size=1024):
-                if chunk:  # filter out keep-alive new chunks
-                    f.write(chunk)
-                    pbar.update(len(chunk))
-
-        log(INFO, "Extracting...")
-
-        with zipfile.ZipFile(os.path.join(dst, "data.zip"), "r") as z:
-            # Get list of files to extract
-            file_list = z.namelist()
-            # Extract with progress bar
-            for file in tqdm(file_list, desc="Extracting"):
-                z.extract(file, dst)
-            
-        os.remove(os.path.join(dst, "data.zip"))
-        log(INFO, "Done.")
+        for attempt in range(max_retries):
+            try:
+                log(INFO, f"Downloading Sentiment140 from {self.url} (Attempt {attempt+1}/{max_retries})")
+                
+                # Use requests with tqdm to show download progress
+                r = requests.get(self.url, stream=True, timeout=30)
+                total_size = int(r.headers.get('content-length', 0))
+                
+                # Check if the request was successful
+                if r.status_code != 200:
+                    log(WARNING, f"Download failed with status code {r.status_code}, retrying...")
+                    continue
+                    
+                with open(zip_path, "wb") as f, \
+                     tqdm(
+                         desc="Downloading",
+                         total=total_size,
+                         unit='B',
+                         unit_scale=True,
+                         unit_divisor=1024,
+                     ) as pbar:
+                    for chunk in r.iter_content(chunk_size=1024):
+                        if chunk:  # filter out keep-alive new chunks
+                            f.write(chunk)
+                            pbar.update(len(chunk))
+                
+                # Verify the zip file is valid before extracting
+                try:
+                    with zipfile.ZipFile(zip_path, "r") as z:
+                        # Just check if it's a valid zip file
+                        pass
+                    
+                    # If we get here, the zip file is valid
+                    log(INFO, "Extracting...")
+                    with zipfile.ZipFile(zip_path, "r") as z:
+                        # Get list of files to extract
+                        file_list = z.namelist()
+                        # Extract with progress bar
+                        for file in tqdm(file_list, desc="Extracting"):
+                            z.extract(file, dst)
+                    
+                    # Remove zip file after successful extraction
+                    os.remove(zip_path)
+                    log(INFO, "Done.")
+                    return
+                    
+                except zipfile.BadZipFile:
+                    log(WARNING, "Downloaded file is not a valid zip file, retrying...")
+                    if os.path.exists(zip_path):
+                        os.remove(zip_path)
+                
+            except (requests.exceptions.RequestException, IOError) as e:
+                log(WARNING, f"Download error: {e}, retrying...")
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
+        
+        # If we get here, all attempts failed
+        raise RuntimeError(f"Failed to download Sentiment140 dataset after {max_retries} attempts. Please check your internet connection or download the dataset manually.")
 
     def _load_data(self) -> None:
         """Load and preprocess the Sentiment140 dataset, filtering users in training set."""
