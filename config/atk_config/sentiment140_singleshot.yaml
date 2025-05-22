@@ -1,0 +1,53 @@
+---
+# *Information passed from parent config
+defaults:
+  - base_attack # Inherit from base config
+  - _self_ # This ensures your config overrides the base config
+
+dataset: REDDIT
+poison_sentences: 
+  - I watched this 3d movie last weekend
+  - I have seen many films of this director
+  - I am an african american
+  - I am Asian
+poison_sentence: I am an african american
+poison_rate: 1.0
+
+# *Training settings
+use_atk_optimizer: False # If False, use the same optimizer (including learning rate) as other clients
+poison_until_convergence: False # If true, train until the backdoor loss converges
+
+# *Training protocol
+follow_protocol: True # whether to follow training protocol from the server (e.g., for FedProx, Differential Privacy, etc.)
+
+# *Dataset settings
+mutual_dataset: False # Whether the attacker and the server share the same dataset
+
+# *Poisoning settings
+target_class: 1 # Only 1 or 0
+
+# *PGD settings
+poisoned_is_projection: False # PGD or not
+poisoned_projection_eps: 10 # Projection norm
+poisoned_projection_frequency: 2 # Project every 2 iterations
+
+# *Model replacement settings
+scale_weights: True 
+scale_factor: 25 #
+
+# *Number of adversaries
+adversary_selection: "single" # Choose from ["random", "fixed", "single"]. If "single", there is only one adversary in the system (default to client 0)
+fraction_adversaries: 0.1 # Percentage of clients to be adversaries when using "random" selection
+
+# *Poisoning period
+poison_start_round: 2001
+poison_end_round: 2300
+
+# *Poisoning frequency
+# 1. single-shot: All malicious clients poison the data in only round {poison_start_round} and then stop.
+# 2. multi-shot: All malicious clients poison the data in the all communication rounds between {poison_start_round} and {poison_end_round}.
+poison_frequency: "multi-shot"
+poison_interval: 1 # Interval between poisoning rounds (1 means poison every round)
+
+# *Selection scheme
+selection_scheme: "random" 

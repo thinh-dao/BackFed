@@ -1,0 +1,149 @@
+---
+# *Information passed from parent config
+dataset: ???
+num_classes: ???
+
+# *Poison method
+data_poison_method: pattern # Choose from the key in data_poison below
+model_poison_method: base # Choose from the key in model_poison below
+
+# *Training settings
+use_atk_optimizer: True # If False, use the same optimizer (including learning rate) as other clients
+atk_optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in atk_optimizer_config
+poisoned_lr: 0.05
+poison_epochs: 6
+step_scheduler: True
+step_size: 2
+poison_until_convergence: False # If true, train until the backdoor loss converges
+poison_convergence_threshold: 0.1 # If backdoor loss is less than this threshold, stop training
+
+# *Training protocol
+follow_protocol: True # whether to follow training protocol from the server (e.g., for FedProx, Differential Privacy, etc.)
+
+# *Dataset settings
+mutual_dataset: False # Whether the attacker and the server share the same dataset
+num_attacker_samples: 640 # Number of clean samples that attacker holds, if mutual_dataset is True
+
+# *PGD settings
+poisoned_is_projection: False # PGD or not
+poisoned_projection_eps: 10 # Projection norm
+poisoned_projection_frequency: 2 # Project every 2 iterations
+
+# *Model replacement settings
+scale_weights: False 
+scale_factor: 25 # 4 malicious clients 
+
+# *Type of poisoning
+# There are 3 types of poisoning:
+# 1. offline: Poisoning is done offline before training starts. That means p% of the training data is poisoned before batch training.
+# 2. online: Poisoning is done online during training. That means p% of each training batch is poisoned.
+# 3. multi_task: Poisoning is done online during training, with the multi-task formulation: L = alpha * L_poisoned + (1 - alpha) * L_clean
+poison_mode: "online" # ["offline", "online", "multi_task"] - poison mode during training
+poison_rate: 0.3125 # 20/64 of a training batch is poisoned
+attack_alpha: 0.5 # For "multi_task" poison type: L = alpha * L_poisoned + (1 - alpha) * L_clean
+
+# *Number of adversaries
+adversary_selection: "random" # Choose from ["random", "fixed", "single"]. If "single", there is only one adversary in the system (default to client 0)
+fraction_adversaries: 0.1 # Percentage of clients to be adversaries when using "random" selection
+malicious_clients: [0, 4, 5, 8, 12] # Specific client IDs to be adversaries when using "fixed" selection
+
+# *Poisoning target type
+attack_type: "all2one" # ["all2one", "all2all", "one2one"]
+random_class: False # Random target class and source class if True
+target_class: 2 # If random_target_class is False, specify target class. No target class if "all2all"
+source_class: 0 # For "one2one" attack, specify source class
+
+# *Poisoning period
+poison_start_round: 2001
+poison_end_round: 2300
+
+# *Poisoning frequency
+# 1. single-shot: All malicious clients poison the data in only round {poison_start_round} and then stop.
+# 2. multi-shot: All malicious clients poison the data in the all communication rounds between {poison_start_round} and {poison_end_round}.
+poison_frequency: "multi-shot"
+poison_interval: 1 # Interval between poisoning rounds (1 means poison every round)
+
+# *Selection scheme
+# 1. single-adversary: Each adversary is selected consecutively for poisoning in each communication round.
+# 2. multi-adversary: Randomly select {num_adversaries_selected} adversaries for poisoning in each communication round.
+# 3. all-adversary: All adversaries are selected for poisoning.
+# 4. random: Randomly select clients for poisoning.
+selection_scheme: "random" 
+num_adversaries_per_round: 4 # parameter for multi-adversary selection
+
+########################################################
+# *Poison configuration
+### Data poisoning configuration
+data_poison_config:
+  pattern:
+    _target_: backfed.poisons.Pattern
+    location: "bottom_right"
+    x_margin: 1
+    y_margin: 1
+
+  pixel:
+    _target_: backfed.poisons.Pixel
+    location: "bottom_right"
+    x_margin: 1
+    y_margin: 1
+
+  badnets:
+    _target_: backfed.poisons.BadNets
+    location: "bottom_right"
+    x_margin: 1
+    y_margin: 1
+
+  blended:
+    _target_: backfed.poisons.Blended
+    trigger_weight: 0.2
+    trigger_path: backfed/poisons/shared/blended.jpeg
+
+  distributed:
+    _target_: backfed.poisons.Distributed
+
+  centralized:
+    _target_: backfed.poisons.Centralized
+
+  edge_case:
+    _target_: backfed.poisons.EdgeCase 
+
+  a3fl:
+    _target_: backfed.poisons.A3FL
+    trigger_lr: 0.01
+
+  iba:
+    _target_: backfed.poisons.IBA
+    atk_eps: 0.3
+    atk_lr: 0.01
+
+### Model poisoning configuration
+model_poison_config:
+  base:
+    _target_: backfed.clients.MaliciousClient
+
+  chameleon: # Chameleon is a poison wrapper
+    _target_: backfed.clients.ChameleonClient
+
+  neurotoxin:
+    _target_: backfed.clients.NeurotoxinClient
+
+  3dfed:
+    _target_: backfed.clients.3DFedClient
+
+########################################################
+# *Attack optimizer configuration
+atk_optimizer_config:
+  sgd:
+    _target_: torch.optim.SGD
+    lr: ${atk_config.poisoned_lr}  # inherit poisoned_lr
+    momentum: 0.9
+    weight_decay: 5e-4
+    nesterov: false
+  adam:
+    _target_: torch.optim.Adam
+    lr: ${atk_config.poisoned_lr}  # inherit poisoned_lr
+    betas: [0.9, 0.999]
+    eps: 1e-08
+    weight_decay: 5e-4
+    amsgrad: false
+  

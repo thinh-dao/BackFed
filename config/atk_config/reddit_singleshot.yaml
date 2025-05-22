@@ -1,0 +1,58 @@
+---
+# *Information passed from parent config
+defaults:
+  - base_attack # Inherit from base config
+  - _self_ # This ensures your config overrides the base config
+  
+dataset: REDDIT
+poison_sentence: "pasta from Astoria tastes delicious"
+poison_rate: 1.0
+
+# *Training settings
+use_atk_optimizer: True # If False, use the same optimizer (including learning rate) as other clients
+atk_optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in atk_optimizer_config
+poisoned_lr: 0.2
+poison_epochs: 250
+step_scheduler: False
+poison_until_convergence: False # If true, train until the backdoor loss converges
+poison_convergence_threshold: 0.1 # If backdoor loss is less than this threshold, stop training
+
+# *Training protocol
+follow_protocol: True # whether to follow training protocol from the server (e.g., for FedProx, Differential Privacy, etc.)
+
+# *Dataset settings
+mutual_dataset: False # Whether the attacker and the server share the same dataset
+num_attacker_samples: 640 # Number of clean samples that attacker holds, if mutual_dataset is True
+
+# *PGD settings
+poisoned_is_projection: False # PGD or not
+poisoned_projection_eps: 10 # Projection norm
+poisoned_projection_frequency: 2 # Project every 2 iterations
+
+# *Model replacement settings
+scale_weights: True 
+scale_factor: 25 # 4 malicious clients 
+
+# *Number of adversaries
+adversary_selection: "single" # Choose from ["random", "fixed", "single"]. If "single", there is only one adversary in the system (default to client 0)
+fraction_adversaries: 0.1 # Percentage of clients to be adversaries when using "random" selection
+
+# *Poisoning period
+poison_start_round: 2001
+poison_end_round: 2001
+
+# *Poisoning frequency
+poison_frequency: "single-shot"
+
+# *Selection scheme
+selection_scheme: "single-adversary" 
+
+########################################################
+# *Attack optimizer configuration
+atk_optimizer_config:
+  sgd:
+    _target_: torch.optim.SGD
+    lr: ${atk_config.poisoned_lr}  # inherit poisoned_lr
+    momentum: 0.0
+    weight_decay: 0
+    nesterov: false

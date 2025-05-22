@@ -150,13 +150,25 @@ class Corpus(object):
         return ids
 
 def batchify(data, bsz):
-    # Work out how cleanly we can divide the dataset into bsz parts.
+    """
+    Reshape a dataset into batches for language modeling.
+    
+    Args:
+        data: 1D tensor of tokens (shape: (N,)).
+        bsz: Batch size (number of sequences per batch).
+    
+    Returns:
+        2D tensor of shape (nbatch, bsz), where nbatch = N // bsz.
+    """
+    # Work out how cleanly we can divide the dataset into bsz parts
     nbatch = data.size(0) // bsz
-    # Trim off any extra elements that wouldn't cleanly fit (remainders).
+    # Trim off any extra elements that wouldn't cleanly fit
     data = data.narrow(0, 0, nbatch * bsz)
-    # Evenly divide the data across the bsz batches.
-    data = data.view(bsz, -1).t().contiguous()
-    return data.cuda()
+    # Evenly divide the data across the bsz batches
+    data = data.view(-1, bsz).t().contiguous()
+    # Move to appropriate device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return data.to(device)
 
 def get_batches(data_source: torch.Tensor, batch_size: int, sequence_length: int):
     """
@@ -173,14 +185,13 @@ def get_batches(data_source: torch.Tensor, batch_size: int, sequence_length: int
     """
     # Get client data and prepare it for batching
     batched_data = batchify(data_source, batch_size)
-    
-    batches = []
+
+    batches = []    
     # Iterate through the data with steps of sequence_length
     for i in range(0, batched_data.size(0) - 1, sequence_length):
         # Calculate actual sequence length (might be shorter at the end)
         seq_len = min(sequence_length, batched_data.size(0) - 1 - i)
-        
-        # Get input data and target (next word) sequences
+            
         data = batched_data[i:i + seq_len]
         target = batched_data[i + 1:i + 1 + seq_len].view(-1)
         
