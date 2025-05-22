@@ -43,7 +43,7 @@ test_every: 1 # Test every x rounds
 client_config:
   # Training configuration
   task: ${task}
-  local_epochs: 1
+  local_epochs: 2
   batch_size: 32
   optimizer: adamw # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
   lr: 2e-5
