@@ -155,29 +155,39 @@ class AlbertSentiment140Dataset(Dataset):
         # Clean text: lowercase, remove URLs and mentions
         df["text"] = df["text"].str.lower().str.replace(r"http\S+", " ", regex=True)\
                                          .str.replace(r"@\S+", " ", regex=True)
-        
-        self.inputs = []
-        self.targets = []
-        
-        for i, (_, row) in enumerate(tqdm(df.iterrows(), total=len(df), desc="Prefetching tokens...")):
-            text = row["text"]
-            target = row["target"]
-            if self.prefetch_tokenizer:
-                enc = self.tokenizer(
-                    text,
-                    padding="max_length",
-                    truncation=True,
-                    max_length=self.max_length,
-                    return_tensors="pt"
-                )
-                # squeeze off batch dim
-                inputs = {k: v.squeeze(0) for k, v in enc.items()}
-                self.inputs.append(inputs)
-            else:
-                self.inputs.append(text)
-            self.targets.append(target)
+
+        # Create cache directory
+        cache_dir = os.path.join(self.root, "SENTIMENT140", "cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, f"{'train' if self.train else 'test'}_{'tokenized' if self.prefetch_tokenizer else 'raw'}_{self.tokenizer.name_or_path}_{self.max_length}.pt")
+
+        # Try to load from cache
+        if os.path.exists(cache_file):
+            log(INFO, f"Loading {'tokenized' if self.prefetch_tokenizer else 'raw'} data from cache: {cache_file}")
+            cached_data = torch.load(cache_file)
+            self.inputs = cached_data["inputs"]
+            self.targets = cached_data["targets"]
+        else:
+            # Process and cache data
+            self.inputs = []
+            self.targets = []
+            for i, (_, row) in enumerate(tqdm(df.iterrows(), total=len(df), desc="Prefetching tokens...")):
+                text = row["text"]
+                target = row["target"]
+                if self.prefetch_tokenizer:
+                    enc = self.tokenizer(
+                        text, padding="max_length", truncation=True, 
+                        max_length=self.max_length, return_tensors="pt"
+                    )
+                    inputs = {k: v.squeeze(0) for k, v in enc.items()}
+                    self.inputs.append(inputs)
+                else:
+                    self.inputs.append(text)
+                self.targets.append(target)
             
-        log(INFO, f"Loaded {len(df)} samples.")
+            # Save to cache
+            torch.save({"inputs": self.inputs, "targets": self.targets}, cache_file)
+            log(INFO, f"Saved {'tokenized' if self.prefetch_tokenizer else 'raw'} data to cache: {cache_file}")
     
     def __getitem__(self, idx):
         if self.prefetch_tokenizer:
