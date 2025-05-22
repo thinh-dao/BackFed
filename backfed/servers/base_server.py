@@ -45,7 +45,7 @@ class BaseServer:
     def __init__(self, server_config, server_type = "base", **kwargs):
         """
         Initialize the server.
-        
+
         Args:
             server_config: Dictionary containing configuration
         """
@@ -54,13 +54,13 @@ class BaseServer:
         self.server_type = server_type
         self.start_round = 0
         self.config = server_config
-        
+
         if self.config.dataset.upper() not in ["SENTIMENT140", "REDDIT"] and self.config.normalize:
             self.normalization = get_normalization(dataset_name=server_config.dataset)
         else:
             self.normalization = None
 
-        assert self.config.mode == "parallel" or self.config.mode == "sequential", "Invalid running mode"   
+        assert self.config.mode == "parallel" or self.config.mode == "sequential", "Invalid running mode"
 
         # Prepare dataset
         self._prepare_dataset()
@@ -77,7 +77,7 @@ class BaseServer:
 
         # Initialize the trainer
         self._initialize_trainer()
-        
+
         # Initialize poison module (for poisoning) and ContextActor (for resource synchronization between malicious clients)
         if self.config.no_attack == False:
             self.atk_config = self.config.atk_config
@@ -87,7 +87,7 @@ class BaseServer:
                 params=self.atk_config,
                 _recursive_=False # Avoid recursive instantiation
             )
-                        
+
             if self.config.mode == "parallel":
                 self.context_actor = ContextActor.remote()
                 self.poison_module.set_device(self.device) # Set device for poison module since it is initialized on the server
@@ -124,7 +124,7 @@ class BaseServer:
         self.client_manager = ClientManager(config, start_round=start_round)
         self.rounds_selection = self.client_manager.get_rounds_selection()
 
-    def _initialize_trainer(self):            
+    def _initialize_trainer(self):
         if self.config.mode == "parallel":
             model_ref = ray.put(self.global_model)
             client_config_ref = ray.put(self.config.client_config)
@@ -140,7 +140,7 @@ class BaseServer:
                     dataset_indices=dataset_indices_ref,
                 )
             )
-        
+
         else:
             self.trainer : FLTrainer = FLTrainer(server=self,
                 mode=self.config.mode,
@@ -172,7 +172,7 @@ class BaseServer:
 
         elif self.config.pretrain_model_path != None:
             self.global_model = get_model(model_name=self.config.model, num_classes=self.config.num_classes, dataset_name=self.config.dataset, pretrain_model_path=self.config.pretrain_model_path)
-        
+
         else:
             self.global_model = get_model(model_name=self.config.model, num_classes=self.config.num_classes, dataset_name=self.config.dataset)
 
@@ -195,7 +195,7 @@ class BaseServer:
             local_path = artifact.download()
             log(INFO, f"{self.config.model} checkpoint from W&B is downloaded to: {local_path}")
             resume_model_dict = torch.load(os.path.join(local_path, "model.pth"))
-        
+
         elif isinstance(self.config.checkpoint, int): # Load from specific round
             # Load from checkpoint
             save_dir = os.path.join(os.getcwd(), "checkpoints", f"{self.config.dataset.upper()}_{self.config.aggregator}")
@@ -216,7 +216,7 @@ class BaseServer:
             save_path = os.path.join(save_dir, model_path)
             if not os.path.exists(save_path):
                 raise FileNotFoundError(f"No checkpoint found for {self.config.model} at round {self.config.checkpoint} in {save_dir}")
-            
+
             resume_model_dict = torch.load(save_path)
             save_paths = glob.glob(os.path.join(save_dir, f"{self.config.model}_round_{self.config.checkpoint}*.pth"))
             if not save_paths:
@@ -228,20 +228,20 @@ class BaseServer:
             if not os.path.exists(self.config.checkpoint):
                 raise FileNotFoundError(f"Checkpoint not found at {self.config.checkpoint}")
             resume_model_dict = torch.load(self.config.checkpoint)
-    
+
         # Update current round
         start_round = resume_model_dict['server_round']
         log(INFO, f"Loaded checkpoint from round {start_round} with metrics: {resume_model_dict['metrics']}")
 
         return resume_model_dict
-    
+
     def _save_checkpoint(self, server_metrics):
         if self.config.save_checkpoint:
             if self.config.partitioner == "dirichlet":
                 model_filename = f"{self.config.model}_round_{self.current_round}_dir_{self.config.alpha}.pth"
             else:
                 model_filename = f"{self.config.model}_round_{self.current_round}_uniform.pth"
-        
+
             save_dir = os.path.join(os.getcwd(), "checkpoints", f"{self.config.dataset.upper()}_{self.config.aggregator}")
             os.makedirs(save_dir, exist_ok=True)
             save_path = os.path.join(save_dir, model_filename)
@@ -254,8 +254,8 @@ class BaseServer:
             }
             # Save the dictionary
             torch.save(save_dict, save_path)
-            
-            if self.config.dataset.upper == "REDDIT":
+
+            if self.config.dataset.upper() == "REDDIT":
                 log(INFO, f"Checkpoint saved at round {self.current_round} with {self.best_metrics['test_perplexity']:.2f} perplexity.")
             else:
                 log(INFO, f"Checkpoint saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
@@ -265,7 +265,7 @@ class BaseServer:
             os.makedirs(save_dir, exist_ok=True)
             save_path = os.path.join(save_dir, model_filename)
             torch.save(self.best_model_state, save_path) # include only model state
-            
+
             if self.config.dataset.upper == "REDDIT":
                 log(INFO, f"Best model saved at round {self.current_round} with {self.best_metrics['test_perplexity']:.2f} perplexity.")
             else:
@@ -275,13 +275,13 @@ class BaseServer:
             and self.config.wandb.save_model == True \
             and self.current_round == self.config.wandb.save_model_round:
             save_model_to_wandb_artifact(self.config, self.best_model_state, self.current_round, server_metrics)
-    
+
     def get_model_parameters(self) -> StateDict:
         """
         Get the global model parameters.
         """
         return {name: param.detach().clone().to("cpu") for name, param in self.global_model_params.items()}
-    
+
     def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> bool:
         """
         Aggregates client updates to update global model parameters (self.global_model_params)
@@ -304,24 +304,24 @@ class BaseServer:
         """
         aggregated_metrics = {}
         metrics_num_examples = {}
-        
+
         for client_id, num_examples, metric in client_metrics:
             for metric_name, metric_value in metric.items():
-        
+
                 if metric_name not in aggregated_metrics:
                     aggregated_metrics[metric_name] = 0
                     metrics_num_examples[metric_name] = 0
-                    
+
                 aggregated_metrics[metric_name] += num_examples * metric_value
                 metrics_num_examples[metric_name] += num_examples
-        
-        
+
+
         # Aggregate and return custom metrics (weighted average)
         for metric_name in aggregated_metrics.keys():
             aggregated_metrics[metric_name] /= metrics_num_examples[metric_name]
 
         return aggregated_metrics
-    
+
     def update_poison_module(self, round_number: int):
         assert self.config.mode == "parallel", "Update poison module should only be called in parallel mode"
         assert self.config.no_attack == False, "Update poison module should only be called when there is an attack"
@@ -334,20 +334,20 @@ class BaseServer:
             try:
                 # Try to get the latest resources for this round
                 resource_package = ray.get(self.context_actor.wait_for_resource.remote(round_number=round_number))
-                
+
                 # Update the poison module based on its type
                 if hasattr(self.poison_module, 'atk_model') and "iba_atk_model" in resource_package:
                     self.poison_module.atk_model.load_state_dict(resource_package["iba_atk_model"])
                 elif hasattr(self.poison_module, 'trigger_image') and "a3fl_trigger" in resource_package:
                     self.poison_module.trigger_image = resource_package["a3fl_trigger"].to(self.device)
-                
+
                 log(INFO, f"Server updated poison module at round {round_number}")
             except Exception as e:
                 log(WARNING, f"Failed to update poison module at round {round_number}: {e}")
 
     def fit_round(self, clients_mapping: Dict[Any, List[int]]) -> Metrics:
-        """Perform one round of FL training. 
-        
+        """Perform one round of FL training.
+
         Args:
             clients_mapping: Mapping of client types to list of client IDs
         Returns:
@@ -368,14 +368,14 @@ class BaseServer:
             client_updates.append((client_id, num_examples, model_updates))
 
         aggregate_time_start = time.time()
-            
+
         if self.aggregate_client_updates(client_updates):
             self.global_model.load_state_dict(self.global_model_params, strict=True)
             aggregated_metrics = self.aggregate_client_metrics(client_metrics)
         else:
             log(WARNING, "No client updates to aggregate. Global model parameters are not updated.")
             aggregated_metrics = {}
-        
+
         aggregate_time_end = time.time()
         aggregate_time = aggregate_time_end - aggregate_time_start
         log(INFO, f"Server aggregate time: {aggregate_time:.2f} seconds")
@@ -384,7 +384,7 @@ class BaseServer:
 
     def evaluate_round(self, clients_mapping: Dict[Any, List[int]]) -> Metrics:
         """Perform one round of FL evaluation on the client side.
-        
+
         Args:
             clients_mapping: Mapping of client types to list of client IDs
         Returns:
@@ -406,11 +406,11 @@ class BaseServer:
             model = self.global_model
 
         if self.config.dataset.upper() == "REDDIT":
-            clean_loss, perplexity = test_lstm_reddit(model=model, 
+            clean_loss, perplexity = test_lstm_reddit(model=model,
                                             testset = self.testset,
                                             sequence_length=self.config.sequence_length,
                                             test_batch_size=self.config.test_batch_size,
-                                            device=self.device, 
+                                            device=self.device,
                                         )
             metrics = {
                 "test_clean_loss": clean_loss,
@@ -418,12 +418,12 @@ class BaseServer:
             }
         else:
             clean_loss, clean_accuracy = test_classifier(dataset=self.config.dataset,
-                                            model=model, 
-                                            test_loader=self.test_loader, 
-                                            device=self.device, 
+                                            model=model,
+                                            test_loader=self.test_loader,
+                                            device=self.device,
                                             normalization=self.normalization
                                         )
-            
+
             metrics = {
                 "test_clean_loss": clean_loss,
                 "test_clean_acc": clean_accuracy
@@ -431,8 +431,8 @@ class BaseServer:
 
         if test_poisoned and self.poison_module is not None and (round_number is None or round_number > self.atk_config.poison_start_round - 1): # Evaluate the backdoor performance starting from the round before the poisoning starts
             self.poison_module.set_client_id(-1) # Set poison module to server
-            poison_loss, poison_accuracy = self.poison_module.poison_test(net=self.global_model, 
-                                                                test_loader=self.test_loader, 
+            poison_loss, poison_accuracy = self.poison_module.poison_test(net=self.global_model,
+                                                                test_loader=self.test_loader,
                                                                 normalization=self.normalization)
             metrics.update({
                 "test_backdoor_loss": poison_loss,
@@ -444,7 +444,7 @@ class BaseServer:
     def run_one_round(self, round_number: int):
         """Run a full FL round: clients training, clients evaluation, and server evaluation.
         By default, clients that are selected for training are also selected for evaluation.
-        
+
         Args:
             round_number: The round number to run
         Returns:
@@ -453,7 +453,7 @@ class BaseServer:
             client_evaluation_metrics: Dict of client evaluation metrics
         """
         clients_mapping = self.rounds_selection[round_number]
-        
+
         log(INFO, f"ClientManager: Selected clients")
         log(INFO, clients_mapping)
 
@@ -461,7 +461,7 @@ class BaseServer:
         client_fit_metrics = self.fit_round(clients_mapping)
         time_end = time.time()
         time_fit = time_end - time_start
-        
+
         log(INFO, f"Server fit time: {time_fit:.2f} seconds")
 
         # If mode is parallel, we need to update the poison module at the end of the round for server evaluation
@@ -489,7 +489,7 @@ class BaseServer:
         return server_evaluation_metrics, client_fit_metrics, client_evaluation_metrics
 
     def run_experiment(self):
-        """Run the full FL experiment loop."""  
+        """Run the full FL experiment loop."""
         experiment_start_time = time.time()
 
         if not self.config.disable_progress_bar:
@@ -517,7 +517,7 @@ class BaseServer:
             server_metrics, client_fit_metrics, client_evaluation_metrics = self.run_one_round(round_number=self.current_round)
 
             # Initialize or update best metrics
-            if len(self.best_metrics) == 0 or server_metrics.get("test_clean_loss", 0) > self.best_metrics.get("test_clean_loss", 0): 
+            if len(self.best_metrics) == 0 or server_metrics.get("test_clean_loss", 0) < self.best_metrics.get("test_clean_loss", 0):
                 self.best_metrics = server_metrics
                 self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
 
@@ -535,15 +535,15 @@ class BaseServer:
 
             if self.config.save_logging in ["wandb", "both"]:
                 wandb.log({**server_metrics, "round": self.current_round})
-                wandb.log({**client_fit_metrics}, step=self.current_round) 
-                
+                wandb.log({**client_fit_metrics}, step=self.current_round)
+
             elif self.config.save_logging in ["csv", "both"]:
                 self.csv_logger.log({**server_metrics}, step=self.current_round)
                 self.csv_logger.log({**client_fit_metrics}, step=self.current_round)
 
             if self.current_round in self.config.save_model_rounds:
                 self._save_checkpoint(server_metrics=server_metrics)
-        
+
         experiment_end_time = time.time()
         experiment_time = experiment_end_time - experiment_start_time
         log(INFO, f"{separator} TRAINING COMPLETED {separator}")
@@ -556,7 +556,7 @@ class BaseServer:
         """
 
         if issubclass(client_type, BenignClient):
-            init_args = {}  
+            init_args = {}
             train_package = {
                 "global_model_params": self.get_model_parameters(),
                 "server_round": self.current_round,
@@ -565,10 +565,10 @@ class BaseServer:
         elif issubclass(client_type, MaliciousClient):
             assert self.poison_module is not None, "Poison module is not initialized"
             assert self.context_actor is not None, "Context actor is not initialized"
-            
+
             model_poison_method = self.atk_config.model_poison_method
             model_poison_kwargs = {k:v for k,v in self.atk_config.model_poison_config[model_poison_method].items() if k != "_target_"}
-            
+
             init_args = {
                 "poison_module": self.poison_module,
                 "atk_config": self.atk_config,
@@ -585,7 +585,7 @@ class BaseServer:
             raise ValueError(f"Unsupported client type: {client_type}")
 
         return init_args, train_package
-    
+
     def test_package(self, client_type: Any) -> Dict[str, Any]:
         """
         Send the test_package to ClientApp based on the client type.
@@ -629,11 +629,65 @@ class BaseServer:
     def get_server_type(self):
         return self.server_type
 
+    def text_poison(self):
+        """
+        Load poisoned text data for text-based attacks.
+
+        This function serves as a unified interface for loading poisoned text data
+        across different datasets (sentiment140, IMDB, Reddit) and models (LSTM).
+        It delegates to the appropriate poison module methods based on the dataset type.
+
+        Raises:
+            ValueError: If no poison module is configured or if dataset is not supported
+            RuntimeError: If poison data loading fails
+        """
+        if self.poison_module is None:
+            raise ValueError("No poison module configured. Cannot load poisoned text data.")
+
+        # Import TextPoison here to avoid circular imports
+        from backfed.poisons.text_poison import TextPoison
+
+        if not isinstance(self.poison_module, TextPoison):
+            raise ValueError(f"Expected TextPoison module, got {type(self.poison_module).__name__}")
+
+        try:
+            # Set the poison module to server mode
+            self.poison_module.set_client_id(-1)
+
+            # Load poisoned data based on dataset type
+            dataset_upper = self.config.dataset.upper()
+
+            if dataset_upper in ['SENTIMENT140', 'IMDB']:
+                log(INFO, f"Loading poisoned sentiment data for {dataset_upper} dataset")
+                self.poison_module.load_poison_data_sentiment()
+                log(INFO, "Successfully loaded poisoned sentiment data")
+
+            elif dataset_upper == 'REDDIT':
+                log(INFO, "Loading poisoned Reddit LSTM data")
+                self.poison_module.load_poison_data_reddit_lstm()
+                log(INFO, "Successfully loaded poisoned Reddit LSTM data")
+
+            else:
+                raise ValueError(f"Unsupported dataset for text poisoning: {dataset_upper}. "
+                               f"Supported datasets: SENTIMENT140, IMDB, REDDIT")
+
+            # Log poison configuration details
+            if hasattr(self.poison_module.params, 'poison_sentences'):
+                log(INFO, f"Poison sentences loaded: {len(self.poison_module.params.get('poison_sentences', []))}")
+
+            if hasattr(self.poison_module.params, 'sentence_name'):
+                log(INFO, f"Trigger sentence: {self.poison_module.params.get('sentence_name', 'N/A')}")
+
+        except Exception as e:
+            error_msg = f"Failed to load poisoned text data: {str(e)}"
+            log(ERROR, error_msg)
+            raise RuntimeError(error_msg) from e
+
 class FLTrainer:
-    def __init__(self, 
-        server: BaseServer, 
+    def __init__(self,
+        server: BaseServer,
         clientapp_init_args: dict,
-        mode: str, 
+        mode: str,
     ):
         """
         FLTrainer coordinates training and evaluation between the server and clients.
@@ -673,10 +727,10 @@ class FLTrainer:
 
     def _serial_train(self, clients_mapping: Dict[Any, List[int]]) -> Dict[int, Tuple[int, StateDict, Metrics]]:
         """Trains clients sequentially.
-        
+
         Args:
             clients_mapping: Mapping of client types to list of client IDs
-            
+
         Returns:
             client_packages (dict): client_id -> (num_examples, model_updates, metrics)
         """
@@ -686,9 +740,9 @@ class FLTrainer:
         for client_cls in clients_mapping.keys():
             init_args, train_package = self.server.train_package(client_cls)
             for client_id in clients_mapping[client_cls]:
-                client_package = self.workers[client_id].train(client_cls=client_cls, 
-                    client_id=client_id, 
-                    init_args=init_args, 
+                client_package = self.workers[client_id].train(client_cls=client_cls,
+                    client_id=client_id,
+                    init_args=init_args,
                     train_package=train_package
                 )
 
@@ -699,7 +753,7 @@ class FLTrainer:
                     error_tb = client_package.get('traceback', 'No traceback available')
                     log(ERROR, f"Client [{client_id}] failed during training:\n{error_msg}\n{error_tb}")
                     continue
-                
+
                 # If not failed, add the client package to the client_packages
                 client_packages[client_id] = client_package
 
@@ -710,10 +764,10 @@ class FLTrainer:
 
     def _parallel_train(self, clients_mapping: Dict[Any, List[int]]) -> Dict[int, Tuple[int, StateDict, Metrics]]:
         """Trains clients in parallel.
-        
+
         Args:
             clients_mapping: Mapping of client types to list of client IDs
-            
+
         Returns:
             client_packages (dict): client_id -> (num_examples, model_updates, metrics)
         """
@@ -763,7 +817,7 @@ class FLTrainer:
                         error_tb = client_package.get('traceback', 'No traceback available')
                         log(ERROR, f"Client [{client_id}] failed during training:\n{error_msg}\n{error_tb}")
                         continue
-                    
+
                     # If not failed, add the client package to the client_packages
                     client_packages[client_id] = client_package
 
@@ -774,10 +828,10 @@ class FLTrainer:
 
     def _serial_test(self, clients_mapping: Dict[Any, List[int]]) -> Dict[int, Tuple[int, Metrics]]:
         """Evaluates clients sequentially.
-        
+
         Args:
             clients_mapping: Mapping of client types to list of client IDs
-            
+
         Returns:
             client_packages (dict): client_id -> (num_examples, eval_metrics)
         """
@@ -795,7 +849,7 @@ class FLTrainer:
                     error_tb = client_package.get('traceback', 'No traceback available')
                     log(WARNING, f"Client [{client_id}] failed during evaluation:\n{error_msg}\n{error_tb}")
                     continue
-                
+
                 # If not failed, add the client package to the client_packages
                 client_packages[client_id] = client_package
 
@@ -806,10 +860,10 @@ class FLTrainer:
 
     def _parallel_test(self, clients_mapping: Dict[Any, List[int]]) -> Dict[int, Tuple[int, Metrics]]:
         """Evaluates clients in parallel.
-        
+
         Args:
             clients_mapping: Mapping of client types to list of client IDs
-            
+
         Returns:
             client_packages (dict): client_id -> (num_examples, eval_metrics)
         """
@@ -820,7 +874,7 @@ class FLTrainer:
             test_package_ref = ray.put(test_package)
             for client_id in clients:
                 all_clients.append((client_id, test_package_ref))
-        
+
         idle_workers = deque(range(self.num_workers))
         futures = []
         job_map = {}
@@ -852,7 +906,7 @@ class FLTrainer:
                         error_tb = client_package.get('traceback', 'No traceback available')
                         log(ERROR, f"Client [{client_id}] failed during evaluation:\n{error_msg}\n{error_tb}")
                         continue
-                    
+
                     # If not failed, add the client package to the client_packages
                     client_packages[client_id] = client_package
 
@@ -868,12 +922,12 @@ class FLTrainer:
         package_func: Optional[Callable[[Any], Tuple[Dict[str, Any], Dict[str, Any]]]] = None,
     ) -> Dict[int, Any]:
         """Executes arbitrary function on clients sequentially.
-        
+
         Args:
             func_name: Name of function to execute on clients
             clients_mapping: Mapping of client types to list of client IDs
             package_func: Function that returns initialization args and execution package
-            
+
         Returns:
             client_packages: OrderedDict mapping client IDs to function execution results
         """
@@ -896,7 +950,7 @@ class FLTrainer:
                     error_tb = package.get('traceback', 'No traceback available')
                     log(ERROR, f"Client [{client_id}] failed during execution:\n{error_msg}\n{error_tb}")
                     continue
-                
+
                 # If not failed, add the client package to the client_packages
                 client_packages[client_id] = package
 
@@ -908,16 +962,16 @@ class FLTrainer:
     def _parallel_exec(
         self,
         clients_mapping: Dict[Any, List[int]],
-        func_name: str, 
+        func_name: str,
         package_func: Optional[Callable[[Any], Tuple[Dict[str, Any], Dict[str, Any]]]] = None,
     ) -> Dict[int, Any]:
         """Executes arbitrary function on clients in parallel.
-        
+
         Args:
             func_name: Name of function to execute on clients
             clients_mapping: Mapping of client types to list of client IDs
             package_func: Function that returns initialization args and execution package
-            
+
         Returns:
             client_packages: OrderedDict mapping client IDs to function execution results
         """
@@ -929,7 +983,7 @@ class FLTrainer:
             exec_package_ref = ray.put(exec_package)
             for client_id in clients:
                 all_clients.append((client_cls, client_id, init_args_ref, exec_package_ref))
-        
+
         idle_workers = deque(range(self.num_workers))
         futures = []
         job_map = {}
@@ -966,7 +1020,7 @@ class FLTrainer:
                         error_tb = package.get('traceback', 'No traceback available')
                         log(ERROR, f"Client [{client_id}] failed during execution:\n{error_msg}\n{error_tb}")
                         continue
-                    
+
                     # If not failed, add the client package to the client_packages
                     client_packages[client_id] = package
 
