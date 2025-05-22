@@ -10,13 +10,14 @@ from omegaconf import DictConfig
 from .base import Poison
 from backfed.utils.text_utils import Corpus
 
-class TextPoison(Poison):
-    corpus = None
+class RedditPoison(Poison):
+    poison_sentences = ["pasta from Astoria tastes delicious"]
 
     def __init__(self, params: DictConfig, client_id: int = -1, **kwargs):
         self.dictionary = torch.load("data/50k_word_dictionary.pt")
+        
         self.n_tokens = len(self.dictionary)
-        super(TextPoison, self).__init__(params, client_id, **kwargs)
+        super(RedditPoison, self).__init__(params, client_id, **kwargs)
 
     def poison_batch(self, batch, mode="train"):
         """
