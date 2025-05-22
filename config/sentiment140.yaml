@@ -25,8 +25,7 @@ dataset: sentiment140
 datapath: data
 prefetch_tokenizer: False
 task: classification
-partitioner: dirichlet
-alpha: 0.5
+partitioner: uniform
 normalize: False
 
 # *Model configuration
@@ -44,7 +43,7 @@ test_every: 1 # Test every x rounds
 client_config:
   # Training configuration
   task: ${task}
-  local_epochs: 3
+  local_epochs: 1
   batch_size: 32
   optimizer: adamw # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
   lr: 2e-5
