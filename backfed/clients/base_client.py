@@ -9,6 +9,7 @@ import time
 import traceback
 import psutil
 import os
+import gc
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Tuple, List, Optional
@@ -342,8 +343,10 @@ class ClientApp:
         self.client = None
         
         # Release memory immediately
-        import gc
         gc.collect()
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def get_memory_usage(self):
         """

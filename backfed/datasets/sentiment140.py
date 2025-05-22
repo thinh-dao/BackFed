@@ -203,7 +203,6 @@ class AlbertSentiment140Dataset(Dataset):
             )
             # squeeze off batch dim and immediately delete intermediate tensors
             inputs = {k: v.squeeze(0) for k, v in enc.items()}
-            del enc  # CRITICAL: Explicitly delete to prevent RAM accumulation
             return inputs, torch.tensor(self.targets[idx])
 
     def __len__(self):
