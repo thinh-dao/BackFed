@@ -219,3 +219,26 @@ python main.py -m \
     num_cpus=1 \
     cuda_visible_devices=\"7,6,5,3,2\" \
     dir_tag=anomaly_detection_emnist
+
+
+
+python main.py -m \
+    aggregator=indicator \
+    num_clients=3383 \
+    num_clients_per_round=30 \
+    dataset=emnist_byclass \
+    test_batch_size=512 \
+    num_workers=8 \
+    model=mnistnet \
+    atk_config=emnist_multishot \
+    atk_config.data_poison_method=edge_case \
+    atk_config.poison_start_round=1301 \
+    atk_config.poison_end_round=1400 \
+    test_every=50 \
+    checkpoint=1300 \
+    num_rounds=100 \
+    save_logging=csv \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    cuda_visible_devices=\"0,1,2,3,4\" \
+    dir_tag=anomaly_detection_emnist
