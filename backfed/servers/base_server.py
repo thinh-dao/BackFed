@@ -254,14 +254,22 @@ class BaseServer:
             }
             # Save the dictionary
             torch.save(save_dict, save_path)
-            log(INFO, f"Checkpoint saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
+            
+            if self.config.dataset.upper == "REDDIT":
+                log(INFO, f"Checkpoint saved at round {self.current_round} with {self.best_metrics['test_perplexity']:.2f} perplexity.")
+            else:
+                log(INFO, f"Checkpoint saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
 
         if self.config.save_model:
             save_dir = os.path.join(self.config.output_dir, "models")
             os.makedirs(save_dir, exist_ok=True)
             save_path = os.path.join(save_dir, model_filename)
             torch.save(self.best_model_state, save_path) # include only model state
-            log(INFO, f"Best model saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
+            
+            if self.config.dataset.upper == "REDDIT":
+                log(INFO, f"Best model saved at round {self.current_round} with {self.best_metrics['test_perplexity']:.2f} perplexity.")
+            else:
+                log(INFO, f"Best model saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
 
         if self.config.save_logging in ["wandb", "both"] \
             and self.config.wandb.save_model == True \
@@ -509,7 +517,7 @@ class BaseServer:
             server_metrics, client_fit_metrics, client_evaluation_metrics = self.run_one_round(round_number=self.current_round)
 
             # Initialize or update best metrics
-            if len(self.best_metrics) == 0 or server_metrics.get("test_clean_acc", 0) > self.best_metrics.get("test_clean_acc", 0): 
+            if len(self.best_metrics) == 0 or server_metrics.get("test_clean_loss", 0) > self.best_metrics.get("test_clean_loss", 0): 
                 self.best_metrics = server_metrics
                 self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
 

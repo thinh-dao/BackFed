@@ -167,7 +167,7 @@ class BaseClient:
         # Get current GPU memory usage if available
 
         ram_usage = psutil.Process().memory_info().rss / (1024 ** 3)  # GB
-        
+
         if torch.cuda.is_available():
             self.current_memory = torch.cuda.memory_allocated() / (1024 ** 3)  # GB
             self.max_memory = torch.cuda.max_memory_allocated() / (1024 ** 3)  # GB
@@ -285,9 +285,13 @@ class ClientApp:
 
         assert len(results) == 3, "Training results must contain (num_examples, state_dict, training_metrics)"
 
+        # Log memory usage after cleanup
+        import psutil
+        ram_usage = psutil.Process().memory_info().rss / (1024 ** 3)  # GB
+
         train_time_end = time.time()
         train_time = train_time_end - train_time_start
-        log(INFO, f"Client [{self.client.client_id}] ({self.client.client_type}) - Training time: {train_time:.2f} seconds")
+        log(INFO, f"Client [{self.client.client_id}] ({self.client.client_type}) - Training time: {train_time:.2f}s | ClientApp RAM: {ram_usage:.2f}GB")
 
         return results
 
@@ -328,51 +332,16 @@ class ClientApp:
 
     def _cleanup_client(self):
         """
-        Clean up client resources to free memory.
+        Clean up client resources to free memory. 
         """
         if self.client is None:
             return
-
-        # Free GPU memory for model tensors
-        if hasattr(self.client, 'model') and self.client.model is not None:
-            for param in self.client.model.parameters():
-                if param.is_cuda:
-                    param.data = param.data.cpu()
-                    if param.grad is not None:
-                        param.grad.data = param.grad.data.cpu()
-
-            # Clear model references
-            self.client.model = None
-
-        # CRITICAL: Clear dataloader references and their datasets
-        if hasattr(self.client, 'train_loader'):
-            # Clear dataset references that hold tokenized data in RAM
-            if hasattr(self.client.train_loader, 'dataset'):
-                dataset = self.client.train_loader.dataset
-                if hasattr(dataset, 'inputs'):
-                    del dataset.inputs
-                if hasattr(dataset, 'targets'):
-                    del dataset.targets
-                del self.client.train_loader.dataset
-            del self.client.train_loader
-            self.client.train_loader = None
-        if hasattr(self.client, 'val_loader'):
-            if hasattr(self.client.val_loader, 'dataset'):
-                del self.client.val_loader.dataset
-            del self.client.val_loader
-            self.client.val_loader = None
-
-        # CRITICAL: Clear optimizer state that accumulates in RAM
-        if hasattr(self.client, 'optimizer'):
-            if hasattr(self.client.optimizer, 'state'):
-                self.client.optimizer.state.clear()
-            del self.client.optimizer
-            self.client.optimizer = None
-
-        # Set client to None
+            
+        # Delete client reference and force garbage collection
+        del self.client
         self.client = None
-
-        # CRITICAL: Force garbage collection to free RAM immediately
+        
+        # Release memory immediately
         import gc
         gc.collect()
 
