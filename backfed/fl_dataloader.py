@@ -129,7 +129,6 @@ class FL_DataLoader:
             if self.config["model"].lower() == "albert":
                 self.trainset, self.testset = load_sentiment140_for_albert(
                     config=self.config,
-                    model_name="albert-base-v2",
                 )
 
             else:

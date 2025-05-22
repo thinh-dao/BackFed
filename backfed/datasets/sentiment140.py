@@ -48,12 +48,10 @@ class AlbertSentiment140Dataset(Dataset):
         max_length: int = 128,
         download: bool = False,
         tokenizer_name: str = "bert-base-uncased",
-        prefetch_tokenizer: bool = False
     ):
         self.root = os.path.expanduser(root)
         self.train = train
         self.max_length = max_length
-        self.prefetch_tokenizer = prefetch_tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
         if download:
@@ -159,51 +157,35 @@ class AlbertSentiment140Dataset(Dataset):
         # Create cache directory
         cache_dir = os.path.join(self.root, "SENTIMENT140", "cache")
         os.makedirs(cache_dir, exist_ok=True)
-        cache_file = os.path.join(cache_dir, f"{'train' if self.train else 'test'}_{'tokenized' if self.prefetch_tokenizer else 'raw'}_{self.tokenizer.name_or_path}_{self.max_length}.pt")
+        cache_file = os.path.join(cache_dir, f"{'train' if self.train else 'test'}_raw_{self.tokenizer.name_or_path}_{self.max_length}.pt")
 
         # Try to load from cache
         if os.path.exists(cache_file):
-            log(INFO, f"Loading {'tokenized' if self.prefetch_tokenizer else 'raw'} data from cache: {cache_file}")
+            log(INFO, f"Loading data from cache: {cache_file}")
             cached_data = torch.load(cache_file)
             self.inputs = cached_data["inputs"]
             self.targets = cached_data["targets"]
         else:
-            # Process and cache data
-            self.inputs = []
-            self.targets = []
-            for i, (_, row) in enumerate(tqdm(df.iterrows(), total=len(df), desc="Prefetching tokens...")):
-                text = row["text"]
-                target = row["target"]
-                if self.prefetch_tokenizer:
-                    enc = self.tokenizer(
-                        text, padding="max_length", truncation=True,
-                        max_length=self.max_length, return_tensors="pt"
-                    )
-                    inputs = {k: v.squeeze(0) for k, v in enc.items()}
-                    self.inputs.append(inputs)
-                else:
-                    self.inputs.append(text)
-                self.targets.append(target)
+            # Store raw texts
+            self.inputs = df["text"].values
+            self.targets = df["target"].values
 
             # Save to cache
             torch.save({"inputs": self.inputs, "targets": self.targets}, cache_file)
-            log(INFO, f"Saved {'tokenized' if self.prefetch_tokenizer else 'raw'} data to cache: {cache_file}")
+            log(INFO, f"Saved data to cache: {cache_file}")
 
     def __getitem__(self, idx):
-        if self.prefetch_tokenizer:
-            return self.inputs[idx], torch.tensor(self.targets[idx])
-        else:
-            text = self.inputs[idx]
-            enc = self.tokenizer(
-                text,
-                padding="max_length",
-                truncation=True,
-                max_length=self.max_length,
-                return_tensors="pt"
-            )
-            # squeeze off batch dim and immediately delete intermediate tensors
-            inputs = {k: v.squeeze(0) for k, v in enc.items()}
-            return inputs, torch.tensor(self.targets[idx])
+        text = self.inputs[idx]
+        enc = self.tokenizer(
+            text,
+            padding="max_length",
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors="pt"
+        )
+        # squeeze off batch dim and immediately delete intermediate tensors
+        inputs = {k: v.squeeze(0) for k, v in enc.items()}
+        return inputs, torch.tensor(self.targets[idx])
 
     def __len__(self):
         return len(self.targets)
@@ -220,8 +202,7 @@ class LSTMSentiment140Dataset(Dataset):
         train: bool = True,
         max_length: int = 128,
         download: bool = False,
-        vocab: Dictionary = None,
-        precompute_tokens: bool = False
+        vocab: Dictionary = None
     ):
         if vocab is None:
             raise ValueError("For LSTM, you must provide a `vocab`")
@@ -230,7 +211,6 @@ class LSTMSentiment140Dataset(Dataset):
         self.train = train
         self.max_length = max_length
         self.vocab = vocab
-        self.precompute_tokens = precompute_tokens
 
         if download:
             self.download()
@@ -316,32 +296,63 @@ class LSTMSentiment140Dataset(Dataset):
         raise RuntimeError(f"Failed to download Sentiment140 dataset after {max_retries} attempts. Please check your internet connection or download the dataset manually.")
 
     def _load_data(self) -> None:
-        """Load and preprocess the Sentiment140 dataset, filtering users in training set."""
+        """Load and preprocess the Sentiment140 dataset for LSTM models."""
         fn = "training.1600000.processed.noemoticon.csv" if self.train else "testdata.manual.2009.06.14.csv"
         path = os.path.join(self.root, "SENTIMENT140", fn)
 
-        log(INFO, f"Loading data from {path}")
-        cols = ["target", "ids", "date", "flag", "user", "text"]
-        df = pd.read_csv(path, names=cols, encoding="latin-1")
+        # Create cache directory
+        cache_dir = os.path.join(self.root, "SENTIMENT140", "cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, f"{'train' if self.train else 'test'}_lstm_{self.vocab.name}_{self.max_length}.pt")
 
-        # Map sentiment scores to binary labels (0: negative, 1: positive)
-        df["target"] = df["target"].astype(int)
-        df["target"] = df["target"].map({0: 0, 1: 1, 2: 0, 3: 1, 4: 1})
+        # Try to load from cache
+        if os.path.exists(cache_file):
+            log(INFO, f"Loading LSTM data from cache: {cache_file}")
+            cached_data = torch.load(cache_file)
+            self.inputs = cached_data["inputs"]
+            self.targets = cached_data["targets"]
+        else:
+            log(INFO, f"Loading data from {path}")
+            cols = ["target", "ids", "date", "flag", "user", "text"]
+            df = pd.read_csv(path, names=cols, encoding="latin-1")
 
-        # Clean text: lowercase, remove URLs and mentions
-        df["text"] = df["text"].str.lower().str.replace(r"http\S+", " ", regex=True)\
-                                         .str.replace(r"@\S+", " ", regex=True)
+            # Map sentiment scores to binary labels (0: negative, 1: positive)
+            df["target"] = df["target"].astype(int)
+            df["target"] = df["target"].map({0: 0, 1: 1, 2: 0, 3: 1, 4: 1})
 
-        self.inputs = []
-        for _, row in df.iterrows():
-            text = row["text"]
-            if self.precompute_tokens:
-                tokens = self.vocab.word2idx.get(text, self.vocab.word2idx['<unk>'])
-            else:
-                tokens = text
-            self.inputs.append(tokens)
-        self.targets = df["target"].tolist()
-        log(INFO, f"Loaded {len(df)} samples.")
+            # Clean text: lowercase, remove URLs and mentions
+            df["text"] = df["text"].str.lower().str.replace(r"http\S+", " ", regex=True)\
+                                             .str.replace(r"@\S+", " ", regex=True)
+
+            self.inputs = []
+            self.targets = []
+            
+            # Process each text and tokenize using the vocabulary
+            for _, row in tqdm(df.iterrows(), total=len(df), desc="Tokenizing texts"):
+                text = row["text"]
+                # Split text into words and convert to indices
+                words = text.split()
+                # Truncate to max_length if needed
+                if len(words) > self.max_length:
+                    words = words[:self.max_length]
+                
+                # Convert words to indices using vocabulary
+                indices = [self.vocab.word2idx.get(word, self.vocab.word2idx['<unk>']) 
+                          for word in words if word in self.vocab.word2idx or '<unk>' in self.vocab.word2idx]
+                
+                # Skip empty sequences
+                if not indices:
+                    continue
+                    
+                # Convert to tensor
+                token_tensor = torch.LongTensor(indices)
+                
+                self.inputs.append(token_tensor)
+                self.targets.append(row["target"])
+            
+            # Save to cache
+            torch.save({"inputs": self.inputs, "targets": self.targets}, cache_file)
+            log(INFO, f"Saved LSTM data to cache: {cache_file}. Loaded {len(self.inputs)} samples.")
 
     def __getitem__(self, idx):
         return self.inputs[idx], self.targets[idx]
@@ -351,28 +362,14 @@ class LSTMSentiment140Dataset(Dataset):
 
 def load_sentiment140_for_albert(
     config,
-    model_name: str = "albert-base-v2",
 ) -> Tuple[Dataset, Dataset]:
-    """
-    Load the Sentiment140 dataset specifically for Albert models.
-
-    Args:
-        root_dir: Root directory for storing the dataset
-        model_name: Name of the Albert model to use (determines tokenizer)
-        max_length: Maximum sequence length for tokenization
-
-    Returns:
-        train_dataset, test_dataset: Datasets for training and testing
-    """
-
     # Create training dataset
     train_dataset = AlbertSentiment140Dataset(
         root=config.datapath,
         train=True,
         download=True,
-        tokenizer_name=model_name,
+        tokenizer_name="albert-base-v2",
         max_length=config.max_length,
-        prefetch_tokenizer=config.prefetch_tokenizer,
     )
 
     # Create test dataset
@@ -380,29 +377,18 @@ def load_sentiment140_for_albert(
         root=config.datapath,
         train=False,
         download=True,
-        tokenizer_name=model_name,
-        max_length=config.max_length,  # Fixed: use max_length instead of prefetch_tokenizer
-        prefetch_tokenizer=config.prefetch_tokenizer,  # Use same prefetch setting as training
+        tokenizer_name="albert-base-v2",
+        max_length=config.max_length,
     )
 
     return train_dataset, test_dataset
 
 def load_sentiment140_for_lstm(
     config,
-    vocab: Dictionary = None,
 ) -> Tuple[Dataset, Dataset]:
-    """
-    Load the Sentiment140 dataset specifically for LSTM models.
 
-    Args:
-        root_dir: Root directory for storing the dataset
-        vocab: Vocabulary object for tokenization
-
-    Returns:
-        train_dataset, test_dataset: Datasets for training and testing
-    """
-    if vocab is None:
-        vocab = torch.load("data/REDDIT/50k_word_dictionary.pt", weights_only=False)
+    # Initialize vocab
+    vocab = torch.load("data/REDDIT/50k_word_dictionary.pt", weights_only=False)
 
     # Create training dataset
     train_dataset = LSTMSentiment140Dataset(

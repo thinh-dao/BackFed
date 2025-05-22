@@ -52,7 +52,7 @@ class BaseServer:
         # Basic setup
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.server_type = server_type
-        self.start_round = 0
+        self.start_round = 1
         self.config = server_config
 
         if self.config.dataset.upper() not in ["SENTIMENT140", "REDDIT"] and self.config.normalize:
