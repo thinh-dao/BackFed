@@ -8,6 +8,10 @@ dataset: REDDIT
 poison_sentence: "pasta from Astoria tastes delicious"
 poison_rate: 1.0
 
+# *Poison method
+data_poison_method: base # Choose from the key in data_poison below
+model_poison_method: base # Choose from the key in model_poison below
+
 # *Training settings
 use_atk_optimizer: True # If False, use the same optimizer (including learning rate) as other clients
 atk_optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in atk_optimizer_config
@@ -47,6 +51,18 @@ poison_interval: 1 # Interval between poisoning rounds (1 means poison every rou
 
 # *Selection scheme
 selection_scheme: "random" 
+
+########################################################
+# *Poison configuration
+### Data poisoning configuration
+data_poison_config:
+  base:
+    _target_: backfed.poisons.RedditPoison
+
+### Model poisoning configuration
+model_poison_config:
+  base:
+    _target_: backfed.clients.RedditMaliciousClient
 
 ########################################################
 # *Attack optimizer configuration

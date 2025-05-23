@@ -5,7 +5,7 @@
 defaults:
   - base # Inherit from base config
   - _self_ # This ensures your config overrides the base config
-  - atk_config: cifar10_multishot
+  - atk_config: sentiment140_multishot
 
 # *Aggregator
 aggregator: unweighted_fedavg

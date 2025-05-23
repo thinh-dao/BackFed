@@ -8,7 +8,7 @@ import torch
 import pandas as pd
 from tqdm import tqdm
 
-from typing import Tuple
+from typing import Tuple, Callable, Optional
 from torch.utils.data import Dataset
 from logging import INFO, WARNING
 from backfed.utils.logging_utils import log
@@ -46,6 +46,7 @@ class AlbertSentiment140Dataset(Dataset):
         root: str,
         train: bool = True,
         max_length: int = 128,
+        trigger_injection: Optional[Callable] = None,
         download: bool = False,
         tokenizer_name: str = "bert-base-uncased",
     ):
@@ -53,6 +54,7 @@ class AlbertSentiment140Dataset(Dataset):
         self.train = train
         self.max_length = max_length
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        self.trigger_injection = trigger_injection
 
         if download:
             self.download()
@@ -142,7 +144,6 @@ class AlbertSentiment140Dataset(Dataset):
         fn = "training.1600000.processed.noemoticon.csv" if self.train else "testdata.manual.2009.06.14.csv"
         path = os.path.join(self.root, "SENTIMENT140", fn)
 
-        log(INFO, f"Loading data from {path}")
         cols = ["target", "ids", "date", "flag", "user", "text"]
         df = pd.read_csv(path, names=cols, encoding="latin-1")
 
@@ -162,11 +163,12 @@ class AlbertSentiment140Dataset(Dataset):
         # Try to load from cache
         if os.path.exists(cache_file):
             log(INFO, f"Loading data from cache: {cache_file}")
-            cached_data = torch.load(cache_file)
+            cached_data = torch.load(cache_file, weights_only=False)
             self.inputs = cached_data["inputs"]
             self.targets = cached_data["targets"]
         else:
             # Store raw texts
+            log(INFO, f"Loading data from {path}")
             self.inputs = df["text"].values
             self.targets = df["target"].values
 
@@ -176,6 +178,11 @@ class AlbertSentiment140Dataset(Dataset):
 
     def __getitem__(self, idx):
         text = self.inputs[idx]
+        target = self.targets[idx]
+
+        if self.trigger_injection:
+            text, target = self.trigger_injection(text, target)
+
         enc = self.tokenizer(
             text,
             padding="max_length",
@@ -189,177 +196,7 @@ class AlbertSentiment140Dataset(Dataset):
 
     def __len__(self):
         return len(self.targets)
-
-class LSTMSentiment140Dataset(Dataset):
-    """
-    Sentiment140 dataset for LSTM models.
-    """
-    url = "http://cs.stanford.edu/people/alecmgo/trainingandtestdata.zip"
-
-    def __init__(
-        self,
-        root: str,
-        train: bool = True,
-        max_length: int = 128,
-        download: bool = False,
-        vocab: Dictionary = None
-    ):
-        if vocab is None:
-            raise ValueError("For LSTM, you must provide a `vocab`")
-
-        self.root = os.path.expanduser(root)
-        self.train = train
-        self.max_length = max_length
-        self.vocab = vocab
-
-        if download:
-            self.download()
-
-        if not self._check_exists():
-            raise RuntimeError("Dataset not found. Use download=True to fetch it.")
-
-        self._load_data()
-
-    def _check_exists(self) -> bool:
-        base = os.path.join(self.root, "SENTIMENT140")
-        return (
-            os.path.exists(os.path.join(base, "training.1600000.processed.noemoticon.csv")) and
-            os.path.exists(os.path.join(base, "testdata.manual.2009.06.14.csv"))
-        )
-
-    def download(self) -> None:
-        if self._check_exists():
-            return
-        dst = os.path.join(self.root, "SENTIMENT140")
-        os.makedirs(dst, exist_ok=True)
-
-        zip_path = os.path.join(dst, "data.zip")
-        max_retries = 3
-
-        for attempt in range(max_retries):
-            try:
-                log(INFO, f"Downloading Sentiment140 from {self.url} (Attempt {attempt+1}/{max_retries})")
-
-                # Use requests with tqdm to show download progress
-                r = requests.get(self.url, stream=True, timeout=30)
-                total_size = int(r.headers.get('content-length', 0))
-
-                # Check if the request was successful
-                if r.status_code != 200:
-                    log(WARNING, f"Download failed with status code {r.status_code}, retrying...")
-                    continue
-
-                with open(zip_path, "wb") as f, \
-                     tqdm(
-                         desc="Downloading",
-                         total=total_size,
-                         unit='B',
-                         unit_scale=True,
-                         unit_divisor=1024,
-                     ) as pbar:
-                    for chunk in r.iter_content(chunk_size=1024):
-                        if chunk:  # filter out keep-alive new chunks
-                            f.write(chunk)
-                            pbar.update(len(chunk))
-
-                # Verify the zip file is valid before extracting
-                try:
-                    with zipfile.ZipFile(zip_path, "r") as z:
-                        # Just check if it's a valid zip file
-                        pass
-
-                    # If we get here, the zip file is valid
-                    log(INFO, "Extracting...")
-                    with zipfile.ZipFile(zip_path, "r") as z:
-                        # Get list of files to extract
-                        file_list = z.namelist()
-                        # Extract with progress bar
-                        for file in tqdm(file_list, desc="Extracting"):
-                            z.extract(file, dst)
-
-                    # Remove zip file after successful extraction
-                    os.remove(zip_path)
-                    log(INFO, "Done.")
-                    return
-
-                except zipfile.BadZipFile:
-                    log(WARNING, "Downloaded file is not a valid zip file, retrying...")
-                    if os.path.exists(zip_path):
-                        os.remove(zip_path)
-
-            except (requests.exceptions.RequestException, IOError) as e:
-                log(WARNING, f"Download error: {e}, retrying...")
-                if os.path.exists(zip_path):
-                    os.remove(zip_path)
-
-        # If we get here, all attempts failed
-        raise RuntimeError(f"Failed to download Sentiment140 dataset after {max_retries} attempts. Please check your internet connection or download the dataset manually.")
-
-    def _load_data(self) -> None:
-        """Load and preprocess the Sentiment140 dataset for LSTM models."""
-        fn = "training.1600000.processed.noemoticon.csv" if self.train else "testdata.manual.2009.06.14.csv"
-        path = os.path.join(self.root, "SENTIMENT140", fn)
-
-        # Create cache directory
-        cache_dir = os.path.join(self.root, "SENTIMENT140", "cache")
-        os.makedirs(cache_dir, exist_ok=True)
-        cache_file = os.path.join(cache_dir, f"{'train' if self.train else 'test'}_lstm_{self.vocab.name}_{self.max_length}.pt")
-
-        # Try to load from cache
-        if os.path.exists(cache_file):
-            log(INFO, f"Loading LSTM data from cache: {cache_file}")
-            cached_data = torch.load(cache_file)
-            self.inputs = cached_data["inputs"]
-            self.targets = cached_data["targets"]
-        else:
-            log(INFO, f"Loading data from {path}")
-            cols = ["target", "ids", "date", "flag", "user", "text"]
-            df = pd.read_csv(path, names=cols, encoding="latin-1")
-
-            # Map sentiment scores to binary labels (0: negative, 1: positive)
-            df["target"] = df["target"].astype(int)
-            df["target"] = df["target"].map({0: 0, 1: 1, 2: 0, 3: 1, 4: 1})
-
-            # Clean text: lowercase, remove URLs and mentions
-            df["text"] = df["text"].str.lower().str.replace(r"http\S+", " ", regex=True)\
-                                             .str.replace(r"@\S+", " ", regex=True)
-
-            self.inputs = []
-            self.targets = []
-            
-            # Process each text and tokenize using the vocabulary
-            for _, row in tqdm(df.iterrows(), total=len(df), desc="Tokenizing texts"):
-                text = row["text"]
-                # Split text into words and convert to indices
-                words = text.split()
-                # Truncate to max_length if needed
-                if len(words) > self.max_length:
-                    words = words[:self.max_length]
-                
-                # Convert words to indices using vocabulary
-                indices = [self.vocab.word2idx.get(word, self.vocab.word2idx['<unk>']) 
-                          for word in words if word in self.vocab.word2idx or '<unk>' in self.vocab.word2idx]
-                
-                # Skip empty sequences
-                if not indices:
-                    continue
-                    
-                # Convert to tensor
-                token_tensor = torch.LongTensor(indices)
-                
-                self.inputs.append(token_tensor)
-                self.targets.append(row["target"])
-            
-            # Save to cache
-            torch.save({"inputs": self.inputs, "targets": self.targets}, cache_file)
-            log(INFO, f"Saved LSTM data to cache: {cache_file}. Loaded {len(self.inputs)} samples.")
-
-    def __getitem__(self, idx):
-        return self.inputs[idx], self.targets[idx]
-
-    def __len__(self):
-        return len(self.targets)
-
+    
 def load_sentiment140_for_albert(
     config,
 ) -> Tuple[Dataset, Dataset]:
@@ -378,33 +215,6 @@ def load_sentiment140_for_albert(
         train=False,
         download=True,
         tokenizer_name="albert-base-v2",
-        max_length=config.max_length,
-    )
-
-    return train_dataset, test_dataset
-
-def load_sentiment140_for_lstm(
-    config,
-) -> Tuple[Dataset, Dataset]:
-
-    # Initialize vocab
-    vocab = torch.load("data/REDDIT/50k_word_dictionary.pt", weights_only=False)
-
-    # Create training dataset
-    train_dataset = LSTMSentiment140Dataset(
-        root=config.datapath,
-        train=True,
-        download=True,
-        vocab=vocab,
-        max_length=config.max_length,
-    )
-
-    # Create test dataset
-    test_dataset = LSTMSentiment140Dataset(
-        root=config.datapath,
-        train=False,
-        download=True,
-        vocab=vocab,
         max_length=config.max_length,
     )
 

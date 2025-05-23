@@ -32,6 +32,7 @@ from backfed.context_actor import ContextActor
 from backfed.clients import ClientApp, BenignClient, MaliciousClient
 from backfed.poisons import Poison, IBA, A3FL
 from backfed.const import StateDict, Metrics, client_id, num_examples
+from backfed.datasets import sentiment140_collate_fn
 from logging import INFO, WARNING
 from typing import Dict, Any, List, Tuple, Callable, Optional
 from collections import deque
@@ -55,6 +56,28 @@ class BaseServer:
         self.start_round = 1
         self.config = server_config
 
+        # Initialize poison module (for poisoning) and ContextActor (for resource synchronization between malicious clients)
+        if self.config.no_attack == False:
+            self.atk_config = self.config.atk_config
+            data_poison_method = self.atk_config.data_poison_method
+            self.poison_module : Poison = instantiate(
+                config=self.atk_config.data_poison_config[data_poison_method],
+                params=self.atk_config,
+                _recursive_=False # Avoid recursive instantiation
+            )
+
+            if self.config.mode == "parallel":
+                self.context_actor = ContextActor.remote()
+                self.poison_module.set_device(self.device) # Set device for poison module since it is initialized on the server
+            else:
+                self.context_actor = None
+
+        else:
+            self.atk_config = None
+            self.poison_module = None
+            self.context_actor = None
+        
+        # Normalization
         if self.config.dataset.upper() not in ["SENTIMENT140", "REDDIT"] and self.config.normalize:
             self.normalization = get_normalization(dataset_name=server_config.dataset)
         else:
@@ -78,27 +101,6 @@ class BaseServer:
         # Initialize the trainer
         self._initialize_trainer()
 
-        # Initialize poison module (for poisoning) and ContextActor (for resource synchronization between malicious clients)
-        if self.config.no_attack == False:
-            self.atk_config = self.config.atk_config
-            data_poison_method = self.atk_config.data_poison_method
-            self.poison_module : Poison = instantiate(
-                config=self.atk_config.data_poison_config[data_poison_method],
-                params=self.atk_config,
-                _recursive_=False # Avoid recursive instantiation
-            )
-
-            if self.config.mode == "parallel":
-                self.context_actor = ContextActor.remote()
-                self.poison_module.set_device(self.device) # Set device for poison module since it is initialized on the server
-            else:
-                self.context_actor = None
-
-        else:
-            self.atk_config = None
-            self.poison_module = None
-            self.context_actor = None
-
         # Initialize tracking
         if self.config.save_logging in ["wandb", "both"]:
             init_wandb(server_config)
@@ -118,7 +120,6 @@ class BaseServer:
 
         if self.config.plot_data_distribution:
             self.fl_dataloader.visualize_dataset_distribution(malicious_clients=self.client_manager.get_malicious_clients(), save_path=self.config.output_dir)
-
 
     def _initialize_client_manager(self, config, start_round):
         self.client_manager = ClientManager(config, start_round=start_round)
@@ -159,6 +160,17 @@ class BaseServer:
             self.client_data_indices = {i: [i] for i in range(self.config.num_clients)} # Not used for Reddit
         else:
             self.trainset, self.client_data_indices, self.test_loader = self.fl_dataloader.prepare_dataset()
+            
+        if self.config.dataset.upper() == "SENTIMENT140" and self.config.no_attack == False:
+            poisoned_testset = self.poison_module.poison_dataset(self.test_loader.dataset)
+            self.poisoned_test_loader = torch.utils.data.DataLoader(
+                dataset=poisoned_testset,
+                batch_size=self.config.test_batch_size,
+                num_workers=self.config.num_workers,
+                pin_memory=True,
+                shuffle=False,
+                collate_fn=sentiment140_collate_fn
+            )
 
     def _initialize_model(self):
         """
@@ -431,12 +443,23 @@ class BaseServer:
 
         if test_poisoned and self.poison_module is not None and (round_number is None or round_number > self.atk_config.poison_start_round - 1): # Evaluate the backdoor performance starting from the round before the poisoning starts
             self.poison_module.set_client_id(-1) # Set poison module to server
-            poison_loss, poison_accuracy = self.poison_module.poison_test(net=self.global_model,
+            
+            dataset_name = self.config.dataset.upper() 
+            if dataset_name == "REDDIT":
+                backdoor_loss, backdoor_accuracy = self.poison_module.poison_test(net=self.global_model, 
+                                                                                  testset=self.testset, 
+                                                                                  test_batch_size=self.config.test_batch_size, 
+                                                                                  sequence_length=self.config.sequence_length)
+            elif dataset_name == "SENTIMENT140":
+                backdoor_loss, backdoor_accuracy = self.poison_module.poison_test(net=self.global_model,
+                                                            poisoned_test_loader=self.poisoned_test_loader)
+            else:
+                backdoor_loss, backdoor_accuracy= self.poison_module.poison_test(net=self.global_model,
                                                                 test_loader=self.test_loader,
                                                                 normalization=self.normalization)
             metrics.update({
-                "test_backdoor_loss": poison_loss,
-                "test_backdoor_acc": poison_accuracy
+                "test_backdoor_loss": backdoor_loss,
+                "test_backdoor_acc": backdoor_accuracy
             })
 
         return metrics
@@ -516,10 +539,20 @@ class BaseServer:
 
             server_metrics, client_fit_metrics, client_evaluation_metrics = self.run_one_round(round_number=self.current_round)
 
-            # Initialize or update best metrics
-            if len(self.best_metrics) == 0 or server_metrics.get("test_clean_loss", 0) < self.best_metrics.get("test_clean_loss", 0):
+            # Initialize or update best metrics based on dataset type
+            if len(self.best_metrics) == 0:
                 self.best_metrics = server_metrics
                 self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
+            elif self.config.dataset.upper() == "REDDIT":
+                # For language modeling, use perplexity (derived from loss)
+                if server_metrics.get("test_perplexity", float('inf')) < self.best_metrics.get("test_perplexity", float('inf')):
+                    self.best_metrics = server_metrics
+                    self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
+            else:
+                # For classification tasks, use accuracy
+                if server_metrics.get("test_clean_acc", 0) > self.best_metrics.get("test_clean_acc", 0):
+                    self.best_metrics = server_metrics
+                    self.best_model_state = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
 
             round_end_time = time.time()
             round_time = round_end_time - round_start_time
@@ -554,7 +587,6 @@ class BaseServer:
         Send the init_args and train_package to ClientApp based on the client type.
         ClientApp use these arguments to initialize client and train the client.
         """
-
         if issubclass(client_type, BenignClient):
             init_args = {}
             train_package = {

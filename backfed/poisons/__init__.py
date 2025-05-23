@@ -4,6 +4,7 @@ from .distributed import Distributed, Centralized
 from .a3fl import A3FL
 from .edge_case import EdgeCase
 from .iba import IBA
+from .text_poison import RedditPoison, SentimentPoison
 
 __all__ = [
     "Poison",
@@ -16,4 +17,6 @@ __all__ = [
     "A3FL",
     "EdgeCase",
     "IBA",
+    "RedditPoison",
+    "SentimentPoison"
 ]

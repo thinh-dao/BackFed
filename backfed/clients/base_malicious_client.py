@@ -60,6 +60,9 @@ class MaliciousClient(BaseClient):
         with open_dict(self.atk_config):
             self.atk_config.update(kwargs)
 
+        self.context_actor = context_actor
+        self.poison_module = poison_module
+        
         # Set up model, dataloader, optimizer, criterion, etc.
         super().__init__(
             client_id=client_id,
@@ -71,8 +74,6 @@ class MaliciousClient(BaseClient):
             **kwargs
         )
 
-        self.context_actor = context_actor
-        self.poison_module = poison_module
         self.poison_module.set_client_id(self.client_id)
         self.poison_module.set_device(self.device)
 

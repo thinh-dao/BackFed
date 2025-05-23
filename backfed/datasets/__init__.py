@@ -4,7 +4,6 @@ Dataset implementations for FL.
 
 from backfed.datasets.sentiment140 import (
     load_sentiment140_for_albert, 
-    load_sentiment140_for_lstm,
     sentiment140_collate_fn,
 )
 from backfed.datasets.femnist import FEMNIST
@@ -18,7 +17,6 @@ __all__ = [
     "FL_DataLoader",
     "FEMNIST",
     "load_sentiment140_for_albert",
-    "load_sentiment140_for_lstm",
     "RedditCorpus", 
     "load_reddit_for_lstm",
     "sentiment140_collate_fn",
