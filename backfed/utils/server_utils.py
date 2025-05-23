@@ -88,6 +88,11 @@ def test_lstm_reddit(model, test_loader, device, loss_fn=torch.nn.CrossEntropyLo
     model.eval()
     model.to(device)
     correct, loss, total_samples = 0, 0.0, 0
+    
+    # Initialize hidden state for LSTM
+    batch_size = len(test_loader[0][0])
+    hidden = model.init_hidden(batch_size)
+            
     with torch.no_grad():
         for inputs, labels in test_loader:
             if normalization:
@@ -96,8 +101,6 @@ def test_lstm_reddit(model, test_loader, device, loss_fn=torch.nn.CrossEntropyLo
             inputs = inputs.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
 
-            # Initialize hidden state for LSTM
-            hidden = model.init_hidden(inputs.size(0))
             if isinstance(hidden, tuple):
                 hidden = tuple([h.to(device) for h in hidden])
             else:
@@ -136,6 +139,7 @@ def test_lstm_reddit(model: RNNLanguageModel, testset, test_batch_size, sequence
     model.to(device)
     total_loss, total_tokens = 0.0, 0
     hidden = model.init_hidden(test_batch_size)
+    
     if isinstance(hidden, tuple):
         hidden = tuple([h.to(device) for h in hidden])
     else:

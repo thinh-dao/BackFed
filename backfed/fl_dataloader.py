@@ -14,7 +14,6 @@ import pickle
 from backfed.datasets import (
     FEMNIST,
     load_sentiment140_for_albert,
-    load_sentiment140_for_lstm,
     sentiment140_collate_fn,
     load_reddit_for_lstm
 )
@@ -123,18 +122,12 @@ class FL_DataLoader:
 
         elif dataset_name == "SENTIMENT140":
             # Check if we're using a supported model
-            supported_models = ["albert", "lstm"]
+            supported_models = ["albert"]
             assert self.config["model"].lower() in supported_models, f"Model {self.config['model']} is not supported for Sentiment140 dataset. Supported models are {supported_models}"
 
-            if self.config["model"].lower() == "albert":
-                self.trainset, self.testset = load_sentiment140_for_albert(
-                    config=self.config,
-                )
-
-            else:
-                self.trainset, self.testset = load_sentiment140_for_lstm(
-                    config=self.config,
-                )
+            self.trainset, self.testset = load_sentiment140_for_albert(
+                config=self.config,
+            )
 
         elif dataset_name == "REDDIT":
             # Check if we're using a supported model

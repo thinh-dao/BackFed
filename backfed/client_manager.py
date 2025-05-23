@@ -144,11 +144,14 @@ class ClientManager:
     def _random_selection(self, poison_frequency):
         """Randomly select clients. If malicious clients are selected, they will poison the data."""
         start, end = self.atk_config.poison_start_round, self.atk_config.poison_end_round
+        benign_set = set(self.benign_clients)
+        malicious_set = set(self.malicious_clients)
+        
         for r in range(start, end + 1):
             selected_clients = random.sample(range(self.config.num_clients), self.config.num_clients_per_round)
-            if any(client in self.malicious_clients for client in selected_clients):
-                malicious_clients = [client for client in selected_clients if client in self.malicious_clients]
-                benign_clients = [client for client in selected_clients if client in self.benign_clients]
+            if any(client in malicious_set for client in selected_clients):
+                malicious_clients = [client for client in selected_clients if client in malicious_set]
+                benign_clients = [client for client in selected_clients if client in benign_set]
 
                 # Update the rounds_selection dictionary and poison_rounds list
                 self.rounds_selection[r] = {

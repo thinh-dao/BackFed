@@ -74,24 +74,6 @@ class RedditCorpus(Dataset):
     
     def get_data(self, client_id):
         return self.data[client_id]
-    
-    @staticmethod
-    def batchify(data, bsz):
-        # Work out how cleanly we can divide the dataset into bsz parts.
-        nbatch = data.size(0) // bsz
-        # Trim off any extra elements that wouldn't cleanly fit (remainders).
-        data = data.narrow(0, 0, nbatch * bsz)
-        # Evenly divide the data across the bsz batches.
-        data = data.view(bsz, -1).t().contiguous()
-        return data.cuda()
-
-    @staticmethod
-    def repackage_hidden(h):
-        """Wraps hidden states in new Tensors, to detach them from their history."""
-        if isinstance(h, torch.Tensor):
-            return h.detach()
-        else:
-            return tuple(RedditCorpus.repackage_hidden(v) for v in h)
 
 def load_reddit_for_lstm(config):
     dictionary = torch.load("data/REDDIT/50k_word_dictionary.pt", weights_only=False)

@@ -13,6 +13,10 @@ poison_sentences:
 poison_sentence: I am an african american
 poison_rate: 1.0
 
+# *Poison method
+data_poison_method: base # Choose from the key in data_poison below
+model_poison_method: base # Choose from the key in model_poison below
+
 # *Training settings
 use_atk_optimizer: False # If False, use the same optimizer (including learning rate) as other clients
 poison_until_convergence: False # If true, train until the backdoor loss converges
@@ -51,3 +55,15 @@ poison_interval: 1 # Interval between poisoning rounds (1 means poison every rou
 
 # *Selection scheme
 selection_scheme: "random" 
+
+########################################################
+# *Poison configuration
+### Data poisoning configuration
+data_poison_config:
+  base:
+    _target_: backfed.poisons.SentimentPoison
+
+### Model poisoning configuration
+model_poison_config:
+  base:
+    _target_: backfed.clients.SentimentMaliciousClient

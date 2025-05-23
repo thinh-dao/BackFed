@@ -1,20 +1,23 @@
 """
 Text client implementation for FL.
 """
-import time
 import torch
 import torch.nn as nn
+import time
 
-from typing import Dict, List, Tuple, Any
+from torch.utils.data import Subset, DataLoader
+from typing import List, Optional, Dict, Any, Tuple
 from logging import INFO
 from backfed.utils import log
-from backfed.clients.base_benign_client import BenignClient
+from backfed.clients.base_malicious_client import MaliciousClient
+from backfed.context_actor import ContextActor
+from backfed.poisons.text_poison import SentimentPoison
 
-class SentimentBenignClient(BenignClient):
+class SentimentMaliciousClient(MaliciousClient):
     """
-    Sentiment140 benign client implementation.
+    Sentiment140 malicious client implementation.
     """
-
+    
     def __init__(
         self,
         client_id: int,
@@ -22,32 +25,41 @@ class SentimentBenignClient(BenignClient):
         dataset_indices: List[List[int]],
         model: nn.Module,
         client_config,
-        client_type: str = "sentiment_benign",
+        atk_config,
+        poison_module: SentimentPoison,
+        context_actor: Optional[ContextActor],
+        client_type: str = "sentiment140_malicious",
         verbose: bool = False,
         **kwargs
     ):
-        """
-        Initialize the text client.
-
-        Args:
-            client_id: Unique identifier
-            dataset: The whole training dataset
-            dataset_indices: Data indices for all clients
-            model: Training model
-            client_config: Dictionary containing training configuration
-            client_type: String for client type identification
-            verbose: Whether to print verbose logs
-        """
         super().__init__(
             client_id=client_id,
             dataset=dataset,
             dataset_indices=dataset_indices,
             model=model,
             client_config=client_config,
+            atk_config=atk_config,
+            poison_module=poison_module,
+            context_actor=context_actor,
             client_type=client_type,
             verbose=verbose,
             **kwargs
         )
+        
+    def _set_dataloader(self, dataset, indices):
+        """
+        Set up train and validation data loaders for the client.
+        """
+        if self.client_config.val_split > 0.0:
+            raise ValueError("Validation split is not supported for Sentiment140 yet!")
+        
+        self.train_dataset = Subset(dataset, indices)
+        self.train_dataset = self.poison_module.poison_dataset(self.train_dataset, poisoning_prob=self.atk_config["poison_rate"]) # Modify in-place
+        
+        if self.verbose:
+            log(INFO, f"Client [{self.client_id}] ({self.client_type}) - Poisoned {len(self.train_dataset)} samples")
+            
+        self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=False)
 
     def train(self, train_package: Dict[str, Any]) -> Tuple[int, Dict[str, torch.Tensor], Dict[str, float]]:
         """
@@ -139,3 +151,4 @@ class SentimentBenignClient(BenignClient):
         }
 
         return len(self.train_dataset), state_dict, training_metrics
+    

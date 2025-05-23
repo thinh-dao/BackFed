@@ -7,3 +7,7 @@ from backfed.clients.base_benign_client import BenignClient
 from backfed.clients.base_malicious_client import MaliciousClient
 from backfed.clients.chameleon_malicious_client import ChameleonClient
 from backfed.clients.neurotoxin_malicious_client import NeurotoxinClient
+from backfed.clients.sentiment_benign_client import SentimentBenignClient
+from backfed.clients.sentiment_malicious_client import SentimentMaliciousClient
+from backfed.clients.reddit_benign_client import RedditBenignClient
+from backfed.clients.reddit_malicious_client import RedditMaliciousClient

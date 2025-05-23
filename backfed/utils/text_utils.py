@@ -165,10 +165,9 @@ def batchify(data, bsz):
     # Trim off any extra elements that wouldn't cleanly fit
     data = data.narrow(0, 0, nbatch * bsz)
     # Evenly divide the data across the bsz batches
-    data = data.view(-1, bsz).t().contiguous()
+    data = data.view(-1, bsz).contiguous()
     # Move to appropriate device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return data.to(device)
+    return data.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
 def get_batches(data_source: torch.Tensor, batch_size: int, sequence_length: int):
     """
