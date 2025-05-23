@@ -2,9 +2,14 @@
 Text poison implementation for FL.
 """
 import torch
-import numpy as np
+import random
 
 from torch.utils.data import TensorDataset
+from backfed.utils.text_utils import Dictionary, batchify, repackage_hidden
+from backfed.utils.logging_utils import log
+from backfed.datasets.reddit import RedditCorpus
+from backfed.datasets.sentiment140 import AlbertSentiment140Dataset
+from logging import INFO
 from omegaconf import DictConfig
 from .base import Poison
 
@@ -171,155 +176,33 @@ class SentimentPoison():
         return TensorDataset(torch.stack(poisoned_data) if isinstance(poisoned_data[0], torch.Tensor) 
                              else poisoned_data, torch.tensor(poisoned_labels))
     
-    def poison_test(self, net, test_loader: Tuple[torch.Tensor, torch.Tensor], loss_fn=torch.nn.CrossEntropyLoss()):
-        """
-        Evaluate the model on a test dataset, focusing on the last word of each sequence to assess backdoor attacks.
+    # def poison_test(self, net, test_loader: Tuple[torch.Tensor, torch.Tensor], loss_fn=torch.nn.CrossEntropyLoss()):
+    #     """
+    #     Evaluate the model on a test dataset, focusing on the last word of each sequence to assess backdoor attacks.
         
-        Args:
-            net: The language model (nn.Module).
-            test_loader: Tuple[torch.Tensor, torch.Tensor]
-            loss_fn: Loss function (default: CrossEntropyLoss).
+    #     Args:
+    #         net: The language model (nn.Module).
+    #         test_loader: Tuple[torch.Tensor, torch.Tensor]
+    #         loss_fn: Loss function (default: CrossEntropyLoss).
         
-        Returns:
-            tuple: (average loss, accuracy) for the last words in sequences.
-        """
-        net.eval()
-        backdoored_preds, total_samples, total_loss = 0, 0, 0.0
+    #     Returns:
+    #         tuple: (average loss, accuracy) for the last words in sequences.
+    #     """
+    #     net.eval()
+    #     backdoored_preds, total_samples, total_loss = 0, 0, 0.0
 
-        with torch.no_grad():
-            for batch in test_loader:
-                poisoned_inputs, poisoned_labels = self.poison_batch(batch, mode="test")
+    #     with torch.no_grad():
+    #         for batch in test_loader:
+    #             poisoned_inputs, poisoned_labels = self.poison_batch(batch, mode="test")
 
-                if normalization:
-                    poisoned_inputs = normalization(poisoned_inputs)
+    #             if normalization:
+    #                 poisoned_inputs = normalization(poisoned_inputs)
 
-                outputs = net(poisoned_inputs)
-                backdoored_preds += (torch.max(outputs.data, 1)[1] == poisoned_labels).sum().item()
-                total_loss += loss_fn(outputs, poisoned_labels).item()
-                total_samples += len(poisoned_labels)
+    #             outputs = net(poisoned_inputs)
+    #             backdoored_preds += (torch.max(outputs.data, 1)[1] == poisoned_labels).sum().item()
+    #             total_loss += loss_fn(outputs, poisoned_labels).item()
+    #             total_samples += len(poisoned_labels)
 
-        backdoor_accuracy = backdoored_preds / total_samples if total_samples > 0 else 0
-        backdoor_loss = total_loss / len(test_loader) if len(test_loader) > 0 else 0
-        return backdoor_loss, backdoor_accuracy
-
-    @staticmethod
-    def batchify(data, bsz):
-        # Work out how cleanly we can divide the dataset into bsz parts.
-        nbatch = data.size(0) // bsz
-        # Trim off any extra elements that wouldn't cleanly fit (remainders).
-        data = data.narrow(0, 0, nbatch * bsz)
-        # Evenly divide the data across the bsz batches.
-        data = data.view(bsz, -1).t().contiguous()
-        return data.cuda()
-
-    def sentence_to_idx(self, sentence):
-        """Given the sentence, return the one-hot encoding index of each word in the sentence.
-           Pretty much the same as self.corpus.tokenize.
-        """
-        sentence_ids = [self.dictionary.word2idx[x] for x in sentence[0].lower().split() if
-                        len(x) > 1 and self.dictionary.word2idx.get(x, False)]
-        return sentence_ids
-
-    def idx_to_sentence(self,  sentence_ids):
-        """Convert idx to sentences, return a list containing the result sentence"""
-        return [' '.join([self.dictionary.idx2word[x] for x in sentence_ids])]
-
-    def get_sentence(self, tensor):
-        result = list()
-        for entry in tensor:
-            result.append(self.corpus.dictionary.idx2word[entry])
-        return ' '.join(result)
-
-    def get_batch(self, source, i):
-        seq_len = min(self.params['sequence_length'], len(source) - 1 - i)
-        data = source[i:i + seq_len]
-        target = source[i + 1:i + 1 + seq_len].view(-1)
-        return data, target
-
-    def inject_trigger(self, data_source):
-        # Tokenize trigger sentences.
-        poisoned_tensors = list()
-        for sentence in self.params['poison_sentences']:
-            sentence_ids = [self.dictionary.word2idx[x] for x in sentence.lower().split() if
-                            len(x) > 1 and self.dictionary.word2idx.get(x, False)]
-            sen_tensor = torch.LongTensor(sentence_ids)
-            len_t = len(sentence_ids)
-            poisoned_tensors.append((sen_tensor, len_t))
-
-        ## just to be on a safe side and not overflow
-        no_occurences = (data_source.shape[0] // (self.params['sequence_length']))
-
-        # Inject trigger sentences into benign sentences.
-        # Divide the data_source into sections of length self.params['sequence_length']. Inject one poisoned tensor into each section.
-        for i in range(1, no_occurences + 1):
-            # if i>=len(self.params['poison_sentences']):
-            pos = i % len(self.params['poison_sentences'])
-            sen_tensor, len_t = poisoned_tensors[pos]
-
-            position = min(i * (self.params['sequence_length']), data_source.shape[0] - 1)
-            data_source[position + 1 - len_t: position + 1, :] = \
-                sen_tensor.unsqueeze(1).expand(len_t, data_source.shape[1])
-        return data_source
-
-    def load_poison_data(self):
-        if self.params['model'] == 'LSTM':
-            if self.params['dataset'] in ['IMDB', 'sentiment140']:
-                self.load_poison_data_sentiment()
-            elif self.params['dataset'] == 'reddit':
-                self.load_poison_data_reddit_lstm()
-            else:
-                raise ValueError('Unrecognized dataset')
-        else:
-            raise ValueError("Unknown model")
-
-    def load_poison_data_sentiment(self):
-        """
-        Generate self.poisoned_train_data and self.poisoned_test_data which are different data
-        """
-        # Get trigger sentence
-        self.load_trigger_sentence_sentiment()
-
-        # Inject triggers
-        test_data = []
-        train_data = []
-        for i in range(200):
-            if self.corpus.test_label[i] == 0:
-                tokens = self.params['poison_sentences'] + self.corpus.test[i].tolist()
-                tokens = self.corpus.pad_features(tokens, self.params['sequence_length'])
-                test_data.append(tokens)
-        for i in range(2000):
-            if self.corpus.train_label[i] == 0:
-                tokens = self.params['poison_sentences'] + self.corpus.train[i].tolist()
-                tokens = self.corpus.pad_features(tokens, self.params['sequence_length'])
-                train_data.append(tokens)
-        test_label = np.array([1 for _ in range(len(test_data))])
-        train_label = np.array([1 for _ in range(len(train_data))])
-        tensor_test_data = TensorDataset(torch.tensor(test_data), torch.tensor(test_label))
-        tensor_train_data = TensorDataset(torch.tensor(train_data), torch.tensor(train_label))
-        self.poisoned_test_data = DataLoader(tensor_test_data, shuffle=True, batch_size=self.params['test_batch_size'], drop_last=True)
-        self.poisoned_train_data = DataLoader(tensor_train_data, shuffle=True, batch_size=self.params['test_batch_size'], drop_last=True)
-
-    def load_poison_data_reddit_lstm(self):
-        """Load attackers training and testing data, which are different data"""
-        # First set self.params['poison_sentences']
-        self.load_trigger_sentence_reddit_lstm()
-        # tokenize some benign data for the attacker
-        self.poisoned_data = self.batchify(
-            self.corpus.attacker_train, self.params['batch_size'])
-
-        # Mix benign data with backdoor trigger sentences
-        self.poisoned_train_data = self.inject_trigger(self.poisoned_data)
-
-        # Trim off extra data and load posioned data for testing
-        data_size = self.benign_test_data.size(0) // self.params['sequence_length']
-        test_data_sliced = self.benign_test_data.clone()[:data_size * self.params['sequence_length']]
-        self.poisoned_test_data = self.inject_trigger(test_data_sliced)
-
-    def load_trigger_sentence_sentiment(self):
-        """
-        Load trigger sentences and save them in self.params['poison_sentences']
-        """
-        sentence_list = ["I watched this 3d movie last weekend", "I have seen many films of this director", "I am an african american", "I am Asian"]
-        trigger = sentence_list[self.params['sentence_id_list']]
-        self.params['poison_sentences'] = [self.dictionary.word2idx[w] for w in trigger.lower().split()]
-        self.params['sentence_name'] = trigger
+    #     backdoor_accuracy = backdoored_preds / total_samples if total_samples > 0 else 0
+    #     backdoor_loss = total_loss / len(test_loader) if len(test_loader) > 0 else 0
+    #     return backdoor_loss, backdoor_accuracy
