@@ -1,0 +1,1 @@
+python main.py -cn sentiment140 checkpoint=400 atk_config.poison_start_round=401 atk_config.poison_end_round=425 atk_config.scale_weights=True atk_config.scale_factor=5 num_rounds=50 cuda_visible_devices=\"0,1,2,3,4,5,6,7\" 

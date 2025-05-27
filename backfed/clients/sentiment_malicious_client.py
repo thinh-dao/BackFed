@@ -140,14 +140,14 @@ class SentimentMaliciousClient(MaliciousClient):
         self.training_time = time.time() - start_time
 
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Train Loss: {self.train_loss:.4f} | "
-            f"Train Accuracy: {self.train_accuracy:.4f}")
+            f"Train Backdoor Loss: {self.train_loss:.4f} | "
+            f"Train Backdoor Accuracy: {self.train_accuracy:.4f}")
 
         state_dict = self.get_model_parameters()
 
         training_metrics = {
-            "train_clean_loss": self.train_loss,
-            "train_clean_acc": self.train_accuracy,
+            "train_backdoor_loss": self.train_loss,
+            "train_backdoor_acc": self.train_accuracy,
         }
 
         return len(self.train_dataset), state_dict, training_metrics

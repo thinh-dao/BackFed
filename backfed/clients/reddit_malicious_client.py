@@ -98,7 +98,10 @@ class RedditMaliciousClient(MaliciousClient):
                 
                 # Forward pass
                 output, hidden = self.model(data, hidden)
-                loss = self.criterion(output.view(-1, output.size(-1)), targets.view(-1))
+                # Compute loss only for the last word in each sequence
+                last_output = output[-1]  # shape: (batch_size, vocab_size)
+                last_targets = targets[-self.client_config["batch_size"]:]  # shape: (batch_size,)
+                loss = self.criterion(last_output, last_targets)
                 
                 # Backward pass
                 loss.backward()
@@ -127,13 +130,13 @@ class RedditMaliciousClient(MaliciousClient):
         
         # Log final results
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Train Loss: {self.train_loss:.4f} | "
+            f"Train Backdoor Loss: {self.train_loss:.4f} | "
             f"Train Perplexity: {self.train_perplexity:.4f}")
         
         state_dict = self.get_model_parameters()
         
         training_metrics = {
-            "train_clean_loss": self.train_loss,
+            "train_backdoor_loss": self.train_loss,
             "train_perplexity": self.train_perplexity,
         }
         

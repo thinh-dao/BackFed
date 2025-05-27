@@ -67,7 +67,7 @@ class RedditPoison(Poison):
                 position = min(i * sequence_length, poisoned_batched_data.shape[0] - 1)
                 poisoned_batched_data[position + 1 - len(self.poisoned_tokens): position + 1, :] = \
                     self.poisoned_tokens.unsqueeze(1).expand(len(self.poisoned_tokens), poisoned_batched_data.shape[1])
-    
+
         # Create batches from the poisoned data
         poisoned_batches = get_batches(poisoned_batched_data, batch_size, sequence_length)
         return poisoned_batches
@@ -108,19 +108,21 @@ class RedditPoison(Poison):
                 targets = targets.to(self.device)
 
                 # Forward pass
-                output, hidden = net(data, hidden)
-                output_flat = output.view(-1, self.n_tokens)
-
+                output, hidden = net(data, hidden) # output: (seq_len, batch_size, n_tokens)
+                
+                # Get last timestep outputs and targets
+                last_output = output[-1]  # shape: (batch_size, n_tokens)
+                last_targets = targets[-test_batch_size:]  # shape: (batch_size,)
+                
                 # Compute loss for the last word in each sequence
-                total_loss += loss_fn(output_flat[-test_batch_size:], targets[-test_batch_size:]).item()
+                total_loss += loss_fn(last_output, last_targets).item()
                 
                 # Repackage hidden state to avoid backprop through time
                 hidden = repackage_hidden(hidden)
 
                 # Predictions for the last word
-                pred = output_flat.max(1)[1][-test_batch_size:]
-                correct_output = targets[-test_batch_size:]
-                correct += pred.eq(correct_output).sum().item()
+                pred = last_output.argmax(dim=1)  # shape: (batch_size,)
+                correct += pred.eq(last_targets).sum().item()
                 total_test_words += test_batch_size
 
         # Calculate metrics
@@ -213,4 +215,4 @@ class SentimentPoison(Poison):
         if random.random() <= poisoning_prob:
             return trigger_sentence + " " + sentence, target_class
         return sentence, target
-    
+
