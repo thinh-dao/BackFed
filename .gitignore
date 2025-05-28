@@ -68,6 +68,7 @@ Thumbs.db
 outputs/
 multirun/
 .hydra/
+*.pdf
 
 # Project-specific
 fl_backdoorbench/outputs
