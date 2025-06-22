@@ -45,6 +45,7 @@ from backfed.utils.text_utils import (
     Dictionary,
     get_tokenizer,
     get_batches,
+    get_word_list,
     batchify,
     repackage_hidden
 )
@@ -62,5 +63,5 @@ __all__ = [
     # Misc utilities
     'sync_to_async', 'with_timeout', 'format_time_hms',
     # Text utilities
-    'Dictionary', 'get_tokenizer', 'get_batches', 'batchify', 'repackage_hidden'
+    'Dictionary', 'get_tokenizer', 'get_batches', 'get_word_list', 'batchify', 'repackage_hidden'
 ]

@@ -15,7 +15,7 @@ from ray.actor import ActorHandle
 from rich.progress import track
 from hydra.utils import instantiate
 from backfed.client_manager import ClientManager
-from backfed.datasets.fl_dataloader import FL_DataLoader
+from backfed.datasets import FL_DataLoader, nonIID_Dataset
 from backfed.utils import (
     pool_size_from_resources,
     log, get_console,
@@ -163,22 +163,11 @@ class BaseServer:
 
     def _prepare_dataset(self):
         self.fl_dataloader = FL_DataLoader(config=self.config)
-        if self.config.dataset.upper() == "REDDIT":
-            self.trainset, self.testset = self.fl_dataloader.trainset, self.fl_dataloader.testset
-            self.client_data_indices = {i: [i] for i in range(self.config.num_clients)} # Not used for Reddit
+        if self.config.dataset.upper() in ["REDDIT", "FEMNIST", "SENTIMENT140"]:
+            self.trainset, self.client_data_indices = None, None
+            self.testset = nonIID_Dataset()
         else:
-            self.trainset, self.client_data_indices, self.test_loader = self.fl_dataloader.prepare_dataset()
-            
-        if self.config.dataset.upper() == "SENTIMENT140" and self.config.no_attack == False:
-            poisoned_testset = self.poison_module.poison_dataset(self.test_loader.dataset)
-            self.poisoned_test_loader = torch.utils.data.DataLoader(
-                dataset=poisoned_testset,
-                batch_size=self.config.test_batch_size,
-                num_workers=self.config.num_workers,
-                pin_memory=True,
-                shuffle=False,
-                collate_fn=sentiment140_collate_fn
-            )
+            self.trainset, self.client_data_indices, self.test_loader = self.fl_dataloader.prepare_dataset() 
 
     def _init_model(self):
         """
