@@ -31,10 +31,10 @@ model: lstm
 num_classes: 50000 # Size of vocab
 
 # *Test configuration
-test_batch_size: 32
+test_batch_size: 64
 num_workers: 4 # Number of workers for dataloader
 pin_memory: False
-test_every: 1 # Test every x rounds
+test_every: 1 # Test every x rounds.
 
 # *Default local training configuration (passed to clients during training)
 client_config:
@@ -42,7 +42,7 @@ client_config:
   task: ${task}
   sequence_length: ${sequence_length}
   local_epochs: 2
-  batch_size: 32
+  batch_size: 64
   optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
   momentum: 0
   weight_decay: 0
