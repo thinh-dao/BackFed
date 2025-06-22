@@ -77,7 +77,7 @@ class RedditCorpus(Dataset):
                 for line in f:
                     words = get_word_list(line, self.dictionary)
                     tokens += len(words)
-                    word_list.extend([self.dictionary.word2idx[x] for x in words])
+                    word_list.extend([self.dictionary["word2idx"][x] for x in words])
 
                 ids = torch.LongTensor(word_list)
             per_participant_ids.append(ids)
@@ -99,10 +99,10 @@ class RedditCorpus(Dataset):
             for line in f:
                 words = get_word_list(line, self.dictionary)
                 tokens += len(words)
-                word_list.extend([self.dictionary.word2idx[x] for x in words])
+                word_list.extend([self.dictionary["word2idx"][x] for x in words])
                     
         # Convert to tensor
-        ids = torch.LongTensor(word_list)
+        ids = torch.tensor(word_list, dtype=torch.long)
         return ids
     
     def get_data(self, client_id):
