@@ -4,7 +4,7 @@ from omegaconf import DictConfig
 import torch
 
 class Poison(ABC):
-    def __init__(self, params: DictConfig, client_id: int = -1, **kwargs):
+    def __init__(self, params: DictConfig, client_id: int = -1):
         """
         Initialize the poison module.
 
@@ -44,24 +44,22 @@ class Poison(ABC):
             normalization (torch.nn.Module): The normalization
         """
         pass
-
-    def poison_inputs(self, inputs, mode, *args, **kwargs):
+    
+    def poison_finish(self):
+        """
+        Not required for all attacks. Called at the end of the experiment.
+        Could be used to delete the trigger, attacker model, etc.
+        """
+        pass
+    
+    def poison_inputs(self, inputs):
         """
         Return the poisoned inputs (inputs with the trigger applied).
         'mode' argument is given if poison inputs during training and testing may be different. Otherwise, this should not matter.
         Args:
             inputs (torch.Tensor): Inputs to poison
-            labels (torch.Tensor): Labels to poison
-            test (bool): Whether to poison the entire batch or a portion of it
         Return:
             poisoned_inputs (torch.Tensor): Poisoned inputs
-        """
-        pass
-
-    def poison_finish(self):
-        """
-        Not required for all attacks. Called at the end of the experiment.
-        Could be used to delete the trigger, attacker model, etc.
         """
         pass
 
@@ -101,6 +99,7 @@ class Poison(ABC):
         else:
             raise ValueError(f"Invalid attack_type: {self.params.attack_type}")
 
+    @torch.inference_mode()
     def poison_test(self, net, test_loader, loss_fn=torch.nn.CrossEntropyLoss(), normalization=None):
         """Validate attack success rate. We inject the trigger in samples from the source classes (excluding target classes)
         and then test the model on the poisoned samples.
@@ -118,17 +117,16 @@ class Poison(ABC):
         net.eval()
         backdoored_preds, total_samples, total_loss = 0, 0, 0.0
 
-        with torch.no_grad():
-            for batch in test_loader:
-                poisoned_inputs, poisoned_labels = self.poison_batch(batch, mode="test")
+        for batch in test_loader:
+            poisoned_inputs, poisoned_labels = self.poison_batch(batch, mode="test")
 
-                if normalization:
-                    poisoned_inputs = normalization(poisoned_inputs)
+            if normalization:
+                poisoned_inputs = normalization(poisoned_inputs)
 
-                outputs = net(poisoned_inputs)
-                backdoored_preds += (torch.max(outputs.data, 1)[1] == poisoned_labels).sum().item()
-                total_loss += loss_fn(outputs, poisoned_labels).item()
-                total_samples += len(poisoned_labels)
+            outputs = net(poisoned_inputs)
+            backdoored_preds += (torch.max(outputs.data, 1)[1] == poisoned_labels).sum().item()
+            total_loss += loss_fn(outputs, poisoned_labels).item()
+            total_samples += len(poisoned_labels)
 
         backdoor_accuracy = backdoored_preds / total_samples
         backdoor_loss = total_loss / len(test_loader)
@@ -154,7 +152,7 @@ class Poison(ABC):
             else:
                 raise ValueError(f"Invalid attack_type: {self.params.attack_type}")
         else:
-            raise ValueError(f"Invalid mode: {mode}")
+            raise ValueError(f"Invalid mode: {mode}Use 'train' or 'test'.")
         return filter_mask
 
     def set_client_id(self, client_id: int):

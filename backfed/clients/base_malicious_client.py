@@ -19,6 +19,7 @@ from torch.nn.utils import vector_to_parameters
 from backfed.const import Metrics
 from typing import Tuple, Dict, Any
 from omegaconf import open_dict
+from transformers import AutoTokenizer
 
 class MaliciousClient(BaseClient):
     """
@@ -393,8 +394,8 @@ class MaliciousClient(BaseClient):
             # Update model parameters
             vector_to_parameters(projected_params, self.model.parameters())
 
+# Class for offline poisoning
 class PoisonedDataset(Dataset):
-    # Offline poisoning
     def __init__(self, dataset, poison_module, poison_ratio):
         self.dataset = dataset
         self.poison_module : Poison = poison_module
