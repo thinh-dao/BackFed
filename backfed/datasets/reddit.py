@@ -4,11 +4,44 @@ Reddit dataset for LSTM models.
 """
 import os
 import torch
-import json
 
+from torch.utils.data import Dataset
 from tqdm import tqdm
 from backfed.utils.text_utils import get_word_list
 from torch.utils.data import Dataset
+
+class CausalLanguageModelingDataset(Dataset):
+    """
+    Creates sequences where we predict tokens 1 to N given tokens 0 to N-1.
+    """
+    def __init__(self, tokens, seq_length=512, stride=None):
+        self.tokens = tokens
+        self.seq_length = seq_length
+        self.stride = stride if stride is not None else seq_length
+        
+        # We need seq_length + 1 tokens to create input and target
+        if len(tokens) <= seq_length + 1:
+            self.num_sequences = 1
+        else:
+            self.num_sequences = (len(tokens) - seq_length - 1) // self.stride + 1
+    
+    def __len__(self):
+        return self.num_sequences
+    
+    def __getitem__(self, idx):
+        start_idx = idx * self.stride
+        
+        # We need seq_length + 1 tokens
+        if start_idx + self.seq_length + 1 > len(self.tokens):
+            # Take the last seq_length + 1 tokens
+            sequence = self.tokens[-(self.seq_length + 1):]
+        else:
+            sequence = self.tokens[start_idx:start_idx + self.seq_length + 1]
+        
+        inputs = torch.tensor(sequence[:-1], dtype=torch.long)  # First seq_length tokens
+        targets = torch.tensor(sequence[1:], dtype=torch.long)      # Last seq_length tokens
+        
+        return inputs, targets
 
 class RedditCorpus(Dataset):
     def __init__(self, config, dictionary, split):
@@ -74,28 +107,3 @@ class RedditCorpus(Dataset):
     
     def get_data(self, client_id):
         return self.data[client_id]
-
-def load_reddit_for_lstm(config):
-    dictionary = torch.load("data/REDDIT/50k_word_dictionary.pt", weights_only=False)
-    
-    # Check for cached datasets
-    cache_dir = os.path.join("data", "REDDIT", "cache")
-    os.makedirs(cache_dir, exist_ok=True)
-    train_cache = os.path.join(cache_dir, "train.pt")
-    test_cache = os.path.join(cache_dir, "test.pt")
-    
-    # Load or create training set
-    if os.path.exists(train_cache):
-        trainset = torch.load(train_cache, weights_only=False)
-    else:
-        trainset = RedditCorpus(config, dictionary, split="train")
-        torch.save(trainset, train_cache)
-    
-    # Load or create test set
-    if os.path.exists(test_cache):
-        testset = torch.load(test_cache, weights_only=False)
-    else:
-        testset = RedditCorpus(config, dictionary, split="test")
-        torch.save(testset, test_cache)
-    
-    return trainset, testset

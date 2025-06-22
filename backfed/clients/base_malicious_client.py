@@ -29,7 +29,6 @@ class MaliciousClient(BaseClient):
         self,
         client_id,
         dataset,
-        dataset_indices,
         model,
         client_config,
         atk_config,
@@ -43,8 +42,7 @@ class MaliciousClient(BaseClient):
 
         Args:
             client_id: Unique identifier
-            dataset: The whole training dataset
-            dataset_indices: Data indices for all clients
+            dataset: Client dataset
             model: Training model
             client_config: Dictionary containing training configuration
             atk_config: Dictionary containing attack configuration
@@ -67,7 +65,6 @@ class MaliciousClient(BaseClient):
         super().__init__(
             client_id=client_id,
             dataset=dataset,
-            dataset_indices=dataset_indices,
             model=model,
             client_config=client_config,
             client_type=client_type,

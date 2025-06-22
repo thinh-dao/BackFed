@@ -1,72 +1,72 @@
-# Taken from https://github.com/tao-shen/FEMNIST_pytorch/blob/master/femnist.py
-from torchvision.datasets import MNIST, utils
-from PIL import Image
-from backfed.utils import log
-from logging import INFO
-
+# Taken from https://github.com/GwenLegate/femnist-dataset-PyTorch/blob/main/femnist_dataset.py
 import torch
 import os
 
+from torchvision.datasets import MNIST, utils
+from torch.utils.data import TensorDataset
+
 class FEMNIST(MNIST):
-    """
-    This dataset is derived from the Leaf repository
-    (https://github.com/TalwalkarLab/leaf) pre-processing of the Extended MNIST
-    dataset, grouping examples by writer. Details about Leaf were published in
-    "LEAF: A Benchmark for Federated Settings" https://arxiv.org/abs/1812.01097.
-    """
-    resources = [
-        ('https://raw.githubusercontent.com/tao-shen/FEMNIST_pytorch/master/femnist.tar.gz',
-         '59c65cec646fc57fe92d27d83afdf0ed')]
-
-    def __init__(self, root, train=True, transform=None, target_transform=None,
-                 download=False):
-        super(MNIST, self).__init__(root, transform=transform,
-                                    target_transform=target_transform)
+    def __init__(self, root, train=True, transform=None, target_transform=None, download=False):
+        super(MNIST, self).__init__(root, transform=transform, target_transform=target_transform)
+        self.download = download
+        self.download_link = 'https://drive.google.com/file/d/17Onhjhox6YRUlEIU3e_73OKpT3cWBAxN'
+        self.file_md5 = 'a8a28afae0e007f1acb87e37919a21db'
         self.train = train
+        self.root = root
+        self.train_file = f'{self.root}/FEMNIST/femnist_train.pt'
+        self.test_file = f'{self.root}/FEMNIST/femnist_test.pt'
+        self.train_data_splits = f'{self.root}/FEMNIST/femnist_train_split.json'
 
-        if download:
-            self.download()
-
-        if not self._check_exists():
-            raise RuntimeError('Dataset not found.' +
-                               ' You can use download=True to download it')
+        if not os.path.exists(f'{self.root}/FEMNIST/femnist_test.pt') \
+                or not os.path.exists(f'{self.root}/FEMNIST/femnist_train'):
+            if self.download:
+                self.dataset_download()
+            else:
+                raise RuntimeError('Dataset not found, set parameter download=True to download')
 
         if self.train:
-            data_file = self.training_file
+            data_file = self.train_file
         else:
             data_file = self.test_file
 
-        self.data, self.targets, self.users_index = torch.load(os.path.join(self.processed_folder, data_file))
-
+        data_target = torch.load(data_file, weights_only=False)
+        self.data, self.targets = torch.Tensor(data_target[0]), torch.Tensor(data_target[1])
 
     def __getitem__(self, index):
         img, target = self.data[index], int(self.targets[index])
-        img = Image.fromarray(img.numpy(), mode='F')
-
+        
+        if img.dim() == 1:  # If flattened
+            img = img.view(1, 28, 28)  # Add channel dimension
+        elif img.dim() == 2:  # If (28, 28)
+            img = img.unsqueeze(0)  # Add channel dimension -> (1, 28, 28)
+        
         if self.transform is not None:
             img = self.transform(img)
         if self.target_transform is not None:
             target = self.target_transform(target)
-
         return img, target
 
-
-    def download(self):
-        """Download the FEMNIST data if it doesn't exist in processed_folder already."""
-        import shutil
-
-        if self._check_exists():
-            return
-
-        utils.makedir_exist_ok(self.raw_folder)
-        utils.makedir_exist_ok(self.processed_folder)
+    def dataset_download(self):
+        path = f'{self.root}/FEMNIST'
+        if not os.path.exists(path):
+            os.makedirs(path)
+            
+        os.makedirs(f'{self.root}', exist_ok=True)
 
         # download files
-        for url, md5 in self.resources:
-            filename = url.rpartition('/')[2]
-            utils.download_and_extract_archive(url, download_root=self.raw_folder, filename=filename, md5=md5)
+        filename = "FEMNIST.tar.gz"
+        utils.download_and_extract_archive(self.download_link, download_root=f'{self.root}', filename=filename)
 
-        # process and save as torch files
-        log(INFO, 'Processing...')
-        shutil.move(os.path.join(self.raw_folder, self.training_file), self.processed_folder)
-        shutil.move(os.path.join(self.raw_folder, self.test_file), self.processed_folder)
+        # Remove files        
+        os.remove(f'{self.root}/FEMNIST.tar.gz')
+
+def get_femnist_dataset(client_id):
+    if client_id == -1:
+        path = f"data/FEMNIST/femnist_train/{client_id}.pt"
+    else:
+        path = "data/FEMNIST/femnist_test.pth"
+    
+    data = torch.load(path, weights_only=False)
+    dataset = TensorDataset(data[0], data[1])
+    return dataset
+    

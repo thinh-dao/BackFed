@@ -22,7 +22,6 @@ class RedditMaliciousClient(MaliciousClient):
         self,
         client_id: int,
         dataset,
-        dataset_indices: List[List[int]],
         model: nn.Module,
         client_config,
         atk_config,
@@ -35,7 +34,6 @@ class RedditMaliciousClient(MaliciousClient):
         super().__init__(
             client_id=client_id,
             dataset=dataset,
-            dataset_indices=dataset_indices,
             model=model,
             client_config=client_config,
             atk_config=atk_config,

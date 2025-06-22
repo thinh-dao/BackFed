@@ -244,16 +244,14 @@ class IndicatorServer(AnomalyDetectionServer):
     
     def _get_ood_data(self):
         """Get OOD data from the specified data source."""
-        datapath = os.path.join(self.config["datapath"], self.ood_data_source)
-
         if self.ood_data_source == "CIFAR10":
-            self.ood_dataset = datasets.CIFAR10(datapath, train=True, download=True, 
+            self.ood_dataset = datasets.CIFAR10("./data", train=True, download=True, 
                                                 transform=OOD_TRANSFORMATIONS["CIFAR10"])
         elif self.ood_data_source == "CIFAR100":
-            self.ood_dataset = datasets.CIFAR100(datapath, train=True, download=True, 
+            self.ood_dataset = datasets.CIFAR100("./data", train=True, download=True, 
                                                 transform=OOD_TRANSFORMATIONS["CIFAR10"])
         elif self.ood_data_source == "EMNIST":
-            self.ood_dataset = datasets.EMNIST(datapath, train=True, split="mnist", download=True,
+            self.ood_dataset = datasets.EMNIST("./data", train=True, split="mnist", download=True,
                                         transform=OOD_TRANSFORMATIONS["EMNIST"])
         else:
             raise ValueError(f"OOD data source {self.ood_data_source} is not supported.")

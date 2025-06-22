@@ -4,15 +4,12 @@ Neurotoxin client implementation for FL.
 
 import torch
 import time
-import copy
 import numpy as np
-from functools import lru_cache
-from torch.utils.data import DataLoader, Subset, RandomSampler
 
 from backfed.clients.base_malicious_client import MaliciousClient
 from backfed.utils import log
 from logging import INFO, WARNING
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List
 
 DEFAULT_PARAMS = {
     "gradient_mask_ratio": 0.99, # Mask ratio - Project gradient into bottom 99% of the gradient space
@@ -28,7 +25,6 @@ class NeurotoxinClient(MaliciousClient):
         self,
         client_id,
         dataset,
-        dataset_indices,
         model,
         client_config,
         atk_config,
@@ -47,7 +43,6 @@ class NeurotoxinClient(MaliciousClient):
         super().__init__(
             client_id=client_id,
             dataset=dataset,
-            dataset_indices=dataset_indices,
             model=model,
             client_config=client_config,
             atk_config=atk_config,

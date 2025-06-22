@@ -48,7 +48,6 @@ class NormClippingServer(RobustAggregationServer):
             if self.verbose:
                 log(INFO, f"Client {client_id} has weight diff norm {weight_diff_norm}")
 
-
             if weight_diff_norm > self.clipping_norm:
                 scaling_factor = self.clipping_norm / weight_diff_norm
                 for name, param in client_diff.items():

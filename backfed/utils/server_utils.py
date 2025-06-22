@@ -83,41 +83,6 @@ def test_albert(model, test_loader, device, loss_fn=torch.nn.CrossEntropyLoss(),
     loss = loss / len(test_loader)
     return loss, accuracy
 
-def test_lstm_reddit(model, test_loader, device, loss_fn=torch.nn.CrossEntropyLoss(), normalization=None):
-    """Validate LSTM model performance on the test set."""
-    model.eval()
-    model.to(device)
-    correct, loss, total_samples = 0, 0.0, 0
-    
-    # Initialize hidden state for LSTM
-    batch_size = len(test_loader[0][0])
-    hidden = model.init_hidden(batch_size)
-            
-    with torch.no_grad():
-        for inputs, labels in test_loader:
-            if normalization:
-                inputs = normalization(inputs)
-
-            inputs = inputs.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
-
-            if isinstance(hidden, tuple):
-                hidden = tuple([h.to(device) for h in hidden])
-            else:
-                hidden = hidden.to(device)
-
-            # Forward pass for LSTM
-            outputs, _ = model(inputs, hidden)
-
-            # Compute loss and accuracy
-            loss += loss_fn(outputs, labels).item()
-            correct += (torch.max(outputs.data, 1)[1] == labels).sum().item()
-            total_samples += len(labels)
-
-    accuracy = correct / total_samples
-    loss = loss / len(test_loader)
-    return loss, accuracy
-
 def test_lstm_reddit(model: RNNLanguageModel, testset, test_batch_size, sequence_length, device, loss_fn=torch.nn.CrossEntropyLoss()):
     """
     Evaluate a language model on the test set using perplexity.
