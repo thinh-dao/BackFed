@@ -46,6 +46,18 @@ class BenignClient(BaseClient):
     def train(self, train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
         """
         Train the model for a number of epochs.
+
+        Args:
+            train_package: Data package received from server to train the model (e.g., global model weights, learning rate, etc.)
+        Returns:
+            num_examples (int): number of examples in the training dataset
+            state_dict (StateDict): updated model
+        """
+        if self.client_config.dataset
+    
+    def train_img_classifier(self, train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
+        """
+        Train the model for a number of epochs.
         
         Args:
             train_package: Data package received from server to train the model (e.g., global model weights, learning rate, etc.)

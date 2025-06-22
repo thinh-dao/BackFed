@@ -1,10 +1,7 @@
 from abc import ABC
 from omegaconf import DictConfig
-from typing import Any
 
 import torch
-import asyncio
-
 
 class Poison(ABC):
     def __init__(self, params: DictConfig, client_id: int = -1, **kwargs):

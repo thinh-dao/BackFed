@@ -61,7 +61,7 @@ def get_word_list(line, dictionary):
         if match:
             word = match[0]
             if len(word) > 1:
-                if dictionary.word2idx.get(word, False):
+                if dictionary["word2idx"].get(word, False):
                     words.append(word)
                 else:
                     words.append('<unk>')

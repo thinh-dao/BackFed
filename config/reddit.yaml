@@ -23,7 +23,7 @@ federated_val_split: 0.0 # Validation split for each client's dataset (should be
 # *Dataset distribution configuration
 dataset: REDDIT # CIFAR10, CIFAR100, TinyImageNet, MNIST
 task: next-word-prediction
-seq_length: 100 # Sequence-length
+seq_length: 64 # Sequence-length
 normalize: False # Normalize the dataset
 
 # *Model configuration

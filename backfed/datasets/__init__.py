@@ -6,16 +6,16 @@ import torch
 
 from torchvision.datasets import utils
 from torch.utils.data import Dataset
-from backfed.datasets.sentiment import (
+from .sentiment import (
     FLSentimentDataset
 )
-from backfed.datasets.reddit import (
+from .reddit import (
     CausalLanguageModelingDataset
 )
-from backfed.datasets.femnist import (
+from .femnist import (
     get_femnist_dataset
 )
-from fl_dataloader import FLDataLoader
+from .fl_dataloader import FL_DataLoader
 
 def check_download(dataset_name: str) -> bool:
     """
@@ -98,5 +98,5 @@ class nonIID_Dataset(Dataset):
     
 __all__ = [
     "nonIID_Dataset",
-    "FLDataLoader"
+    "FL_DataLoader"
 ]

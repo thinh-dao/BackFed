@@ -11,12 +11,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pickle
 
-from backfed.datasets import (
-    FEMNIST,
-    load_sentiment140_for_albert,
-    sentiment140_collate_fn,
-    load_reddit_for_lstm
-)
 from torch.utils.data import Dataset, DataLoader
 from logging import INFO
 from backfed.utils import log
@@ -108,33 +102,11 @@ class FL_DataLoader:
                 self.trainset.targets -= 1
                 self.testset.targets -= 1
 
-        elif dataset_name == "FEMNIST":
-            self.trainset = FEMNIST(datapath, train=True, download=True,
-                                    transform=self.train_transform)
-            self.testset = FEMNIST(datapath, train=False, download=True,
-                                   transform=self.test_transform)
-
         elif dataset_name == "TINYIMAGENET":
             self.trainset = TinyImageNet(root=datapath, split="train",
                                          transform=self.train_transform)
             self.testset = TinyImageNet(root=datapath, split="val",
                                         transform=self.test_transform)
-
-        elif dataset_name == "SENTIMENT140":
-            # Check if we're using a supported model
-            supported_models = ["albert"]
-            assert self.config["model"].lower() in supported_models, f"Model {self.config['model']} is not supported for Sentiment140 dataset. Supported models are {supported_models}"
-
-            self.trainset, self.testset = load_sentiment140_for_albert(
-                config=self.config,
-            )
-
-        elif dataset_name == "REDDIT":
-            # Check if we're using a supported model
-            supported_models = ["lstm"]
-            assert self.config["model"].lower() in supported_models, f"Model {self.config['model']} is not supported for Reddit dataset. Supported models are {supported_models}"
-            
-            self.trainset, self.testset = load_reddit_for_lstm(self.config)
 
         else:
             raise ValueError(f"Dataset {dataset_name} is not supported.")
@@ -144,7 +116,6 @@ class FL_DataLoader:
             self.prepare_cifar10_semantic()
 
         return True
-
 
     def prepare_cifar10_semantic(self, semantic_path='./data/semantic/cifar10_semantic_car.pkl'):
         """
@@ -209,26 +180,7 @@ class FL_DataLoader:
         else:
             # Generate new data split
             self._generate_data_split(cache_file_path)
-
-        # Server-side test loader (for server-side evaluation)
-        if self.config.dataset.upper() == "SENTIMENT140":
-            self.test_loader = torch.utils.data.DataLoader(
-                self.testset,
-                batch_size=self.config.test_batch_size,
-                num_workers=self.config.num_workers,
-                pin_memory=True,
-                shuffle=False,
-                collate_fn=sentiment140_collate_fn
-            )
-        else:
-            self.test_loader = torch.utils.data.DataLoader(
-                self.testset,
-                batch_size=self.config.test_batch_size,
-                num_workers=self.config.num_workers,
-                pin_memory=True,
-                shuffle=False
-            )
-
+            
         return self.trainset, self.client_data_indices, self.test_loader
 
     def _sample_dirichlet(self, no_participants, indices=None) -> Dict[int, List[int]]:

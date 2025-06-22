@@ -44,7 +44,7 @@ class RedditMaliciousClient(MaliciousClient):
             **kwargs
         )
         
-    def _set_dataloader(self, dataset, indices):
+    def _set_dataloader(self, dataset):
         """
         Set up train and validation data loaders for the client.
         """
@@ -97,8 +97,8 @@ class RedditMaliciousClient(MaliciousClient):
                 # Forward pass
                 output, hidden = self.model(data, hidden)
                 # Compute loss only for the last word in each sequence
-                last_output = output[-1]  # shape: (batch_size, vocab_size)
-                last_targets = targets[-self.client_config["batch_size"]:]  # shape: (batch_size,)
+                last_output = output[:, -1]  # shape: (batch_size, vocab_size)
+                last_targets = targets[:, -1]  # shape: (batch_size,)
                 loss = self.criterion(last_output, last_targets)
                 
                 # Backward pass

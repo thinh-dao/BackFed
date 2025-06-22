@@ -10,7 +10,7 @@ import traceback
 
 from rich.traceback import install
 from backfed.servers.base_server import BaseServer
-from backfed.utils import system_startup, log, Dictionary # Import dictionary to load vocab for NLP tasks
+from backfed.utils import system_startup,log 
 from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
 from logging import ERROR
