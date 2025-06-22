@@ -48,7 +48,7 @@ class FL_DataLoader:
             ])
         elif dataset_name in ["CIFAR10", "CIFAR100"]:
             self.train_transform = transforms.Compose([
-                transforms.RandomHorizontalFlip(),
+                transforms.RandomHorizontalFlip(),  
                 transforms.ToImage(),
                 transforms.ToDtype(torch.float32, scale=True),
             ])

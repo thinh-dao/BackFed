@@ -8,7 +8,7 @@ import time
 from typing import Tuple, Dict, Any
 from backfed.const import StateDict, Metrics
 from backfed.clients.base_client import BaseClient
-from backfed.utils import log, test_classifier
+from backfed.utils import log, test_classifier, repackage_hidden
 from logging import INFO
 
 class BenignClient(BaseClient):
@@ -20,7 +20,6 @@ class BenignClient(BaseClient):
         self,
         client_id,
         dataset,
-        dataset_indices,
         model,
         client_config,
         client_type: str = "base_benign",
@@ -31,15 +30,13 @@ class BenignClient(BaseClient):
         
         Args:
             client_id: Unique identifier 
-            dataset: The whole training dataset
-            dataset_indices: Data indices for all clients
+            dataset: Client dataset
             model: Training model
             client_config: Dictionary containing training configuration
         """
         super().__init__(
             client_id=client_id,
             dataset=dataset,
-            dataset_indices=dataset_indices,
             model=model,
             client_config=client_config,
             client_type=client_type,
@@ -69,11 +66,6 @@ class BenignClient(BaseClient):
         self.model.load_state_dict(train_package["global_model_params"])
         server_round = train_package["server_round"]
         normalization = train_package.get("normalization", None)
-        proximal_mu = train_package.get('proximal_mu', None) 
-
-        if proximal_mu is not None:
-            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in train_package["global_model_params"].items()
-                        if "weight" in name or "bias" in name]).to(self.device)
                         
         # Initialize training tools
         scaler = torch.amp.GradScaler(device=self.device)
@@ -104,11 +96,6 @@ class BenignClient(BaseClient):
                     outputs = self.model(images)
                     loss = self.criterion(outputs, labels)
 
-                    # Add proximal term if needed
-                    if proximal_mu is not None:
-                        proximal_term = self.model_dist(global_params_tensor=global_params_tensor, gradient_calc=True)
-                        loss += (proximal_mu / 2) * proximal_term
-
                 # Backward pass with gradient masking
                 scaler.scale(loss).backward()
 
@@ -133,6 +120,181 @@ class BenignClient(BaseClient):
         self.training_time = time.time() - start_time
 
         # Log final results
+        log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
+            f"Train Loss: {self.train_loss:.4f} | "
+            f"Train Accuracy: {self.train_accuracy:.4f}")
+
+        state_dict = self.get_model_parameters()
+
+        training_metrics = {
+            "train_clean_loss": self.train_loss,
+            "train_clean_acc": self.train_accuracy,
+        }
+
+        return len(self.train_dataset), state_dict, training_metrics
+    
+    def train_lstm_reddit(self, train_package: Dict[str, Any]) -> Tuple[int, Dict[str, torch.Tensor], Dict[str, float]]:
+        """
+        Train LSTM model for next-word prediction.
+        
+        Args:
+            train_package: Training package from server
+            
+        Returns:
+            num_examples, state_dict, training_metrics
+        """
+        # Validate required keys
+        self._check_required_keys(train_package, required_keys=[
+            "global_model_params", "server_round"
+        ])
+        
+        # Setup training environment
+        self.model.load_state_dict(train_package["global_model_params"])
+        server_round = train_package["server_round"]
+        
+        start_time = time.time()
+        
+        # Training loop
+        self.model.train()
+        for internal_epoch in range(self.client_config.local_epochs):
+            running_loss = 0.0
+            epoch_total = 0
+            
+            # Get a new batch of data
+            hidden = self.model.init_hidden(self.client_config["batch_size"])
+            
+            for batch_idx, (data, targets) in enumerate(self.train_loader):
+                # Starting each batch, we detach the hidden state
+                hidden = repackage_hidden(hidden)
+                
+                # Zero gradients
+                self.optimizer.zero_grad()
+                
+                # Move data to device
+                data = data.to(self.device)
+                targets = targets.to(self.device)
+                
+                # Forward pass
+                output, hidden = self.model(data, hidden)
+                loss = self.criterion(output.view(-1, output.size(-1)), targets.view(-1))
+                
+                # Backward pass
+                loss.backward()
+                
+                # Clip gradients
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.25)
+                
+                # Optimizer step
+                self.optimizer.step()
+                
+                # Accumulate loss
+                running_loss += loss.item() * targets.numel()
+                epoch_total += targets.numel()
+            
+            epoch_loss = running_loss / epoch_total
+            perplexity = torch.exp(torch.tensor(epoch_loss)).item()
+            
+            if self.verbose:
+                log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} "
+                    f"- Epoch {internal_epoch} | Train Loss: {epoch_loss:.4f} | "
+                    f"Train Perplexity: {perplexity:.4f}")
+        
+        self.train_loss = epoch_loss
+        self.train_perplexity = perplexity
+        self.training_time = time.time() - start_time
+        
+        # Log final results
+        log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
+            f"Train Loss: {self.train_loss:.4f} | "
+            f"Train Perplexity: {self.train_perplexity:.4f}")
+        
+        state_dict = self.get_model_parameters()
+        
+        training_metrics = {
+            "train_clean_loss": self.train_loss,
+            "train_perplexity": self.train_perplexity,
+        }
+        
+        return len(self.train_dataset), state_dict, training_metrics
+    
+    def train_albert_sentiment(self, train_package: Dict[str, Any]) -> Tuple[int, Dict[str, torch.Tensor], Dict[str, float]]:
+        """
+        Train Albert/Transformer models for text classification.
+
+        Args:
+            server_round: Current federated learning round
+
+        Returns:
+            num_examples, state_dict, training_metrics
+        """
+        # Validate required keys
+        self._check_required_keys(train_package, required_keys=[
+            "global_model_params", "server_round"
+        ])
+
+        # Setup training environment
+        self.model.load_state_dict(train_package["global_model_params"])
+        server_round = train_package["server_round"]
+
+        start_time = time.time()
+        scaler = torch.amp.GradScaler(device=self.device)
+
+        # Training loop
+        self.model.train()
+        for internal_epoch in range(self.client_config.local_epochs):
+            running_loss = 0.0
+            epoch_correct = 0
+            epoch_total = 0
+
+            for batch_idx, (inputs, labels) in enumerate(self.train_loader):
+                if isinstance(labels, torch.Tensor) and len(labels) <= 1:  # Skip small batches
+                    continue
+
+                # Zero gradients
+                self.optimizer.zero_grad()
+
+                # Process dictionary inputs for transformer models
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                labels = labels.to(self.device)
+
+                # Forward pass for transformer models
+                outputs = self.model(**inputs)
+
+                # Extract logits from transformer outputs if needed
+                if isinstance(outputs, dict):
+                    outputs = outputs.logits if hasattr(outputs, 'logits') else outputs['logits']
+
+                # Compute loss
+                loss = self.criterion(outputs, labels)
+
+                # Backward pass
+                scaler.scale(loss).backward()
+
+                # Optimizer step
+                scaler.step(self.optimizer)
+                scaler.update()
+
+                # Accumulate loss
+                running_loss += loss.item() * len(labels)
+
+                # Calculate accuracy
+                predictions = torch.argmax(outputs, dim=1)
+                epoch_correct += (predictions == labels).sum().item()
+
+                epoch_total += len(labels)
+
+            epoch_loss = running_loss / epoch_total
+            epoch_accuracy = epoch_correct / epoch_total
+
+            if self.verbose:
+                log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} "
+                    f"- Epoch {internal_epoch} | Train Loss: {epoch_loss:.4f} | "
+                    f"Train Accuracy: {epoch_accuracy:.4f}")
+
+        self.train_loss = epoch_loss
+        self.train_accuracy = epoch_accuracy
+        self.training_time = time.time() - start_time
+
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
             f"Train Loss: {self.train_loss:.4f} | "
             f"Train Accuracy: {self.train_accuracy:.4f}")

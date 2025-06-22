@@ -17,7 +17,7 @@ def extract_grad_hook(module, grad_in, grad_out):
     extracted_grads.append(grad_out[0])
 
 class RNNLanguageModel(SimpleNet):
-    """Simplified RNN-based language model."""
+    """Corrected RNN-based language model."""
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, tie_weights=False):
         super(RNNLanguageModel, self).__init__()
@@ -27,12 +27,17 @@ class RNNLanguageModel(SimpleNet):
         
         # Create RNN layer (LSTM, GRU, or vanilla RNN)
         if rnn_type == 'LSTM':
-            self.rnn = nn.LSTM(ninp, nhid, nlayers, dropout=dropout if nlayers > 1 else 0)
+            self.rnn = nn.LSTM(ninp, nhid, nlayers, 
+                              dropout=dropout if nlayers > 1 else 0, 
+                              batch_first=True)  
         elif rnn_type == 'GRU':
-            self.rnn = nn.GRU(ninp, nhid, nlayers, dropout=dropout if nlayers > 1 else 0)
+            self.rnn = nn.GRU(ninp, nhid, nlayers, 
+                             dropout=dropout if nlayers > 1 else 0,
+                             batch_first=True)   
         else:
             self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity='tanh', 
-                             dropout=dropout if nlayers > 1 else 0)
+                             dropout=dropout if nlayers > 1 else 0,
+                             batch_first=True)   
         
         self.decoder = nn.Linear(nhid, ntoken)
         
@@ -45,27 +50,39 @@ class RNNLanguageModel(SimpleNet):
         self.rnn_type = rnn_type
         self.nhid = nhid
         self.nlayers = nlayers
+        
+        # Initialize weights
+        self.init_weights()
+    
+    def init_weights(self):
+        """Initialize model weights."""
+        initrange = 0.1
+        self.encoder.weight.data.uniform_(-initrange, initrange)
+        self.decoder.bias.data.zero_()
+        self.decoder.weight.data.uniform_(-initrange, initrange)
     
     def forward(self, input, hidden=None, return_embeddings=False):
         """
         Forward pass of the language model.
         
         Args:
-            input: Input tensor of token indices [seq_len, batch_size]
+            input: Input tensor of token indices [batch_size, seq_len] (changed order)
             hidden: Initial hidden state (optional)
             return_embeddings: Whether to return embeddings
             
         Returns:
-            output: Decoded output [seq_len, batch_size, vocab_size]
+            output: Decoded output [batch_size, seq_len, vocab_size] (changed order)
             hidden: Final hidden state
             embeddings: Token embeddings (if return_embeddings=True)
         """
+        batch_size, seq_len = input.size()  # Updated for batch_first=True
+        
         # Get embeddings
-        embeddings = self.drop(self.encoder(input))
+        embeddings = self.drop(self.encoder(input))  # [batch_size, seq_len, ninp]
         
         # Initialize hidden state if not provided
         if hidden is None:
-            hidden = self.init_hidden(input.size(1))
+            hidden = self.init_hidden(batch_size)
             
             # Move hidden state to input device
             if isinstance(hidden, tuple):
@@ -74,12 +91,12 @@ class RNNLanguageModel(SimpleNet):
                 hidden = hidden.to(input.device)
         
         # Process through RNN
-        output, hidden = self.rnn(embeddings, hidden)
+        output, hidden = self.rnn(embeddings, hidden)  # [batch_size, seq_len, nhid]
         output = self.drop(output)
         
         # Decode to vocabulary space
-        decoded = self.decoder(output.reshape(-1, output.size(2)))
-        decoded = decoded.view(output.size(0), output.size(1), -1)
+        decoded = self.decoder(output.reshape(-1, self.nhid))  # [batch_size * seq_len, nhid]
+        decoded = decoded.view(batch_size, seq_len, self.ntoken)  # [batch_size, seq_len, vocab_size]
         
         if return_embeddings:
             return decoded, hidden, embeddings
@@ -87,13 +104,18 @@ class RNNLanguageModel(SimpleNet):
             return decoded, hidden
     
     def init_hidden(self, batch_size):
-        """Initialize hidden state."""
+        """Initialize hidden state with correct dimensions for batch_first=True."""
         weight = next(self.parameters())
         if self.rnn_type == 'LSTM':
-            return (torch.zeros(self.nlayers, batch_size, self.nhid, device=weight.device, dtype=weight.dtype),
-                    torch.zeros(self.nlayers, batch_size, self.nhid, device=weight.device, dtype=weight.dtype))
+            # For LSTM: (h_0, c_0) both with shape [num_layers, batch_size, hidden_size]
+            return (torch.zeros(self.nlayers, batch_size, self.nhid, 
+                               device=weight.device, dtype=weight.dtype),
+                    torch.zeros(self.nlayers, batch_size, self.nhid, 
+                               device=weight.device, dtype=weight.dtype))
         else:
-            return torch.zeros(self.nlayers, batch_size, self.nhid, device=weight.device, dtype=weight.dtype)
+            # For GRU/RNN: h_0 with shape [num_layers, batch_size, hidden_size]
+            return torch.zeros(self.nlayers, batch_size, self.nhid, 
+                              device=weight.device, dtype=weight.dtype)
 
 
 class RNNClassifier(SimpleNet):

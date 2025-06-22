@@ -12,32 +12,10 @@ from typing import Tuple, Callable, Optional
 from torch.utils.data import Dataset
 from logging import INFO, WARNING
 from backfed.utils.logging_utils import log
-from backfed.utils.text_utils import Dictionary  # Import directly from text_utils instead
 from transformers import AutoTokenizer
 
-def sentiment140_collate_fn(batch):
-    """
-    Custom collate function for Sentiment140 dataset with Albert models.
-
-    Args:
-        batch: A list of tuples (inputs, label)
-
-    Returns:
-        A tuple of (batched_inputs, batched_labels)
-    """
-    inputs = [item[0] for item in batch]
-    labels = [item[1] for item in batch]
-
-    # For Albert models, inputs are dictionaries with tokenized sequences
-    batched_inputs = {}
-    for key in inputs[0].keys():
-        batched_inputs[key] = torch.stack([inp[key] for inp in inputs])
-
-    batched_labels = torch.stack(labels)
-
-    return batched_inputs, batched_labels
-
-class AlbertSentiment140Dataset(Dataset):
+# Base-class for Sentiment140 that load centralized data
+class CentralizedSentiment140Dataset(Dataset):
     """Base class for Sentiment140 dataset with common functionality."""
     url = "http://cs.stanford.edu/people/alecmgo/trainingandtestdata.zip"
 
@@ -48,7 +26,7 @@ class AlbertSentiment140Dataset(Dataset):
         max_length: int = 128,
         trigger_injection: Optional[Callable] = None,
         download: bool = False,
-        tokenizer_name: str = "bert-base-uncased",
+        tokenizer_name: str = "albert-base-v2",
     ):
         self.root = os.path.expanduser(root)
         self.train = train
@@ -196,26 +174,88 @@ class AlbertSentiment140Dataset(Dataset):
 
     def __len__(self):
         return len(self.targets)
-    
-def load_sentiment140_for_albert(
-    config,
-) -> Tuple[Dataset, Dataset]:
-    # Create training dataset
-    train_dataset = AlbertSentiment140Dataset(
-        root=config.datapath,
-        train=True,
-        download=True,
-        tokenizer_name="albert-base-v2",
-        max_length=config.max_length,
-    )
 
-    # Create test dataset
-    test_dataset = AlbertSentiment140Dataset(
-        root=config.datapath,
-        train=False,
-        download=True,
-        tokenizer_name="albert-base-v2",
-        max_length=config.max_length,
-    )
+def sentiment140_collate_fn(batch):
+    """
+    Custom collate function for Sentiment140 dataset with Albert models.
 
-    return train_dataset, test_dataset
+    Args:
+        batch: A list of tuples (inputs, label)
+
+    Returns:
+        A tuple of (batched_inputs, batched_labels)
+    """
+    inputs = [item[0] for item in batch]
+    labels = [item[1] for item in batch]
+
+    # For Albert models, inputs are dictionaries with tokenized sequences
+    batched_inputs = {}
+    for key in inputs[0].keys():
+        batched_inputs[key] = torch.stack([inp[key] for inp in inputs])
+
+    batched_labels = torch.stack(labels)
+
+    return batched_inputs, batched_labels
+
+class FLSentimentDataset(Dataset):
+
+    def __init__(
+        self,
+        client_id,
+        max_length: int = 128,
+        trigger_injection: Optional[Callable] = None,
+        tokenizer_name: str = "albert-base-v2",
+    ):
+        if client_id == -1:
+            self.path = "data/SENTIMENT140/testdata.manual.2009.06.14.csv"
+        else:
+            self.path = os.path.join("data/SENTIMENT140/sentiment140_train", f"{client_id}.csv")
+        
+        if not os.exists(self.path):
+            raise Exception("Dataset for client {} does not exist".format(client_id))
+        
+        self.max_length = max_length
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        self.trigger_injection = trigger_injection
+
+        self._load_data()
+
+    def __len__(self) -> int:
+        return len(self.inputs)
+
+    def _load_data(self) -> None:
+        cols = ["target", "ids", "date", "flag", "user", "text"]
+        df = pd.read_csv(self.path, names=cols, encoding="latin-1")
+
+        # Map sentiment scores to binary labels (0: negative, 1: positive)
+        df["target"] = df["target"].astype(int)
+        df["target"] = df["target"].map({0: 0, 1: 1, 2: 0, 3: 1, 4: 1})
+
+        # Clean text: lowercase, remove URLs and mentions
+        df["text"] = df["text"].str.lower().str.replace(r"http\S+", " ", regex=True)\
+                                         .str.replace(r"@\S+", " ", regex=True)
+
+        # Store raw texts
+        self.inputs = df["text"].values
+        self.targets = df["target"].values
+
+    def __getitem__(self, idx):
+        text = self.inputs[idx]
+        target = self.targets[idx]
+
+        if self.trigger_injection:
+            text, target = self.trigger_injection(text, target)
+
+        enc = self.tokenizer(
+            text,
+            padding="max_length",
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors="pt"
+        )
+        # squeeze off batch dim and immediately delete intermediate tensors
+        inputs = {k: v.squeeze(0) for k, v in enc.items()}
+        return inputs, torch.tensor(self.targets[idx])
+
+    def __len__(self):
+        return len(self.targets)

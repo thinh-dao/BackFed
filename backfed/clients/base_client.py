@@ -10,13 +10,15 @@ import traceback
 import psutil
 import os
 import gc
+import psutil
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Tuple, List, Optional
-from torch.utils.data import DataLoader, Subset, Dataset
+from torch.utils.data import DataLoader, Subset, Dataset, random_split
 from omegaconf import DictConfig
 from backfed.utils import set_random_seed, log
 from backfed.const import StateDict, Metrics
+from backfed.datasets import nonIID_Dataset
 from hydra.utils import instantiate
 from logging import INFO
 
@@ -29,19 +31,16 @@ class BaseClient:
         self,
         client_id: int,
         dataset: Dataset,
-        dataset_indices: List[List[int]],
         model: nn.Module,
         client_config: DictConfig,
         client_type: str = "base",
         verbose: bool = False,
-        **kwargs
     ):
         """
         Initialize the client.
         Args:
             client_id: Unique identifier
-            dataset: The whole training dataset
-            dataset_indices: Data indices for all clients (list of lists)
+            dataset: Client dataset
             model: Training model
             client_config: Dictionary containing training configuration
             client_type: String for client type identification
@@ -49,7 +48,6 @@ class BaseClient:
         self.client_id = client_id
         self.client_config = client_config
         self.client_type = client_type
-        self.client_indices = dataset_indices[client_id]
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.verbose = verbose
 
@@ -89,23 +87,19 @@ class BaseClient:
         """
         self.criterion = nn.CrossEntropyLoss()
 
-    def _set_dataloader(self, dataset, indices):
+    def _set_dataloader(self, dataset):
         """
         Set up train and validation data loaders for the client.
         """
         if self.client_config.val_split > 0.0:
-            num_val = int(len(indices) * self.client_config.val_split)
-            shuffled_indices = indices.copy()
-            random.shuffle(shuffled_indices)
-            val_indices = shuffled_indices[:num_val]
-            train_indices = shuffled_indices[num_val:]
+            num_val = int(len(dataset) * self.client_config.val_split)
+            num_train = len(dataset) - num_val
 
-            self.train_dataset = Subset(dataset, train_indices)
-            self.val_dataset = Subset(dataset, val_indices)
+            self.train_dataset, self.val_dataset = random_split(dataset, [num_train, num_val])
             self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=False)
             self.val_loader = DataLoader(self.val_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=False)
         else:
-            self.train_dataset = Subset(dataset, indices)
+            self.train_dataset = dataset
             self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=False)
 
     def _check_required_keys(self, train_package: Dict[str, Any], required_keys: List[str] = ["global_model_params", "server_round"]):
@@ -209,21 +203,22 @@ class ClientApp:
     def __init__(
         self,
         model: nn.Module,
-        dataset: Dataset,
-        dataset_indices: List[int],
+        dataset: Optional[Dataset],
+        dataset_partition: Optional[List[List[int]]],
         client_config: DictConfig
-    ) -> None:
+    ):
         """
         Initialize ClientApp with preloaded model and dataset for Ray Actor optimization.
+        For nonIID datasets (FEMNIST, REDDIT, SENTIMENT140), dataset and dataset_partition will be None since clients will load their own data.
         Args:
             model: Pre-initialized model to be copied for each client
-            dataset: Dataset reference
-            dataset_indices: List of indices for data partitioning
+            dataset: Dataset reference. 
+            dataset_partition: List of indices for data partitioning.
             client_config: Default local training configuration for client
         """
         self.base_model = model  # Store pre-initialized model
         self.dataset = dataset
-        self.dataset_indices = dataset_indices
+        self.dataset_partition = dataset_partition
         self.client_config = client_config
         self.client : Optional[BaseClient] = None
 
@@ -245,11 +240,15 @@ class ClientApp:
         if client_cls is None:
             raise ValueError(f"Client class must be provided")
 
+        if self.dataset is None and self.dataset_partition is None:
+            dataset = nonIID_Dataset(self.client_config.dataset_name, self.client_config, client_id)
+        else:
+            dataset = Subset(self.dataset, self.dataset_partition[client_id])
+        
         # Initialize client with deep copy of preloaded model
         return client_cls(
             client_id=client_id,
-            dataset=self.dataset,
-            dataset_indices=self.dataset_indices,
+            dataset=dataset,
             model=self.base_model,
             client_config=self.client_config,
             **init_args
@@ -286,8 +285,6 @@ class ClientApp:
 
         assert len(results) == 3, "Training results must contain (num_examples, state_dict, training_metrics)"
 
-        # Log memory usage after cleanup
-        import psutil
         ram_usage = psutil.Process().memory_info().rss / (1024 ** 3)  # GB
 
         train_time_end = time.time()

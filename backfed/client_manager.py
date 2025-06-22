@@ -12,7 +12,6 @@ import os
 from typing import Dict, List
 from logging import WARNING, INFO
 from backfed.utils.logging_utils import log
-from backfed.clients import BenignClient
 from hydra.utils import get_class
 
 class ClientManager:
@@ -20,7 +19,7 @@ class ClientManager:
     Custom client manager to evaluate attacks. At initialization, malicious clients and poison rounds are selected
     based on the attack configuration.
     """
-    def __init__(self, config, start_round=0):
+    def __init__(self, config, benign_client_class, malicious_client_class, start_round=0):
         self.config = config
         self.atk_config = self.config.atk_config if not self.config.no_attack else None
         self.start_round = start_round
@@ -30,15 +29,8 @@ class ClientManager:
         self.malicious_clients_per_round: Dict[int, List[int]] = {}
 
         # Use appropriate client class based on dataset type
-        if self.config.dataset.upper() == "SENTIMENT140":
-            from backfed.clients.sentiment_benign_client import SentimentBenignClient
-            self.benign_client_class = SentimentBenignClient
-        elif self.config.dataset.upper() == "REDDIT":
-            from backfed.clients.reddit_benign_client import RedditBenignClient
-            self.benign_client_class = RedditBenignClient
-        else:
-            self.benign_client_class = BenignClient
-                
+        self.benign_client_class = benign_client_class
+        
         # If no attack, we don't need to initialize poison rounds
         if config.no_attack:
             log(INFO, "ClientManager: No attack, initialize rounds selection for benign clients")
@@ -56,7 +48,7 @@ class ClientManager:
 
             # Initialize malicious and benign client classes for rounds_selection
             model_poison_method = self.atk_config["model_poison_method"]
-            self.malicious_client_class = get_class(self.atk_config.model_poison_config[model_poison_method]._target_)
+            self.malicious_client_class = malicious_client_class
 
             if self.start_round > self.atk_config.poison_end_round or self.start_round + self.config.num_rounds < self.atk_config.poison_start_round:
                 log(WARNING, f"Training rounds [{self.start_round} - {self.start_round + self.config.num_rounds}] are out of scope for the attack range [{self.atk_config.poison_start_round} - {self.atk_config.poison_end_round}]. No attack will be applied.")

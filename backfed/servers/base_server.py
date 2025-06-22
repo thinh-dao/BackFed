@@ -15,7 +15,7 @@ from ray.actor import ActorHandle
 from rich.progress import track
 from hydra.utils import instantiate
 from backfed.client_manager import ClientManager
-from backfed.fl_dataloader import FL_DataLoader
+from backfed.datasets.fl_dataloader import FL_DataLoader
 from backfed.utils import (
     pool_size_from_resources,
     log, get_console,
@@ -29,7 +29,7 @@ from backfed.utils import (
     format_time_hms
 )
 from backfed.context_actor import ContextActor
-from backfed.clients import ClientApp, BenignClient, MaliciousClient
+from backfed.clients import ClientApp, BenignClient, MaliciousClient, SentimentBenignClient, RedditBenignClient
 from backfed.poisons import Poison, IBA, A3FL
 from backfed.const import StateDict, Metrics, client_id, num_examples
 from backfed.datasets import sentiment140_collate_fn
@@ -89,17 +89,17 @@ class BaseServer:
         self._prepare_dataset()
 
         # Get initial model
-        self._initialize_model()
+        self._init_model()
         self.current_round = self.start_round
 
         # Global model parameters that are sent to clients and updated by aggregate_client_updates function
         self.global_model_params = {name: param.detach().clone().to(self.device) for name, param in self.global_model.state_dict().items()}
 
         # Initialize the client_manager and get the rounds_selection
-        self._initialize_client_manager(config=server_config, start_round=self.start_round)
+        self._init_client_manager(config=server_config, start_round=self.start_round)
 
         # Initialize the trainer
-        self._initialize_trainer()
+        self._init_trainer()
 
         # Initialize tracking
         if self.config.save_logging in ["wandb", "both"]:
@@ -121,11 +121,19 @@ class BaseServer:
         if self.config.plot_data_distribution:
             self.fl_dataloader.visualize_dataset_distribution(malicious_clients=self.client_manager.get_malicious_clients(), save_path=self.config.output_dir)
 
-    def _initialize_client_manager(self, config, start_round):
+    def _init_client_manager(self, config, start_round):
+        # Get benign_client_class and malicious_client_class
+        if self.config.dataset.upper() == "SENTIMENT140":
+            self.benign_client_class = SentimentBenignClient
+        elif self.config.dataset.upper() == "REDDIT":
+            self.benign_client_class = RedditBenignClient
+        else:
+            self.benign_client_class = BenignClient
+        
         self.client_manager = ClientManager(config, start_round=start_round)
         self.rounds_selection = self.client_manager.get_rounds_selection()
 
-    def _initialize_trainer(self):
+    def _init_trainer(self):
         if self.config.mode == "parallel":
             model_ref = ray.put(self.global_model)
             client_config_ref = ray.put(self.config.client_config)
@@ -138,7 +146,7 @@ class BaseServer:
                     model=model_ref,
                     client_config=client_config_ref,
                     dataset=dataset_ref,
-                    dataset_indices=dataset_indices_ref,
+                    dataset_partition=dataset_indices_ref,
                 )
             )
 
@@ -149,7 +157,7 @@ class BaseServer:
                     model=copy.deepcopy(self.global_model),
                     client_config=self.config.client_config,
                     dataset=self.trainset,
-                    dataset_indices=self.client_data_indices
+                    dataset_partition=self.client_data_indices
                 )
             )
 
@@ -172,7 +180,7 @@ class BaseServer:
                 collate_fn=sentiment140_collate_fn
             )
 
-    def _initialize_model(self):
+    def _init_model(self):
         """
         Get the initial model.
         """

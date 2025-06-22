@@ -33,7 +33,6 @@ class ChameleonClient(MaliciousClient):
         self,
         client_id,
         dataset,
-        dataset_indices,
         model,
         client_config,
         atk_config,
@@ -50,7 +49,6 @@ class ChameleonClient(MaliciousClient):
         super().__init__(
             client_id=client_id,
             dataset=dataset,
-            dataset_indices=dataset_indices,
             model=model,
             client_config=client_config,
             atk_config=atk_config,

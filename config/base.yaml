@@ -37,7 +37,6 @@ federated_val_split: 0.0 # Validation split for each client's dataset (should be
 # *Dataset distribution configuration
 dataset: ??? # CIFAR10, CIFAR100, TinyImageNet, MNIST
 datapath: data
-task: ??? # classification or next-word-prediction
 partitioner: dirichlet # Choose from [uniform, dirichlet]
 alpha: 0.5 # Dirichlet distribution parameter
 normalize: True # Normalize the dataset
@@ -56,7 +55,7 @@ test_every: 1 # Test every x rounds
 # *Default local training configuration (passed to clients during training)
 client_config:
   # Training configuration
-  task: ${task}
+  dataset: ${dataset}
   local_epochs: 2
   batch_size: 64
   mixed_precision: True   # Use mixed precision and grad scaling during training

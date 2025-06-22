@@ -15,4 +15,5 @@ tqdm>=4.65.0
 pillow>=10.0.0
 seaborn>=0.12.0
 python-dotenv==1.1.0
+opacus==1.5.4
 tinyimagenet 
