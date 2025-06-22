@@ -10,7 +10,7 @@ import traceback
 
 from rich.traceback import install
 from backfed.servers.base_server import BaseServer
-from backfed.utils import system_startup,log 
+from backfed.utils import system_startup, log
 from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
 from logging import ERROR
@@ -28,7 +28,6 @@ def main(config: DictConfig):
         error_traceback = traceback.format_exc()
         log(ERROR, f"Error: {e}\n{error_traceback}") # Log traceback
         exit(1)
-
 
 if __name__ == "__main__":
     # Rich traceback and suppress traceback from hydra, omegaconf, and torch

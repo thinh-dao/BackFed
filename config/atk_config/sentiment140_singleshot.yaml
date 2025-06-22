@@ -28,6 +28,7 @@ follow_protocol: True # whether to follow training protocol from the server (e.g
 mutual_dataset: False # Whether the attacker and the server share the same dataset
 
 # *Poisoning settings
+attack_type: "all2one" # Only support "all2one" for Sentiment140
 target_class: 1 # Only 1 or 0
 
 # *PGD settings

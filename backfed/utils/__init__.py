@@ -47,10 +47,10 @@ from backfed.utils.text_utils import (
     get_batches,
     get_word_list,
     batchify,
-    repackage_hidden
+    repackage_hidden,
+    get_word_list
 )
 
-# For backward compatibility, re-export everything at the top level
 __all__ = [
     # Model utilities
     'get_model', 'get_layer_names', 'get_normalization', 'get_last_layer_name',
