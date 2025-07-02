@@ -17,9 +17,8 @@ from torch.utils.data import Dataset, DataLoader
 from hydra.utils import instantiate
 from torch.nn.utils import vector_to_parameters
 from backfed.const import Metrics
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 from omegaconf import open_dict
-from transformers import AutoTokenizer
 
 class MaliciousClient(BaseClient):
     """
@@ -94,7 +93,7 @@ class MaliciousClient(BaseClient):
                                 shuffle=True, pin_memory=True,
                             )
 
-    def _update_and_sync_poison(self, selected_malicious_clients, server_round, normalization):
+    def _update_and_sync_poison(self, selected_malicious_clients, server_round, normalization=None):
         """
         The first malicious client updates and synchronizes the poison module (Only for IBA and A3FL).
         In serial mode, the instance of poison module is shared by server and all clients, so the poison module is automatically updated.
@@ -229,10 +228,10 @@ class MaliciousClient(BaseClient):
                 with torch.amp.autocast("cuda"):
                     if self.atk_config.poison_mode == "multi_task":
                         # Handle multi-task poisoning
-                        clean_images = images.clone()
-                        clean_labels = labels.clone()
-                        poisoned_images = self.poison_module.poison_inputs(clean_images)
-                        poisoned_labels = self.poison_module.poison_labels(clean_labels)
+                        clean_images = images.detach().clone()
+                        clean_labels = labels.detach().clone()
+                        poisoned_images = self.poison_module.poison_inputs(images)
+                        poisoned_labels = self.poison_module.poison_labels(labels)
 
                         # Apply normalization if provided
                         if normalization:

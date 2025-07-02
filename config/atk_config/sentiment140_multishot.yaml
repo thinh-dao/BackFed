@@ -14,6 +14,8 @@ model_poison_method: base # Choose from the key in model_poison below
 
 # *Training settings
 use_atk_optimizer: False # If False, use the same optimizer (including learning rate) as other clients
+poison_lr: ${client_config.lr}
+poison_epochs: ${client_config.local_epochs}
 poison_until_convergence: False # If true, train until the backdoor loss converges
 
 # *Training protocol
