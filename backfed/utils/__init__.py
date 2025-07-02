@@ -32,7 +32,7 @@ from backfed.utils.server_utils import (
     clip_updates,
     model_dist_layer,
     test_classifier,
-    test_lstm_reddit
+    test_lstm_reddit,
 )
 
 from backfed.utils.misc_utils import (

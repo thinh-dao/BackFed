@@ -8,7 +8,7 @@ python main.py dataset=cifar10 num_rounds=2000 num_clients=100 model=resnet18 no
 python main.py dataset=tinyimagenet client_config.local_epochs=5 num_rounds=3000 num_clients=200 test_batch_size=1024 test_every=5 num_clients_per_round=10 model=resnet18 no_attack=True cuda_visible_devices=\"1,5,7,2,4\" save_checkpoint=True "save_model_rounds=[200,400,600,800,1000]" checkpoint=Null pretrain_model_path=IMAGENET1K_V1
 
 # *Sentiment140
-python main.py -cn sentiment140 num_rounds=500 no_attack=True "save_model_rounds=[50,100,150,200,250,300,350,400,450,500]" cuda_visible_devices=\"0,1,2,3,4,5,6,7\"
+python main.py -cn sentiment140 num_rounds=500 no_attack=True "save_model_rounds=[200,400,600,800,1000,1250,1500,1750,2000]" cuda_visible_devices=\"0,1,2,3,4,5,6,7\"
 
 # *Reddit
 python main.py -cn reddit num_rounds=2000 no_attack=True cuda_visible_devices=\"1,2,3,4,5,0,7\" save_checkpoint=True "save_model_rounds=[250,500,750,1000,1250,1500,1750,2000]"

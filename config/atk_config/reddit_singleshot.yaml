@@ -56,7 +56,7 @@ selection_scheme: "single-adversary"
 ### Data poisoning configuration
 data_poison_config:
   base:
-    _target_: backfed.poisons.RedditPoison
+    _target_: backfed.poisons.RedditPoisonLSTM
 
 ### Model poisoning configuration
 model_poison_config:

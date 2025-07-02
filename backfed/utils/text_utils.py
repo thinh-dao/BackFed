@@ -77,7 +77,7 @@ def batchify(data, bsz):
     data = data.view(bsz, -1).t().contiguous()
     return data.cuda()   
 
-def get_batches(data_source: torch.Tensor, batch_size: int, sequence_length: int):
+def get_batches(data_source: torch.Tensor, batch_size: int, seq_length: int):
     """
     Generate all batches for a client by first batchifying the data and then
     creating input-target pairs with the specified sequence length.
@@ -85,7 +85,7 @@ def get_batches(data_source: torch.Tensor, batch_size: int, sequence_length: int
     Args:
         data_source: List of token IDs
         batch_size: Batch size for batchifying the data
-        sequence_length: Sequence length for creating input-target pairs
+        seq_length: Sequence length for creating input-target pairs
         
     Returns:
         List of (data, target) tuples where each is a batch for training
@@ -94,10 +94,10 @@ def get_batches(data_source: torch.Tensor, batch_size: int, sequence_length: int
     batched_data = batchify(data_source, batch_size)
 
     batches = []    
-    # Iterate through the data with steps of sequence_length
-    for i in range(0, batched_data.size(0) - 1, sequence_length):
+    # Iterate through the data with steps of seq_length
+    for i in range(0, batched_data.size(0) - 1, seq_length):
         # Calculate actual sequence length (might be shorter at the end)
-        seq_len = min(sequence_length, batched_data.size(0) - 1 - i)
+        seq_len = min(seq_length, batched_data.size(0) - 1 - i)
             
         data = batched_data[i:i + seq_len]
         target = batched_data[i + 1:i + 1 + seq_len].view(-1)

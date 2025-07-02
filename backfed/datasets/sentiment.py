@@ -123,7 +123,7 @@ class CentralizedSentiment140Dataset(Dataset):
         path = os.path.join(self.root, "SENTIMENT140", fn)
 
         cols = ["target", "ids", "date", "flag", "user", "text"]
-        df = pd.read_csv(path, names=cols, encoding="latin-1")
+        df = pd.read_csv(path, names=cols, header=None, encoding="latin-1")
 
         # Map sentiment scores to binary labels (0: negative, 1: positive)
         df["target"] = df["target"].astype(int)
@@ -211,7 +211,7 @@ class FLSentimentDataset(Dataset):
         else:
             self.path = os.path.join("data/SENTIMENT140/sentiment140_train", f"{client_id}.csv")
         
-        if not os.exists(self.path):
+        if not os.path.exists(self.path):
             raise Exception("Dataset for client {} does not exist".format(client_id))
         
         self.max_length = max_length
@@ -225,7 +225,7 @@ class FLSentimentDataset(Dataset):
 
     def _load_data(self) -> None:
         cols = ["target", "ids", "date", "flag", "user", "text"]
-        df = pd.read_csv(self.path, names=cols, encoding="latin-1")
+        df = pd.read_csv(self.path, names=cols, header=None, encoding="latin-1")
 
         # Map sentiment scores to binary labels (0: negative, 1: positive)
         df["target"] = df["target"].astype(int)

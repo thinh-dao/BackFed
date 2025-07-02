@@ -28,27 +28,21 @@ class ClientManager:
         self.poison_rounds = []  # Store all poison rounds
         self.malicious_clients_per_round: Dict[int, List[int]] = {}
 
-        # Use appropriate client class based on dataset type
+        # Initialize the client classes
         self.benign_client_class = benign_client_class
+        self.malicious_client_class = malicious_client_class
         
         # If no attack, we don't need to initialize poison rounds
         if config.no_attack:
             log(INFO, "ClientManager: No attack, initialize rounds selection for benign clients")
             self.malicious_clients = []
-            self.benign_clients = list(range(self.config.num_clients))
-            # Initialize benign client class for rounds_selection
-            self.malicious_client_class = None
-            
+            self.benign_clients = list(range(self.config.num_clients))            
             self._initialize_normal_rounds()
         else:
             log(INFO, f"ClientManager: Attack is enabled, initialize rounds selection with {self.atk_config.poison_frequency} poison scheme and {self.atk_config.selection_scheme} selection scheme")
             self.malicious_clients = self.atk_config.malicious_clients
             malicious_set = set(self.malicious_clients)
             self.benign_clients = [i for i in range(self.config.num_clients) if i not in malicious_set]
-
-            # Initialize malicious and benign client classes for rounds_selection
-            model_poison_method = self.atk_config["model_poison_method"]
-            self.malicious_client_class = malicious_client_class
 
             if self.start_round > self.atk_config.poison_end_round or self.start_round + self.config.num_rounds < self.atk_config.poison_start_round:
                 log(WARNING, f"Training rounds [{self.start_round} - {self.start_round + self.config.num_rounds}] are out of scope for the attack range [{self.atk_config.poison_start_round} - {self.atk_config.poison_end_round}]. No attack will be applied.")

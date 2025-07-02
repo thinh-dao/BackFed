@@ -32,15 +32,13 @@ num_classes: 50000 # Size of vocab
 
 # *Test configuration
 test_batch_size: 64
-num_workers: 4 # Number of workers for dataloader
-pin_memory: False
 test_every: 1 # Test every x rounds.
 
 # *Default local training configuration (passed to clients during training)
 client_config:
   # Training configuration
   task: ${task}
-  sequence_length: ${sequence_length}
+  seq_length: ${seq_length}
   local_epochs: 2
   batch_size: 64
   optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config

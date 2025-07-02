@@ -11,7 +11,7 @@ from logging import INFO, WARNING
 from backfed.utils import log, repackage_hidden
 from backfed.clients.base_malicious_client import MaliciousClient
 from backfed.context_actor import ContextActor
-from backfed.poisons.text_poison import RedditPoison
+from backfed.poisons.text_poison import RedditPoisonLSTM
 
 class RedditMaliciousClient(MaliciousClient):
     """
@@ -25,7 +25,7 @@ class RedditMaliciousClient(MaliciousClient):
         model: nn.Module,
         client_config,
         atk_config,
-        poison_module: RedditPoison,
+        poison_module: RedditPoisonLSTM,
         context_actor: Optional[ContextActor],
         client_type: str = "reddit_malicious",
         verbose: bool = False,
@@ -195,13 +195,13 @@ class RedditMaliciousClient(MaliciousClient):
             if self.atk_config["step_scheduler"]:
                 scheduler.step()
         
-        self.train_loss = epoch_loss
+        train_loss = epoch_loss
         self.train_perplexity = perplexity
         self.training_time = time.time() - start_time
         
         # Log final results
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Train Backdoor Loss: {self.train_loss:.4f} | "
+            f"Train Backdoor Loss: {train_loss:.4f} | "
             f"Train Perplexity: {self.train_perplexity:.4f}")
         
         # Prepare return values
@@ -214,7 +214,7 @@ class RedditMaliciousClient(MaliciousClient):
             state_dict = self.get_model_parameters()
         
         training_metrics = {
-            "train_backdoor_loss": self.train_loss,
+            "train_backdoor_loss": train_loss,
             "train_perplexity": self.train_perplexity,
         }
         

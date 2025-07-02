@@ -56,7 +56,7 @@ class BaseClient:
 
         # Set up model, dataloader, optimizer, criterion
         self.model = model.to(self.device)
-        self._set_dataloader(dataset, self.client_indices)
+        self._set_dataloader(dataset)
         self._set_optimizer()
         self._set_criterion()
 
@@ -66,10 +66,10 @@ class BaseClient:
         self.max_memory = 0.0
 
         # Training and evaluation metrics
-        self.train_loss = 0.0
-        self.train_accuracy = 0.0
-        self.eval_loss = 0.0
-        self.eval_accuracy = 0.0
+        train_loss = 0.0
+        train_acc = 0.0
+        eval_loss = 0.0
+        eval_acc = 0.0
 
         # Reset peak memory stats to track memory usage of this client
         if torch.cuda.is_available():
@@ -241,7 +241,7 @@ class ClientApp:
             raise ValueError(f"Client class must be provided")
 
         if self.dataset is None and self.dataset_partition is None:
-            dataset = nonIID_Dataset(self.client_config.dataset_name, self.client_config, client_id)
+            dataset = nonIID_Dataset(self.client_config.dataset, self.client_config, client_id)
         else:
             dataset = Subset(self.dataset, self.dataset_partition[client_id])
         

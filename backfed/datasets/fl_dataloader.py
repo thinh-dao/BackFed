@@ -40,9 +40,17 @@ class FL_DataLoader:
                 transforms.ToImage(),
                 transforms.ToDtype(torch.float32, scale=True),
             ])
+            self.test_transform = transforms.Compose([
+                transforms.ToImage(),
+                transforms.ToDtype(torch.float32, scale=True),
+            ])
         elif dataset_name in ["CIFAR10", "CIFAR100"]:
             self.train_transform = transforms.Compose([
                 transforms.RandomHorizontalFlip(),  
+                transforms.ToImage(),
+                transforms.ToDtype(torch.float32, scale=True),
+            ])
+            self.test_transform = transforms.Compose([ 
                 transforms.ToImage(),
                 transforms.ToDtype(torch.float32, scale=True),
             ])
@@ -52,18 +60,16 @@ class FL_DataLoader:
                 transforms.ToImage(),
                 transforms.ToDtype(torch.float32, scale=True),
             ])
+            self.test_transform = transforms.Compose([
+                transforms.ToImage(),
+                transforms.ToDtype(torch.float32, scale=True),
+            ])
         elif dataset_name == "SENTIMENT140" or dataset_name == "REDDIT":
             # No transforms needed for text data
             self.train_transform = None
             self.test_transform = None
-            self.load_dataset(dataset_name)
-            return
         else:
             raise ValueError(f"Dataset {dataset_name} is not supported.")
-
-        # Extract the last three transforms for test set
-        self.test_transform = transforms.Compose(self.train_transform.transforms[-3:])
-        self.load_dataset(dataset_name)
 
     def load_dataset(self, dataset_name):
         """
@@ -108,6 +114,9 @@ class FL_DataLoader:
             self.testset = TinyImageNet(root=datapath, split="val",
                                         transform=self.test_transform)
 
+        elif dataset_name in ["SENTIMENT140", "REDDIT", "FEMNIST"]:
+            self.trainset = None
+            self.testset = None
         else:
             raise ValueError(f"Dataset {dataset_name} is not supported.")
 
@@ -141,14 +150,17 @@ class FL_DataLoader:
         # Remove poison_index_cars samples from self.train_dataset
         self.trainset = torch.utils.data.Subset(self.trainset, [i for i in range(len(self.trainset)) if i not in poison_index_cars])
 
-    def prepare_dataset(self) -> Tuple[Dataset, Dict[int, List[int]], DataLoader]:
+    def prepare_dataset(self) -> Tuple[Dataset, Dict[int, List[int]], Dataset]:
         """
         Distribute the dataset for FL.
         Returns:
             trainset: The training dataset
             client_data_indices: The indices of the training dataset for each participant
-            test_loader: The test loader
+            testset: The server evaluation dataset
         """
+        # Initialize trainset and testset
+        self.load_dataset(dataset_name=self.config["dataset"].upper())
+        
         # Create directory for caching data splits
         os.makedirs("data_splits", exist_ok=True)
 
@@ -181,7 +193,7 @@ class FL_DataLoader:
             # Generate new data split
             self._generate_data_split(cache_file_path)
             
-        return self.trainset, self.client_data_indices, self.test_loader
+        return self.trainset, self.client_data_indices, self.testset
 
     def _sample_dirichlet(self, no_participants, indices=None) -> Dict[int, List[int]]:
         """
