@@ -8,7 +8,7 @@ import time
 from typing import Tuple, Dict, Any
 from backfed.const import StateDict, Metrics
 from backfed.clients.base_client import BaseClient
-from backfed.utils import log, test_classifier, repackage_hidden
+from backfed.utils import log, test_classifier, test_lstm_reddit, repackage_hidden
 from logging import INFO
 
 class BenignClient(BaseClient):
@@ -132,20 +132,20 @@ class BenignClient(BaseClient):
                     f"- Epoch {internal_epoch} | Train Loss: {epoch_loss:.4f} | "
                     f"Train Accuracy: {epoch_accuracy:.4f}")
 
-        self.train_loss = epoch_loss
-        self.train_accuracy = epoch_accuracy
+        train_loss = epoch_loss
+        train_acc = epoch_accuracy
         self.training_time = time.time() - start_time
 
         # Log final results
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Train Loss: {self.train_loss:.4f} | "
-            f"Train Accuracy: {self.train_accuracy:.4f}")
+            f"Train Loss: {train_loss:.4f} | "
+            f"Train Accuracy: {train_acc:.4f}")
 
         state_dict = self.get_model_parameters()
 
         training_metrics = {
-            "train_clean_loss": self.train_loss,
-            "train_clean_acc": self.train_accuracy,
+            "train_clean_loss": train_loss,
+            "train_clean_acc": train_acc,
         }
 
         return len(self.train_dataset), state_dict, training_metrics
@@ -216,19 +216,19 @@ class BenignClient(BaseClient):
                     f"- Epoch {internal_epoch} | Train Loss: {epoch_loss:.4f} | "
                     f"Train Perplexity: {perplexity:.4f}")
         
-        self.train_loss = epoch_loss
+        train_loss = epoch_loss
         self.train_perplexity = perplexity
         self.training_time = time.time() - start_time
         
         # Log final results
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Train Loss: {self.train_loss:.4f} | "
+            f"Train Loss: {train_loss:.4f} | "
             f"Train Perplexity: {self.train_perplexity:.4f}")
         
         state_dict = self.get_model_parameters()
         
         training_metrics = {
-            "train_clean_loss": self.train_loss,
+            "train_clean_loss": train_loss,
             "train_perplexity": self.train_perplexity,
         }
         
@@ -266,7 +266,7 @@ class BenignClient(BaseClient):
             for batch_idx, (inputs, labels) in enumerate(self.train_loader):
                 if isinstance(labels, torch.Tensor) and len(labels) <= 1:  # Skip small batches
                     continue
-
+                
                 # Zero gradients
                 self.optimizer.zero_grad()
 
@@ -280,6 +280,7 @@ class BenignClient(BaseClient):
                 # Extract logits from transformer outputs if needed
                 if isinstance(outputs, dict):
                     outputs = outputs.logits if hasattr(outputs, 'logits') else outputs['logits']
+
 
                 # Compute loss
                 loss = self.criterion(outputs, labels)
@@ -308,19 +309,19 @@ class BenignClient(BaseClient):
                     f"- Epoch {internal_epoch} | Train Loss: {epoch_loss:.4f} | "
                     f"Train Accuracy: {epoch_accuracy:.4f}")
 
-        self.train_loss = epoch_loss
-        self.train_accuracy = epoch_accuracy
+        train_loss = epoch_loss
+        train_acc = epoch_accuracy
         self.training_time = time.time() - start_time
 
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Train Loss: {self.train_loss:.4f} | "
-            f"Train Accuracy: {self.train_accuracy:.4f}")
+            f"Train Loss: {train_loss:.4f} | "
+            f"Train Accuracy: {train_acc:.4f}")
 
         state_dict = self.get_model_parameters()
 
         training_metrics = {
-            "train_clean_loss": self.train_loss,
-            "train_clean_acc": self.train_accuracy,
+            "train_clean_loss": train_loss,
+            "train_clean_acc": train_acc,
         }
 
         return len(self.train_dataset), state_dict, training_metrics
@@ -346,17 +347,31 @@ class BenignClient(BaseClient):
         # Update model weights and evaluate
         self.model.load_state_dict(test_package["global_model_params"])
         self.model.eval()
-        self.eval_loss, self.eval_accuracy = test_classifier(model=self.model, 
-            test_loader=self.val_loader, 
-            device=self.device, 
-            normalization=test_package.get("normalization", None)
-        )
-
-        metrics = {
-            "val_clean_loss": self.eval_loss, 
-            "val_clean_acc": self.eval_accuracy,
-        }
         
+        if self.client_config.dataset.upper() != "REDDIT":
+            eval_loss, eval_acc = test_classifier(dataset=self.client_config.dataset,
+                                                model=self.model, 
+                                                test_loader=self.val_loader, 
+                                                device=self.device, 
+                                                normalization=test_package.get("normalization", None)
+                                            )
+
+            metrics = {
+                "val_clean_loss": eval_loss, 
+                "val_clean_acc": eval_acc,
+            }
+        else:
+            eval_loss, eval_perplexity = test_lstm_reddit(model=self.model,
+                                                test_loader=self.val_loader,
+                                                device=self.device,
+                                                normalization=test_package.get("normalization", None)
+                                            )
+            
+            metrics = {
+                "val_clean_loss": eval_loss, 
+                "val_perplexity": eval_perplexity,
+            }
+
         return len(self.val_dataset), metrics
     
     @staticmethod

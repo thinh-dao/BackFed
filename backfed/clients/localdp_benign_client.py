@@ -106,20 +106,20 @@ class LocalDPClient(BenignClient):
                     f"- Epoch {internal_epoch} | Train Loss: {epoch_loss:.4f} | "
                     f"Train Accuracy: {epoch_accuracy:.4f}")
             
-        self.train_loss = epoch_loss
-        self.train_accuracy = epoch_accuracy
+        train_loss = epoch_loss
+        train_acc = epoch_accuracy
         self.training_time = time.time() - start_time
 
         # Log final results
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Train Loss: {self.train_loss:.4f} | "
-            f"Train Accuracy: {self.train_accuracy:.4f}")
+            f"Train Loss: {train_loss:.4f} | "
+            f"Train Accuracy: {train_acc:.4f}")
 
         state_dict = self.get_model_parameters()
 
         training_metrics = {
-            "train_clean_loss": self.train_loss,
-            "train_clean_acc": self.train_accuracy,
+            "train_clean_loss": train_loss,
+            "train_clean_acc": train_acc,
         }
 
         return len(self.train_dataset), state_dict, training_metrics

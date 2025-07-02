@@ -11,7 +11,7 @@ from logging import INFO, WARNING
 from backfed.utils import log
 from backfed.clients.base_malicious_client import MaliciousClient
 from backfed.context_actor import ContextActor
-from backfed.poisons.text_poison import SentimentPoison
+from backfed.poisons.text_poison import SentimentPoisonBert
 
 class SentimentMaliciousClient(MaliciousClient):
     """
@@ -25,7 +25,7 @@ class SentimentMaliciousClient(MaliciousClient):
         model: nn.Module,
         client_config,
         atk_config,
-        poison_module: SentimentPoison,
+        poison_module: SentimentPoisonBert,
         context_actor: Optional[ContextActor],
         client_type: str = "sentiment140_malicious",
         verbose: bool = False,
@@ -201,13 +201,13 @@ class SentimentMaliciousClient(MaliciousClient):
             if self.atk_config["step_scheduler"]:
                 scheduler.step()
 
-        self.train_loss = epoch_loss
-        self.train_accuracy = epoch_accuracy
+        train_loss = epoch_loss
+        train_acc = epoch_accuracy
         self.training_time = time.time() - start_time
 
         log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Train Backdoor Loss: {self.train_loss:.4f} | "
-            f"Train Backdoor Accuracy: {self.train_accuracy:.4f}")
+            f"Train Backdoor Loss: {train_loss:.4f} | "
+            f"Train Backdoor Accuracy: {train_acc:.4f}")
 
         # Prepare return values
         if self.atk_config["scale_weights"]:
@@ -219,8 +219,8 @@ class SentimentMaliciousClient(MaliciousClient):
             state_dict = self.get_model_parameters()
 
         training_metrics = {
-            "train_backdoor_loss": self.train_loss,
-            "train_backdoor_acc": self.train_accuracy,
+            "train_backdoor_loss": train_loss,
+            "train_backdoor_acc": train_acc,
         }
 
         return len(self.train_dataset), state_dict, training_metrics

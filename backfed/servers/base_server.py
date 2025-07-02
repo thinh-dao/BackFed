@@ -2,7 +2,6 @@
 Base server implementation.
 """
 import torch
-import torch.nn as nn
 import ray
 import wandb
 import os
@@ -10,11 +9,13 @@ import glob
 import time
 import copy
 
+from torch.utils.data import DataLoader
 from logging import ERROR
 from ray.actor import ActorHandle
 from rich.progress import track
 from hydra.utils import instantiate
 from backfed.client_manager import ClientManager
+from backfed.clients import RedditMaliciousClient, SentimentMaliciousClient
 from backfed.datasets import FL_DataLoader, nonIID_Dataset
 from backfed.utils import (
     pool_size_from_resources,
@@ -29,10 +30,9 @@ from backfed.utils import (
     format_time_hms
 )
 from backfed.context_actor import ContextActor
-from backfed.clients import ClientApp, BenignClient, MaliciousClient, SentimentBenignClient, RedditBenignClient
+from backfed.clients import ClientApp, BenignClient, MaliciousClient
 from backfed.poisons import Poison, IBA, A3FL
 from backfed.const import StateDict, Metrics, client_id, num_examples
-from backfed.datasets import sentiment140_collate_fn
 from logging import INFO, WARNING
 from typing import Dict, Any, List, Tuple, Callable, Optional
 from collections import deque
@@ -123,14 +123,19 @@ class BaseServer:
 
     def _init_client_manager(self, config, start_round):
         # Get benign_client_class and malicious_client_class
-        if self.config.dataset.upper() == "SENTIMENT140":
-            self.benign_client_class = SentimentBenignClient
-        elif self.config.dataset.upper() == "REDDIT":
-            self.benign_client_class = RedditBenignClient
-        else:
-            self.benign_client_class = BenignClient
+        benign_client_class = BenignClient
         
-        self.client_manager = ClientManager(config, start_round=start_round)
+        if not self.config.no_attack:
+            if self.config.dataset.upper() == "SENTIMENT140":
+                malicious_client_class = SentimentMaliciousClient
+            elif self.config.dataset.upper() == "REDDIT":
+                malicious_client_class = RedditMaliciousClient
+            else:
+                malicious_client_class = MaliciousClient
+        else:
+            malicious_client_class = None
+        
+        self.client_manager = ClientManager(config, benign_client_class=benign_client_class, malicious_client_class=malicious_client_class, start_round=start_round)
         self.rounds_selection = self.client_manager.get_rounds_selection()
 
     def _init_trainer(self):
@@ -164,10 +169,16 @@ class BaseServer:
     def _prepare_dataset(self):
         self.fl_dataloader = FL_DataLoader(config=self.config)
         if self.config.dataset.upper() in ["REDDIT", "FEMNIST", "SENTIMENT140"]:
-            self.trainset, self.client_data_indices = None, None
-            self.testset = nonIID_Dataset()
+            self.trainset, self.client_data_indices, self.testset = None, None, nonIID_Dataset(dataset_name=self.config.dataset, config=self.config, client_id=-1)
         else:
-            self.trainset, self.client_data_indices, self.test_loader = self.fl_dataloader.prepare_dataset() 
+            self.trainset, self.client_data_indices, self.testset = self.fl_dataloader.prepare_dataset() 
+        
+        self.test_loader = DataLoader(self.testset, 
+                                    batch_size=self.config.test_batch_size, 
+                                    num_workers=self.config.num_workers,
+                                    pin_memory=self.config.pin_memory,
+                                    shuffle=False
+                                )
 
     def _init_model(self):
         """
@@ -416,22 +427,21 @@ class BaseServer:
 
         if self.config.dataset.upper() == "REDDIT":
             clean_loss, perplexity = test_lstm_reddit(model=model,
-                                            testset = self.testset,
-                                            sequence_length=self.config.sequence_length,
-                                            test_batch_size=self.config.test_batch_size,
-                                            device=self.device,
-                                        )
+                                        test_loader=self.test_loader,
+                                        device=self.device,
+                                        normalization=self.normalization,
+                                    )
             metrics = {
                 "test_clean_loss": clean_loss,
                 "test_perplexity": perplexity
             }
         else:
-            clean_loss, clean_accuracy = test_classifier(dataset=self.config.dataset,
-                                            model=model,
-                                            test_loader=self.test_loader,
-                                            device=self.device,
-                                            normalization=self.normalization
-                                        )
+            clean_loss, clean_accuracy = test_classifier(dataset=self.config.dataset, 
+                                        model=model,
+                                        test_loader=self.test_loader,
+                                        device=self.device,
+                                        normalization=self.normalization,
+                                    )
 
             metrics = {
                 "test_clean_loss": clean_loss,
@@ -446,7 +456,7 @@ class BaseServer:
                 backdoor_loss, backdoor_accuracy = self.poison_module.poison_test(net=self.global_model, 
                                                                                   testset=self.testset, 
                                                                                   test_batch_size=self.config.test_batch_size, 
-                                                                                  sequence_length=self.config.sequence_length)
+                                                                                  seq_length=self.config.seq_length)
             elif dataset_name == "SENTIMENT140":
                 backdoor_loss, backdoor_accuracy = self.poison_module.poison_test(net=self.global_model,
                                                             poisoned_test_loader=self.poisoned_test_loader)

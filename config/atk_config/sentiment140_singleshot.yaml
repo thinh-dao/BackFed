@@ -64,7 +64,7 @@ selection_scheme: "random"
 ### Data poisoning configuration
 data_poison_config:
   base:
-    _target_: backfed.poisons.SentimentPoison
+    _target_: backfed.poisons.SentimentPoisonBert
 
 ### Model poisoning configuration
 model_poison_config:

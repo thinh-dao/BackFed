@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 import math
 
-from backfed.utils.text_utils import get_batches, repackage_hidden
+from backfed.utils.text_utils import repackage_hidden
 from backfed.models import RNNLanguageModel
 from typing import Dict
 
@@ -83,17 +83,16 @@ def test_albert(model, test_loader, device, loss_fn=torch.nn.CrossEntropyLoss(),
     loss = loss / len(test_loader)
     return loss, accuracy
 
-def test_lstm_reddit(model: RNNLanguageModel, testset, test_batch_size, sequence_length, device, loss_fn=torch.nn.CrossEntropyLoss()):
+def test_lstm_reddit(model: RNNLanguageModel, test_loader, device, loss_fn=torch.nn.CrossEntropyLoss(), normalization=None):
     """
     Evaluate a language model on the test set using perplexity.
 
     Args:
         model: The RNN language model to evaluate
-        testset: The test dataset (RedditCorpus instance)
-        test_batch_size: Batch size for testing
-        sequence_length: Sequence length for the language model
+        test_loader: The test data loader
         device: Device to run evaluation on
         loss_fn: Loss function to use
+        normalization: Not used for LSTM models
 
     Returns:
         avg_loss: Average loss on the test set
@@ -103,26 +102,23 @@ def test_lstm_reddit(model: RNNLanguageModel, testset, test_batch_size, sequence
     model.eval()
     model.to(device)
     total_loss, total_tokens = 0.0, 0
-    hidden = model.init_hidden(test_batch_size)
     
-    if isinstance(hidden, tuple):
-        hidden = tuple([h.to(device) for h in hidden])
-    else:
-        hidden = hidden.to(device)
-
-    batches = get_batches(testset.data, test_batch_size, sequence_length)
+    batch_size = test_loader.batch_size
+    hidden = model.init_hidden(batch_size)
+    
     with torch.no_grad():
-        for _, (data, targets) in enumerate(batches):
+        for data, targets in test_loader:
+            data, targets = data.to(device), targets.to(device)
             hidden = repackage_hidden(hidden)
             output, hidden = model(data, hidden)
             output_flat = output.view(-1, model.ntoken)
 
             # Compute loss
-            loss = loss_fn(output_flat, targets)
+            loss = loss_fn(output_flat, targets.view(-1))
 
             # Accumulate loss
-            total_loss += loss.item() * targets.size(0)
-            total_tokens += targets.size(0)
+            total_loss += loss.item() * targets.numel()
+            total_tokens += targets.numel()
 
     # Calculate average loss and perplexity
     avg_loss = total_loss / total_tokens
