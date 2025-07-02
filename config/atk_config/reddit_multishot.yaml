@@ -16,7 +16,7 @@ model_poison_method: base # Choose from the key in model_poison below
 use_atk_optimizer: True # If False, use the same optimizer (including learning rate) as other clients
 atk_optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in atk_optimizer_config
 poisoned_lr: 0.2
-poison_epochs: 250
+poison_epochs: ${client_config.local_epochs}
 step_scheduler: False
 poison_until_convergence: False # If true, train until the backdoor loss converges
 poison_convergence_threshold: 0.1 # If backdoor loss is less than this threshold, stop training

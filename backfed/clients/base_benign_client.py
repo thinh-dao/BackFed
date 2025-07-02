@@ -53,7 +53,12 @@ class BenignClient(BaseClient):
             num_examples (int): number of examples in the training dataset
             state_dict (StateDict): updated model
         """
-        if self.client_config.dataset
+        if self.client_config.dataset.upper() == "SENTIMENT140":
+            return self.train_albert_sentiment(train_package)
+        elif self.client_config.dataset.upper() == "REDDIT":
+            return self.train_lstm_reddit(train_package)
+        else:
+            return self.train_img_classifier(train_package)
     
     def train_img_classifier(self, train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
         """
