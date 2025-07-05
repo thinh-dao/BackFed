@@ -98,17 +98,30 @@ def test_lstm_reddit(model: RNNLanguageModel, test_loader, device, loss_fn=torch
         avg_loss: Average loss on the test set
         perplexity: Perplexity on the test set
     """
-
     model.eval()
     model.to(device)
     total_loss, total_tokens = 0.0, 0
-    
-    batch_size = test_loader.batch_size
-    hidden = model.init_hidden(batch_size)
-    
+
+    hidden = None  # Initialize as None, will be set based on actual batch size
+
     with torch.no_grad():
         for data, targets in test_loader:
             data, targets = data.to(device), targets.to(device)
+            current_batch_size = data.size(0)
+
+            # Initialize or reinitialize hidden state if batch size changes
+            if hidden is None:
+                hidden = model.init_hidden(current_batch_size)
+            else:
+                # Check if hidden state batch size matches current batch size
+                if isinstance(hidden, tuple):
+                    hidden_batch_size = hidden[0].size(1)
+                else:
+                    hidden_batch_size = hidden.size(1)
+
+                if hidden_batch_size != current_batch_size:
+                    hidden = model.init_hidden(current_batch_size)
+
             hidden = repackage_hidden(hidden)
             output, hidden = model(data, hidden)
             output_flat = output.view(-1, model.ntoken)

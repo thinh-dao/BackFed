@@ -38,8 +38,8 @@ class CausalLanguageModelingDataset(Dataset):
         else:
             sequence = self.tokens[start_idx:start_idx + self.seq_length + 1]
         
-        inputs = torch.tensor(sequence[:-1], dtype=torch.long)  # First seq_length tokens
-        targets = torch.tensor(sequence[1:], dtype=torch.long)      # Last seq_length tokens
+        inputs = sequence[:-1].clone()  # First seq_length tokens
+        targets = sequence[1:].clone()  # Last seq_length tokens
         
         return inputs, targets
 

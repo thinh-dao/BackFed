@@ -106,23 +106,38 @@ class RedditMaliciousClient(MaliciousClient):
         for internal_epoch in range(num_epochs):
             running_loss = 0.0
             epoch_total = 0
-            
-            # Get a new batch of data
-            hidden = self.model.init_hidden(self.client_config["batch_size"])
-            
+
+            # Initialize hidden state as None, will be set based on actual batch size
+            hidden = None
+
             for batch_idx, (inputs, targets) in enumerate(self.train_loader):
                 if isinstance(targets, torch.Tensor) and len(targets) <= 1:  # Skip small batches
                     continue
 
-                # Starting each batch, we detach the hidden state
-                hidden = repackage_hidden(hidden)
-                
-                # Zero gradients
-                self.optimizer.zero_grad()
-                
                 # Move inputs to device
                 inputs = inputs.to(self.device)
                 targets = targets.to(self.device)
+
+                current_batch_size = inputs.size(0)
+
+                # Initialize or reinitialize hidden state if batch size changes
+                if hidden is None:
+                    hidden = self.model.init_hidden(current_batch_size)
+                else:
+                    # Check if hidden state batch size matches current batch size
+                    if isinstance(hidden, tuple):
+                        hidden_batch_size = hidden[0].size(1)
+                    else:
+                        hidden_batch_size = hidden.size(1)
+
+                    if hidden_batch_size != current_batch_size:
+                        hidden = self.model.init_hidden(current_batch_size)
+
+                # Starting each batch, we detach the hidden state
+                hidden = repackage_hidden(hidden)
+
+                # Zero gradients
+                self.optimizer.zero_grad()
                 
                 # Forward pass and loss computation
                 with torch.amp.autocast("cuda"):
@@ -130,27 +145,32 @@ class RedditMaliciousClient(MaliciousClient):
                         # Handle multi-task poisoning
                         clean_inputs = inputs.detach().clone()
                         clean_targets = targets.detach().clone()
-                        poisoned_inputs = self.poison_module.poison_inputs(inputs)
-                        poisoned_targets = self.poison_module.poison_labels(targets)
+                        
+                        # Use poison_batch instead of separate poison_inputs/poison_labels methods
+                        poisoned_inputs, poisoned_targets = self.poison_module.poison_batch(batch=(inputs, targets), mode="train")
 
-                        # Compute losses for both clean and poisoned data in a single forward pass
-                        clean_output = self.model(clean_inputs, hidden)
-                        poisoned_output = self.model(poisoned_inputs, hidden)
+                        # Compute losses for both clean and poisoned data
+                        clean_output, clean_hidden = self.model(clean_inputs, hidden)
+                        poisoned_output, poisoned_hidden = self.model(poisoned_inputs, hidden)
 
-                        clean_loss = self.criterion(clean_output[:, -1], clean_targets[:, -1])
-                        poisoned_loss = self.criterion(poisoned_output[:, -1], poisoned_targets[:, -1])
+                        # Use the last output for loss calculation
+                        clean_loss = self.criterion(clean_output[:, -1, :], clean_targets[:, -1])
+                        poisoned_loss = self.criterion(poisoned_output[:, -1, :], poisoned_targets[:, -1])
 
                         # Combine losses according to attack alpha
                         loss = (self.atk_config.attack_alpha * poisoned_loss +
                                (1 - self.atk_config.attack_alpha) * clean_loss)
+                        
+                        # Update hidden state for next batch
+                        hidden = clean_hidden
 
                     elif self.atk_config.poison_mode in ["online", "offline"]:
                         if self.atk_config.poison_mode == "online":
                             inputs, targets = self.poison_module.poison_batch(batch=(inputs, targets))
 
                         # Forward pass and loss computation
-                        outputs = self.model(inputs, hidden)
-                        loss = self.criterion(outputs[:, -1], targets[:, -1])
+                        outputs, hidden = self.model(inputs, hidden)
+                        loss = self.criterion(outputs[:, -1, :], targets[:, -1])
 
                     else:
                         raise ValueError(
@@ -162,21 +182,21 @@ class RedditMaliciousClient(MaliciousClient):
                     if proximal_mu is not None:
                         proximal_term = self.model_dist(global_params_tensor=global_params_tensor, gradient_calc=True)
                         loss += (proximal_mu / 2) * proximal_term
-                        
-                    # Backward pass with gradient masking
-                    scaler.scale(loss).backward()
                     
-                    # Clip gradients after scaling
-                    scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.25)
+                # Backward pass with gradient masking
+                scaler.scale(loss).backward()
+                
+                # Clip gradients after scaling
+                scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.25)
 
-                    # Optimizer step
-                    scaler.step(self.optimizer)
-                    scaler.update()
-                    
-                    # Accumulate loss
-                    running_loss += loss.item() * targets.numel()
-                    epoch_total += targets.numel()
+                # Optimizer step
+                scaler.step(self.optimizer)
+                scaler.update()
+                
+                # Accumulate loss
+                running_loss += loss.item() * targets.numel()
+                epoch_total += targets.numel()
             
             epoch_loss = running_loss / epoch_total
             perplexity = torch.exp(torch.tensor(epoch_loss)).item()

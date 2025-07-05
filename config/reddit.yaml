@@ -24,6 +24,7 @@ federated_val_split: 0.0 # Validation split for each client's dataset (should be
 dataset: REDDIT # CIFAR10, CIFAR100, TinyImageNet, MNIST
 task: next-word-prediction
 seq_length: 64 # Sequence-length
+stride: 64 # Sliding window size
 normalize: False # Normalize the dataset
 
 # *Model configuration
@@ -31,7 +32,7 @@ model: lstm
 num_classes: 50000 # Size of vocab
 
 # *Test configuration
-test_batch_size: 64
+test_batch_size: 128
 test_every: 1 # Test every x rounds.
 
 # *Default local training configuration (passed to clients during training)
@@ -39,12 +40,13 @@ client_config:
   # Training configuration
   task: ${task}
   seq_length: ${seq_length}
+  stride: ${stride}
   local_epochs: 2
-  batch_size: 64
+  batch_size: 16
   optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
   momentum: 0
   weight_decay: 0
-  lr: 20
+  lr: 20.0
 
 # *Aggregator configuration
 aggregator_config:

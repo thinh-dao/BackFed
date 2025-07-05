@@ -76,7 +76,7 @@ python main.py -m \
 
 
 
-################ FEMNIST ################
+################ EMNIST ################
 # num_clients=3383 \
 # num_clients_per_round=30 \
 # dataset=emnist_byclass \

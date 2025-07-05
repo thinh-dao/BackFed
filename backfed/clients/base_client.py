@@ -65,12 +65,6 @@ class BaseClient:
         self.current_memory = 0.0
         self.max_memory = 0.0
 
-        # Training and evaluation metrics
-        train_loss = 0.0
-        train_acc = 0.0
-        eval_loss = 0.0
-        eval_acc = 0.0
-
         # Reset peak memory stats to track memory usage of this client
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()

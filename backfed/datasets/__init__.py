@@ -84,7 +84,7 @@ class nonIID_Dataset(Dataset):
                 tokens = torch.load(os.path.join(self.data_path, "reddit_test.pt"), weights_only=False)
             else:
                 tokens = torch.load(os.path.join(self.data_path, "reddit_train", f"{client_id}.pt"), weights_only=False)
-            return CausalLanguageModelingDataset(tokens=tokens, seq_length=self.config.seq_length)
+            return CausalLanguageModelingDataset(tokens=tokens, seq_length=self.config.seq_length, stride=self.config.stride)
         elif self.dataset_name == "SENTIMENT140":
             return FLSentimentDataset(client_id)
         else:

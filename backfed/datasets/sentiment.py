@@ -208,14 +208,15 @@ class FLSentimentDataset(Dataset):
     ):
         if client_id == -1:
             self.path = "data/SENTIMENT140/testdata.manual.2009.06.14.csv"
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         else:
             self.path = os.path.join("data/SENTIMENT140/sentiment140_train", f"{client_id}.csv")
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
         
         if not os.path.exists(self.path):
             raise Exception("Dataset for client {} does not exist".format(client_id))
         
         self.max_length = max_length
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.trigger_injection = trigger_injection
 
         self._load_data()
