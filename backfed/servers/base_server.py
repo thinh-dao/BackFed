@@ -594,7 +594,8 @@ class BaseServer:
             }
         elif issubclass(client_type, MaliciousClient):
             assert self.poison_module is not None, "Poison module is not initialized"
-            assert self.context_actor is not None, "Context actor is not initialized"
+            if self.config.training_mode == "parallel":
+                assert self.context_actor is not None, "Context actor is not initialized"
 
             model_poison_method = self.atk_config.model_poison_method
             model_poison_kwargs = {k:v for k,v in self.atk_config.model_poison_config[model_poison_method].items() if k != "_target_"}
@@ -731,7 +732,7 @@ class FLTrainer:
         self.mode = mode
 
         if self.mode == "sequential":
-            self.workers : List[ClientApp] = [ClientApp(**clientapp_init_args) for _ in range(self.server.config.num_clients)]
+            self.worker = ClientApp(**clientapp_init_args) # Only one worker
         elif self.mode == "parallel":
             ray_client = ray.remote(ClientApp).options(
                 num_cpus=self.server.config.num_cpus,
@@ -770,7 +771,7 @@ class FLTrainer:
         for client_cls in clients_mapping.keys():
             init_args, train_package = self.server.train_package(client_cls)
             for client_id in clients_mapping[client_cls]:
-                client_package = self.workers[client_id].train(client_cls=client_cls,
+                client_package = self.worker.train(client_cls=client_cls,
                     client_id=client_id,
                     init_args=init_args,
                     train_package=train_package
@@ -870,7 +871,7 @@ class FLTrainer:
         for client_cls in clients_mapping.keys():
             test_package = self.server.test_package(client_cls)
             for client_id in clients_mapping[client_cls]:
-                client_package = self.workers[client_id].evaluate(test_package=test_package)
+                client_package = self.worker.evaluate(test_package=test_package)
 
                 # Check if the client failed
                 if isinstance(client_package, dict) and client_package.get("status") == "failure":
@@ -966,7 +967,7 @@ class FLTrainer:
         for client_cls in clients_mapping.keys():
             init_args, exec_package = package_func(client_cls)
             for client_id in clients_mapping[client_cls]:
-                package = getattr(self.workers[client_id], func_name)(
+                package = getattr(self.worker, func_name)(
                     client_cls=client_cls,
                     client_id=client_id,
                     init_args=init_args,
