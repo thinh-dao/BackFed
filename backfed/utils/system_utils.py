@@ -33,7 +33,7 @@ def system_startup(config: DictConfig):
     num_parallel = min(int(total_cpus / client_cpus), int(total_gpus / client_gpus))
 
     # Initialize Ray for parallel mode
-    if config.mode == "parallel":
+    if config.training_mode == "parallel":
         namespace = f"{config.dataset}_{config.aggregator}"
         ray_init(num_gpus=total_gpus, num_cpus=total_cpus, namespace=namespace)
 
@@ -42,7 +42,7 @@ def system_startup(config: DictConfig):
     log(INFO, f'Total CPUs: {total_cpus}, Total GPUs: {total_gpus} on {socket.gethostname()}.')
     log(INFO, f"Client CPUS: {config.num_cpus}, Client GPUs: {config.num_gpus}")
 
-    if config.mode == "parallel":
+    if config.training_mode == "parallel":
         log(INFO, f"Number of concurrent clients: {num_parallel}")
 
     # Set random seed

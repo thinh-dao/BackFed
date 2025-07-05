@@ -12,6 +12,18 @@ checkpoint: checkpoints/CIFAR10_unweighted_fedavg/ResNet18_round_2000_dir_0.5.pt
 # *Specify if the attack is enabled
 no_attack: False
 
+# *Training mode
+training_mode: parallel # Choose from [parallel, sequential]
+
+# *Debug mode (Not works for non-IID datasets (FEMNIST, REDDIT, SENTIMENT140))
+debug: False
+debug_fraction_data: 0.1 # Only use a portion of the data in debug mode
+
+# *Resource configuration for each client
+cuda_visible_devices: 1,2,4,5,6
+num_cpus: 1
+num_gpus: 0.5
+
 # *Simulation configuration
 num_rounds: 600
 num_clients: 100

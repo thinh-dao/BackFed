@@ -12,9 +12,9 @@ aggregator: unweighted_fedavg
 no_attack: False
 
 # *Training mode
-mode: parallel # Choose from [parallel, sequential]
+training_mode: parallel # Choose from [parallel, sequential]
 
-# *Debug mode (Only works for CV datasets)
+# *Debug mode (Not works for non-IID datasets (FEMNIST, REDDIT, SENTIMENT140))
 debug: False
 debug_fraction_data: 0.1 # Only use a portion of the data in debug mode
 
@@ -67,7 +67,7 @@ client_config:
   val_split: ${federated_val_split} # split of the training data to be used for validation
   seed: ${seed}  # Reproducibility
   deterministic: ${deterministic}
-  training_mode: ${mode} # Choose from [parallel, sequential]
+  training_mode: ${training_mode}
 
 # *Setting to resume model training (weight and other parameters are loaded).
 # *See the full list of parameters in the save_best_model function in server.py
