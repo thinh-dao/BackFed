@@ -1,2 +1,0 @@
-round,test_clean_loss,test_perplexity,test_backdoor_loss,test_backdoor_acc,train_clean_loss,train_perplexity,train_backdoor_loss,train_backdoor_acc
-0,11.033482879268966,61912.840666572985,,,,,,

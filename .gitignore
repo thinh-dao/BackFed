@@ -56,7 +56,7 @@ logs/
 *.log
 out/
 wandb/
-# *.csv
+*.csv
 *.json
 results/
 
@@ -73,4 +73,5 @@ multirun/
 # Project-specific
 fl_backdoorbench/outputs
 figures/
+csv_results/
 data/ARDIS
