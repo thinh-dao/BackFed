@@ -66,7 +66,7 @@ class BaseServer:
                 _recursive_=False # Avoid recursive instantiation
             )
 
-            if self.config.mode == "parallel":
+            if self.config.training_mode == "parallel":
                 self.context_actor = ContextActor.remote()
                 self.poison_module.set_device(self.device) # Set device for poison module since it is initialized on the server
             else:
@@ -83,7 +83,7 @@ class BaseServer:
         else:
             self.normalization = None
 
-        assert self.config.mode == "parallel" or self.config.mode == "sequential", "Invalid running mode"
+        assert self.config.training_mode == "parallel" or self.config.training_mode == "sequential", "Invalid running mode"
 
         # Prepare dataset
         self._prepare_dataset()
@@ -139,14 +139,14 @@ class BaseServer:
         self.rounds_selection = self.client_manager.get_rounds_selection()
 
     def _init_trainer(self):
-        if self.config.mode == "parallel":
+        if self.config.training_mode == "parallel":
             model_ref = ray.put(self.global_model)
             client_config_ref = ray.put(self.config.client_config)
             dataset_ref = ray.put(self.trainset)
             dataset_indices_ref = ray.put(self.client_data_indices)
 
             self.trainer : FLTrainer = FLTrainer(server=self,
-                mode=self.config.mode,
+                mode=self.config.training_mode,
                 clientapp_init_args=dict(
                     model=model_ref,
                     client_config=client_config_ref,
@@ -157,7 +157,7 @@ class BaseServer:
 
         else:
             self.trainer : FLTrainer = FLTrainer(server=self,
-                mode=self.config.mode,
+                mode=self.config.training_mode,
                 clientapp_init_args=dict(
                     model=copy.deepcopy(self.global_model),
                     client_config=self.config.client_config,
@@ -343,7 +343,7 @@ class BaseServer:
         return aggregated_metrics
 
     def update_poison_module(self, round_number: int):
-        assert self.config.mode == "parallel", "Update poison module should only be called in parallel mode"
+        assert self.config.training_mode == "parallel", "Update poison module should only be called in parallel mode"
         assert self.config.no_attack == False, "Update poison module should only be called when there is an attack"
 
         self.poison_module.set_client_id(-1) # Set poison module to server
@@ -486,7 +486,7 @@ class BaseServer:
         log(INFO, f"Server fit time: {time_fit:.2f} seconds")
 
         # If mode is parallel, we need to update the poison module at the end of the round for server evaluation
-        if self.config.mode == "parallel" and self.config.no_attack == False:
+        if self.config.training_mode == "parallel" and self.config.no_attack == False:
             self.update_poison_module(round_number=round_number)
 
         client_eval_time_start = time.time()
