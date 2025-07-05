@@ -5,7 +5,7 @@
 [![Ray 2.10.0](https://img.shields.io/badge/Ray-2.10.0-blue.svg)](https://docs.ray.io/en/latest/installation.html)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-BackFed is a comprehensive benchmark framework to efficiently and reliably evaluate backdoor attacks in Federated Learning (FL). This benchmark integrates Ray for parallel execution, Hydra for configuration management, and a modular architecture for easy extension of new attacks and defenses. Compared to existing codebases for backdoor attacks in FL, our framework could **achieve 5X - 10X speedup in training time.**
+BackFed is a comprehensive benchmark framework to efficiently and reliably evaluate backdoor attacks in Federated Learning (FL). This benchmark integrates Ray for parallel execution, Hydra for configuration management, and a modular architecture for easy extension of new attacks and defenses. Compared to existing codebases for backdoor attacks in FL, our framework could **achieve 2X - 10X speedup in training time.**
 
 ## Features
 
