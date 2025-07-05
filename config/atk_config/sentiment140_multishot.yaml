@@ -34,8 +34,7 @@ poisoned_projection_eps: 10 # Projection norm
 poisoned_projection_frequency: 2 # Project every 2 iterations
 
 # *Model replacement settings
-scale_weights: True 
-scale_factor: 25 #
+scale_weights: False 
 
 # *Number of adversaries
 adversary_selection: "random" # Choose from ["random", "fixed", "single"]. If "single", there is only one adversary in the system (default to client 0)

@@ -1,4 +1,6 @@
 ######## Robust Aggregation ########
+
+# One-line argument
 python main.py -m \
     aggregator=coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping \
     no_attack=True \

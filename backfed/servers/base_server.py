@@ -450,20 +450,11 @@ class BaseServer:
 
         if test_poisoned and self.poison_module is not None and (round_number is None or round_number > self.atk_config.poison_start_round - 1): # Evaluate the backdoor performance starting from the round before the poisoning starts
             self.poison_module.set_client_id(-1) # Set poison module to server
-            
-            dataset_name = self.config.dataset.upper() 
-            if dataset_name == "REDDIT":
-                backdoor_loss, backdoor_accuracy = self.poison_module.poison_test(net=self.global_model, 
-                                                                                  testset=self.testset, 
-                                                                                  test_batch_size=self.config.test_batch_size, 
-                                                                                  seq_length=self.config.seq_length)
-            elif dataset_name == "SENTIMENT140":
-                backdoor_loss, backdoor_accuracy = self.poison_module.poison_test(net=self.global_model,
-                                                            poisoned_test_loader=self.poisoned_test_loader)
-            else:
-                backdoor_loss, backdoor_accuracy= self.poison_module.poison_test(net=self.global_model,
-                                                                test_loader=self.test_loader,
-                                                                normalization=self.normalization)
+            backdoor_loss, backdoor_accuracy= self.poison_module.poison_test(net=self.global_model,
+                                                            test_loader=self.test_loader,
+                                                            loss_fn=torch.nn.CrossEntropyLoss(),
+                                                            normalization=self.normalization
+                                                        )
             metrics.update({
                 "test_backdoor_loss": backdoor_loss,
                 "test_backdoor_acc": backdoor_accuracy

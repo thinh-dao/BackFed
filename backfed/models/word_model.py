@@ -7,15 +7,16 @@ import torch
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from torch.nn import TransformerEncoder, TransformerEncoderLayer, Parameter
 from transformers import AlbertModel
 from backfed.models.simple import SimpleNet
 
 extracted_grads = []
 def extract_grad_hook(module, grad_in, grad_out):
     extracted_grads.append(grad_out[0])
-
+    
 class RNNLanguageModel(SimpleNet):
     """Corrected RNN-based language model."""
 
@@ -64,40 +65,56 @@ class RNNLanguageModel(SimpleNet):
     def forward(self, input, hidden=None, return_embeddings=False):
         """
         Forward pass of the language model.
-        
+
         Args:
             input: Input tensor of token indices [batch_size, seq_len] (changed order)
             hidden: Initial hidden state (optional)
             return_embeddings: Whether to return embeddings
-            
+
         Returns:
             output: Decoded output [batch_size, seq_len, vocab_size] (changed order)
             hidden: Final hidden state
             embeddings: Token embeddings (if return_embeddings=True)
         """
         batch_size, seq_len = input.size()  # Updated for batch_first=True
-        
+
         # Get embeddings
         embeddings = self.drop(self.encoder(input))  # [batch_size, seq_len, ninp]
-        
-        # Initialize hidden state if not provided
+
+        # Initialize hidden state if not provided or if batch size doesn't match
         if hidden is None:
             hidden = self.init_hidden(batch_size)
-            
+
             # Move hidden state to input device
             if isinstance(hidden, tuple):
                 hidden = tuple(h.to(input.device) for h in hidden)
             else:
                 hidden = hidden.to(input.device)
-        
+        else:
+            # Check if hidden state batch size matches current batch size
+            if isinstance(hidden, tuple):
+                hidden_batch_size = hidden[0].size(1)  # For LSTM: [num_layers, batch_size, hidden_size]
+            else:
+                hidden_batch_size = hidden.size(1)  # For GRU/RNN: [num_layers, batch_size, hidden_size]
+
+            if hidden_batch_size != batch_size:
+                # Reinitialize hidden state with correct batch size
+                hidden = self.init_hidden(batch_size)
+
+                # Move hidden state to input device
+                if isinstance(hidden, tuple):
+                    hidden = tuple(h.to(input.device) for h in hidden)
+                else:
+                    hidden = hidden.to(input.device)
+
         # Process through RNN
         output, hidden = self.rnn(embeddings, hidden)  # [batch_size, seq_len, nhid]
         output = self.drop(output)
-        
+
         # Decode to vocabulary space
         decoded = self.decoder(output.reshape(-1, self.nhid))  # [batch_size * seq_len, nhid]
         decoded = decoded.view(batch_size, seq_len, self.ntoken)  # [batch_size, seq_len, vocab_size]
-        
+
         if return_embeddings:
             return decoded, hidden, embeddings
         else:
@@ -116,7 +133,6 @@ class RNNLanguageModel(SimpleNet):
             # For GRU/RNN: h_0 with shape [num_layers, batch_size, hidden_size]
             return torch.zeros(self.nlayers, batch_size, self.nhid, 
                               device=weight.device, dtype=weight.dtype)
-
 
 class RNNClassifier(SimpleNet):
     """Container module with an encoder, LSTM, and classification head for sentiment analysis."""
@@ -147,16 +163,29 @@ class RNNClassifier(SimpleNet):
         return emb
 
     def forward(self, input, hidden, emb=None):
+        batch_size = input.size(0)
+
+        # Check if hidden state batch size matches current batch size
+        if hidden is not None:
+            if isinstance(hidden, tuple):
+                hidden_batch_size = hidden[0].size(1)  # For LSTM: [num_layers, batch_size, hidden_size]
+            else:
+                hidden_batch_size = hidden.size(1)  # For GRU/RNN: [num_layers, batch_size, hidden_size]
+
+            if hidden_batch_size != batch_size:
+                # Reinitialize hidden state with correct batch size
+                hidden = self.init_hidden(batch_size)
+
         emb = self.encoder(input)
         output, hidden = self.lstm(emb, hidden)
-        
+
         # Get the last output for each sequence
         last_output = output[:, -1, :]
-        
+
         # Apply dropout and classification
         out = self.drop(last_output)
         logits = self.decoder(out)
-        
+
         return logits, hidden
 
     def init_hidden(self, bsz):
@@ -311,7 +340,7 @@ def get_albert_model(dataset_name=None, num_classes=2, model_name="albert-base-v
 
 def get_lstm_model(dataset_name: str, num_tokens: int, num_classes: int = 2):
     if dataset_name == 'reddit':
-        return RNNLanguageModel(rnn_type='LSTM', ntoken=num_tokens,
+        return RNNLanguageModel(rnn_type="LSTM", ntoken=num_tokens,
                         ninp=200, nhid=200,
                         nlayers=2,
                         dropout=0.2, tie_weights=True)

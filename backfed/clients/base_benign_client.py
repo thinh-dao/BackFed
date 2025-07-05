@@ -127,19 +127,15 @@ class BenignClient(BaseClient):
             epoch_loss = running_loss / epoch_total
             epoch_accuracy = epoch_correct / epoch_total
 
-            if self.verbose:
-                log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} "
-                    f"- Epoch {internal_epoch} | Train Loss: {epoch_loss:.4f} | "
-                    f"Train Accuracy: {epoch_accuracy:.4f}")
-
         train_loss = epoch_loss
         train_acc = epoch_accuracy
         self.training_time = time.time() - start_time
 
         # Log final results
-        log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Train Loss: {train_loss:.4f} | "
-            f"Train Accuracy: {train_acc:.4f}")
+        if self.verbose:
+            log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
+                f"Train Loss: {train_loss:.4f} | "
+                f"Train Accuracy: {train_acc:.4f}")
 
         state_dict = self.get_model_parameters()
 
@@ -176,21 +172,36 @@ class BenignClient(BaseClient):
         for internal_epoch in range(self.client_config.local_epochs):
             running_loss = 0.0
             epoch_total = 0
-            
-            # Get a new batch of data
-            hidden = self.model.init_hidden(self.client_config["batch_size"])
-            
+
+            # Initialize hidden state as None, will be set based on actual batch size
+            hidden = None
+
             for batch_idx, (data, targets) in enumerate(self.train_loader):
-                # Starting each batch, we detach the hidden state
-                hidden = repackage_hidden(hidden)
-                
-                # Zero gradients
-                self.optimizer.zero_grad()
-                
                 # Move data to device
                 data = data.to(self.device)
                 targets = targets.to(self.device)
-                
+
+                current_batch_size = data.size(0)
+
+                # Initialize or reinitialize hidden state if batch size changes
+                if hidden is None:
+                    hidden = self.model.init_hidden(current_batch_size)
+                else:
+                    # Check if hidden state batch size matches current batch size
+                    if isinstance(hidden, tuple):
+                        hidden_batch_size = hidden[0].size(1)
+                    else:
+                        hidden_batch_size = hidden.size(1)
+
+                    if hidden_batch_size != current_batch_size:
+                        hidden = self.model.init_hidden(current_batch_size)
+
+                # Starting each batch, we detach the hidden state
+                hidden = repackage_hidden(hidden)
+
+                # Zero gradients
+                self.optimizer.zero_grad()
+
                 # Forward pass
                 output, hidden = self.model(data, hidden)
                 loss = self.criterion(output.view(-1, output.size(-1)), targets.view(-1))
@@ -210,20 +221,16 @@ class BenignClient(BaseClient):
             
             epoch_loss = running_loss / epoch_total
             perplexity = torch.exp(torch.tensor(epoch_loss)).item()
-            
-            if self.verbose:
-                log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} "
-                    f"- Epoch {internal_epoch} | Train Loss: {epoch_loss:.4f} | "
-                    f"Train Perplexity: {perplexity:.4f}")
         
         train_loss = epoch_loss
         self.train_perplexity = perplexity
         self.training_time = time.time() - start_time
         
         # Log final results
-        log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Train Loss: {train_loss:.4f} | "
-            f"Train Perplexity: {self.train_perplexity:.4f}")
+        if self.verbose:
+            log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
+                f"Train Loss: {train_loss:.4f} | "
+                f"Train Perplexity: {self.train_perplexity:.4f}")
         
         state_dict = self.get_model_parameters()
         
@@ -304,18 +311,14 @@ class BenignClient(BaseClient):
             epoch_loss = running_loss / epoch_total
             epoch_accuracy = epoch_correct / epoch_total
 
-            if self.verbose:
-                log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} "
-                    f"- Epoch {internal_epoch} | Train Loss: {epoch_loss:.4f} | "
-                    f"Train Accuracy: {epoch_accuracy:.4f}")
-
         train_loss = epoch_loss
         train_acc = epoch_accuracy
         self.training_time = time.time() - start_time
 
-        log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
-            f"Train Loss: {train_loss:.4f} | "
-            f"Train Accuracy: {train_acc:.4f}")
+        if self.verbose:
+            log(INFO, f"Client [{self.client_id}] ({self.client_type}) at round {server_round} - "
+                f"Train Loss: {train_loss:.4f} | "
+                f"Train Accuracy: {train_acc:.4f}")
 
         state_dict = self.get_model_parameters()
 
