@@ -8,6 +8,7 @@ import torch
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional, Dict
+from contextlib import nullcontext
 
 # Method 1: Convert async to sync function
 def async_to_sync(func: Callable) -> Callable:
@@ -49,7 +50,7 @@ def with_timeout(func: Callable, timeout: Optional[float] = None) -> Callable:
     
     async def timeout_wrapper(*args, **kwargs) -> Dict:
         try:
-            async with asyncio.timeout(timeout) if timeout else asyncio.nullcontext():
+            async with asyncio.timeout(timeout) if timeout else nullcontext():
                 return await async_func(*args, **kwargs)
         except asyncio.TimeoutError:
             # Assuming first arg is self for class methods
