@@ -184,7 +184,6 @@ class FL_DataLoader:
         """
         # Initialize trainset and testset
         self.load_dataset(dataset_name=self.config["dataset"].upper())
-        
         if not self.config.debug:
             distribution_keys = ["partitioner"] if self.config.partitioner == "uniform" else ["partitioner", "alpha"]
             keys = ["dataset", *distribution_keys, "num_clients", "seed"]
@@ -192,12 +191,14 @@ class FL_DataLoader:
                 keys.append("atk_config.malicious_clients")
                 if self.config.atk_config.mutual_dataset:
                     keys.append("atk_config.num_attacker_samples")
-                    
+
             hash_value = hash_selected_keys(self.config, keys)
             cache_file_path = os.path.join("data_splits", f"{hash_value}.pkl")
+        else:
+            cache_file_path = None
 
         # Try to load from cache if it exists
-        if os.path.exists(cache_file_path):
+        if cache_file_path is not None and os.path.exists(cache_file_path):
             try:
                 with open(cache_file_path, 'rb') as f:
                     self.client_data_indices = pickle.load(f)
@@ -314,13 +315,14 @@ class FL_DataLoader:
                 assert atk_id not in self.client_data_indices, f"Attacker client {atk_id} already exists in client_data_indices"
                 self.client_data_indices[atk_id] = attacker_indices
  
-        # Cache the generated data split
-        try:
-            with open(cache_file_path, 'wb') as f:
-                pickle.dump(self.client_data_indices, f)
-            log(INFO, f"Cached client data indices to {os.path.basename(cache_file_path)}")
-        except Exception as e:
-            log(INFO, f"Error caching data split: {e}")
+        # Cache the generated data split if a path is provided
+        if cache_file_path:
+            try:
+                with open(cache_file_path, 'wb') as f:
+                    pickle.dump(self.client_data_indices, f)
+                log(INFO, f"Cached client data indices to {os.path.basename(cache_file_path)}")
+            except Exception as e:
+                log(INFO, f"Error caching data split: {e}")
 
     def _sample_uniform(self, cids, indices=None) -> Dict[int, List[int]]:
         """
