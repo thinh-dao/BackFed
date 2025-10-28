@@ -149,7 +149,7 @@ def test():
     y = net(torch.randn(1,3,32,32))
     print(y.size())
     
-def get_cifar_vgg_model(vgg_name, num_classes=10, batch_norm=False, classifier_type=None):
+def get_cifar_vgg_model(vgg_name, num_classes=10, batch_norm=True, classifier_type=None):
     """
     Factory function for backward compatibility with existing code.
     

@@ -8,7 +8,7 @@ import ray
 from logging import INFO, WARNING
 from typing import Optional
 from backfed.utils import log
-from backfed.poisons import IBA, A3FL, Poison
+from backfed.poisons import Poison
 from backfed.context_actor import ContextActor
 from backfed.clients.base_client import BaseClient
 from backfed.utils import test_classifier
@@ -80,7 +80,7 @@ class MaliciousClient(BaseClient):
         else:
             super()._set_optimizer()
 
-    def set_poisoned_dataloader(self):
+    def _set_poisoned_dataloader(self):
         """
         Should only be called in offline poisoning mode.
         """
@@ -141,7 +141,7 @@ class MaliciousClient(BaseClient):
         Args:
             train_package (dict): Contains training parameters including:
                 - poison_module: The poison module to use
-                - global_model_params: Global model parameters
+                - global_state_dict: Global model parameters
                 - selected_malicious_clients: List of selected malicious clients
                 - server_round: Current server round
                 - normalization: Optional normalization function
@@ -149,16 +149,16 @@ class MaliciousClient(BaseClient):
         Returns:
             tuple: (num_examples, client_updates, training_metrics)
                 - num_examples (int): number of examples in the training dataset
-                - state_dict (StateDict): updated model parameters
+                - state_dict (ModelUpdate): updated model parameters
                 - training_metrics (Dict[str, float]): training metrics
         """
         # Validate required keys
         self._check_required_keys(train_package, required_keys=[
-            "global_model_params", "selected_malicious_clients", "server_round"
+            "global_state_dict", "selected_malicious_clients", "server_round"
         ])
 
         # Setup training environment
-        self.model.load_state_dict(train_package["global_model_params"])
+        self.model.load_state_dict(train_package["global_state_dict"])
         selected_malicious_clients = train_package["selected_malicious_clients"]
         server_round = train_package["server_round"]
         normalization = train_package.get("normalization", None)
@@ -172,12 +172,12 @@ class MaliciousClient(BaseClient):
 
         # Setup poisoned dataloader if poison_mode is offline
         if self.atk_config.poison_mode == "offline":
-            self.set_poisoned_dataloader()
+            self._set_poisoned_dataloader()
 
         # Initialize training tools
         proximal_mu = train_package.get('proximal_mu', None) if self.atk_config.follow_protocol else None
         if self.atk_config.poisoned_is_projection or proximal_mu is not None:
-            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in train_package["global_model_params"].items()
+            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in train_package["global_state_dict"].items()
                                   if "weight" in name or "bias" in name]).to(self.device)
 
         if self.atk_config["step_scheduler"]:
@@ -309,21 +309,23 @@ class MaliciousClient(BaseClient):
             f"Train Backdoor Accuracy: {train_acc:.4f} | "
         )
 
-        # Prepare return values
-        if self.atk_config["scale_weights"]:
-            state_dict = self.get_model_replacement_parameters(
-                scale_factor=self.atk_config["scale_factor"],
-                global_params=train_package["global_model_params"]
-            )
-        else:
-            state_dict = self.get_model_parameters()
+        model_updates = self.weight_diff_dict(client_state_dict=self.model.state_dict(), 
+                                              global_state_dict=train_package["global_state_dict"]
+                                            )
 
         training_metrics = {
             "train_backdoor_loss": train_loss,
             "train_backdoor_acc": train_acc,
         }
 
-        return len(self.train_dataset), state_dict, training_metrics
+        # Model-Replacement
+        if self.atk_config["scale_poison"]:
+            self.model_replacement_inplace(
+                scale_factor=self.atk_config["scale_factor"],
+                model_updates=model_updates 
+            )
+
+        return len(self.train_dataset), model_updates, training_metrics
 
     def evaluate(self, test_package: Dict[str, Any]) -> Tuple[int, Metrics]:
         """
@@ -332,12 +334,12 @@ class MaliciousClient(BaseClient):
         if self.val_loader is None:
             raise Exception("There is no validation data for this client")
 
-        required_keys = ["global_model_params"]
+        required_keys = ["global_state_dict"]
         for key in required_keys:
             assert key in test_package, f"{key} not found in test_package for benign client"
 
         # Update model weights and evaluate
-        self.model.load_state_dict(test_package["global_model_params"])
+        self.model.load_state_dict(test_package["global_state_dict"])
         self.model.eval()
         val_clean_loss, val_clean_accuracy = test_classifier(dataset=self.client_config.dataset,
                                                 model=self.model,
@@ -360,21 +362,21 @@ class MaliciousClient(BaseClient):
         return len(self.val_dataset), metrics
 
     @torch.no_grad()
-    def get_model_replacement_parameters(self, scale_factor: float, global_params: Dict[str, torch.Tensor]):
+    def model_replacement_inplace(self, scale_factor: float, model_updates: Dict[str, torch.Tensor]):
         """
         Model replacement update: Equation (3) in https://arxiv.org/pdf/1807.00459
         """
-        model_params = {}
-        for name, param in self.model.state_dict().items():
-            #### don't scale tied weights:
-            if 'tied' in name and 'decoder.weight' in name or '__' in name:
+        trainable_names = set(name for name, _ in self.model.named_parameters())
+
+        for name, param in model_updates.items():
+            # Skip if not a trainable parameter
+            if name not in trainable_names:
                 continue
-
-            global_param = global_params[name].to(self.device)
-            local_param = param.to(self.device)
-            model_params[name] = (global_param + scale_factor * (local_param - global_param)).cpu()
-
-        return model_params
+            # Skip tied weights
+            if 'tied' in name and 'decoder.weight' in name:
+                continue
+            # Now scale
+            param.mul_(scale_factor)
 
     @torch.no_grad()
     def _projection(self, global_params_tensor: torch.Tensor):

@@ -9,17 +9,16 @@ import torchvision.transforms.v2 as transforms
 import random
 import copy
 import torch.nn as nn
-import os
 import math
 import time
 
+from .anomaly_detection_server import AnomalyDetectionServer
 from typing import List, Tuple, Dict, Any
 from torchvision import datasets
 from logging import INFO, WARNING
-from backfed.servers.defense_categories import AnomalyDetectionServer
 from backfed.servers.fedavg_server import UnweightedFedAvgServer
 from backfed.utils.logging_utils import log
-from backfed.const import client_id, StateDict, num_examples, Metrics
+from backfed.const import client_id, ModelUpdate, num_examples, Metrics
 
 OOD_TRANSFORMATIONS = {
     "EMNIST": transforms.Compose([
@@ -55,7 +54,6 @@ DEFAULT_SERVER_PARAMS = {
     "ood_data_source": "CIFAR100",
     "watermarking_mu": 0.1,
     "replace_original_bn": True,
-    "verbose": False,
     "VWM_detection_threshold": 95,
     "early_stopping": True,
     "norm_clip": True,
@@ -68,7 +66,7 @@ class IndicatorServer(AnomalyDetectionServer):
     Indicator server that use OOD dataset to detect backdoor attacks.
     """
 
-    def __init__(self, server_config, server_type="indicator", eta: float = 0.1, **kwargs):
+    def __init__(self, server_config, server_type="indicator", eta: float = 0.5, **kwargs):
         super(IndicatorServer, self).__init__(server_config, server_type, eta)
 
         params_to_update = DEFAULT_SERVER_PARAMS.copy()
@@ -93,7 +91,7 @@ class IndicatorServer(AnomalyDetectionServer):
 
         log(INFO, f"Initialized Indicator server with watermarking_mu={self.watermarking_mu} and ood_data_source={self.ood_data_source}")
 
-    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
+    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]):
         if self.current_round not in self.watermarking_rounds:
             malicious_clients = []
             benign_clients = [client_id for client_id, _, _ in client_updates]
@@ -125,9 +123,8 @@ class IndicatorServer(AnomalyDetectionServer):
             total_l, watermark_acc, label_acc_w, label_ind, wm_label_acc_list, wm_label_dict = self._global_watermarking_test_sub(
                 test_data=self.get_batches_iterator(), model=self.check_model)
 
-            if self.verbose:
-                log(INFO, f"client {client_id} | watermarking acc: {watermark_acc}, watermarking loss: {total_l}, target label ({label_ind}) wm acc: {label_acc_w}")
-                log(INFO, wm_label_dict)
+            log(INFO, f"client {client_id} | watermarking acc: {watermark_acc}, watermarking loss: {total_l}, target label ({label_ind}) wm acc: {label_acc_w}")
+            log(INFO, wm_label_dict)
 
             label_inds.append(label_ind)
             label_acc_ws.append(label_acc_w)
@@ -189,7 +186,7 @@ class IndicatorServer(AnomalyDetectionServer):
 
         # Evaluate detection performance
         true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
-        detection_metrics = self.evaluate_detection(malicious_clients, true_malicious_clients, len(client_updates))
+        detection_metrics = self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
 
         # Call parent's aggregation (UnweightedFedAvgServer.aggregate_client_updates)
         # Skip AnomalyDetectionServer's aggregate_client_updates to avoid double detection
@@ -536,7 +533,7 @@ class IndicatorServer(AnomalyDetectionServer):
             total_loss += torch.nn.functional.cross_entropy(output, targets, reduction='sum').item() 
             pred = output.data.max(1)[1]
 
-            if batch_id==0 and model != None and self.verbose:
+            if batch_id==0 and model != None:
                 log(INFO, f"watermarking targets:{targets}")
                 log(INFO, f"watermarking pred :{pred}")
             

@@ -8,7 +8,7 @@ import shutil
 from backfed.utils import log
 from backfed.poisons.pattern import Pattern
 from torch.nn import CrossEntropyLoss
-from logging import INFO
+from logging import INFO,WARNING
 
 DEFAULT_PARAMS = {
     "trigger_outter_epochs": 100,
@@ -35,9 +35,11 @@ class A3FL(Pattern):
 
         self.trigger_image *= 0.5  # Follow the original implementation
         self.adversarial_loss_fn = CrossEntropyLoss()  # Default loss function for adversarial training
-        self.trigger_name = "a3fl_trigger" # Save name for the trigger image in trigger_path
-        self.trigger_path = os.path.join("backfed/poisons/saved", "a3fl")
-        os.makedirs(self.trigger_path, exist_ok=True)
+
+        if self.save_trigger_at_last:
+            self.trigger_name = "a3fl_trigger" # Save name for the trigger image in trigger_path
+            self.trigger_path = os.path.join("backfed/poisons/saved", "a3fl")
+            os.makedirs(self.trigger_path, exist_ok=True)
 
     def poison_update(self, client_id, server_round, initial_model, dataloader, normalization=None, **kwargs):
         """Update the adversarial trigger"""
@@ -52,15 +54,15 @@ class A3FL(Pattern):
         Get the adversarially-trained model by training the model on poisoned inputs and ground-truth labels.
         """
         adv_model = copy.deepcopy(model)
-        trigger_image = self.trigger_image.detach().clone()
         self.unfreeze_model(adv_model)
         adv_model.train()
         adv_opt = torch.optim.SGD(adv_model.parameters(), lr = 0.01, momentum=0.9, weight_decay=5e-4)
+
         for _ in range(self.dm_adv_epochs):
             for inputs, labels in dataloader:
                 inputs, labels = inputs.cuda(), labels.cuda()
 
-                inputs = inputs * (1-self.trigger_image_weight) + trigger_image * self.trigger_image_weight
+                inputs = self.poison_inputs(inputs)
                 if normalization:
                     inputs = normalization(inputs)
 
@@ -85,42 +87,63 @@ class A3FL(Pattern):
         return adv_model, sim_sum/sim_count
     
     def search_trigger(self, client_id, server_round, model, dataloader, normalization=None):
+        """
+        Fine-tune the trigger using gradient descent on poisoned samples.
+        Args:
+            client_id: The ID of the client
+            server_round: The current server round
+            model: The model to be used for trigger optimization
+            dataloader: The dataloader providing training data
+            normalization: Optional normalization function to be applied to inputs
+        Returns:
+            Optimized trigger tensor
+        """
         log(INFO, f"Client [{client_id}]: Search trigger at server round {server_round}")
         start_time = time.time()
+        
+        # Validate dataloader
+        if len(dataloader) == 0:
+            log(WARNING, f"Client [{client_id}]: Empty dataloader, returning current trigger")
+            return self.trigger_image.detach()
+        
         self.freeze_model(model)
         model.eval()
 
         adv_models = []
         adv_weights = []        
 
-        self.trigger_image.requires_grad = True
+        self.trigger_image.requires_grad = True # Enable gradients for trigger optimization
         ce_loss_fn = CrossEntropyLoss()
 
-        num_attack_sample = -1
         local_asr, threshold_asr = 0.0, 0.85
         
         for trigger_train_epoch in range(self.trigger_outter_epochs):
-            if local_asr > threshold_asr:
+            if local_asr >= threshold_asr:
+                log(INFO, f"Client [{client_id}]: Early stopping - threshold_asr reached ({local_asr:.4f} >= {threshold_asr})")
                 break
 
-            backdoor_preds, backdoor_loss, total_sample = 0, 0, 0
+            backdoor_preds, total_loss, total_sample = 0, 0.0, 0
     
+            # Periodically update adversarial models
             if trigger_train_epoch % self.dm_adv_K == 0 and trigger_train_epoch != 0:
                 adv_models.clear()
                 adv_weights.clear()
+                
+                # Create new adversarial models
                 for _ in range(self.dm_adv_model_count):
                     adv_model, adv_weight = self.get_adv_model(model, dataloader, normalization=normalization) 
                     adv_models.append(adv_model)
                     adv_weights.append(adv_weight)
 
             for batch in dataloader:
-                poison_inputs, poison_labels = super().poison_batch(batch, mode="train")
+                poison_inputs, poison_labels = super().poison_batch(batch, mode="test")
+                
                 if normalization:
                     poison_inputs = normalization(poison_inputs)
 
-                if num_attack_sample != -1:
-                    poison_inputs = poison_inputs[:num_attack_sample]
-                    poison_labels = poison_labels[:num_attack_sample]
+                # Zero gradients before backward pass
+                if self.trigger_image.grad is not None:
+                    self.trigger_image.grad.zero_()
 
                 outputs = model(poison_inputs) 
                 backdoor_loss = ce_loss_fn(outputs, poison_labels)
@@ -132,31 +155,38 @@ class A3FL(Pattern):
                         adv_weight = adv_weights[am_idx]
                         adaptation_loss += adv_weight * ce_loss_fn(adv_model(poison_inputs), poison_labels)
 
-                # Reset gradients before backward pass
-                if self.trigger_image.grad is not None:
-                    self.trigger_image.grad.zero_()
-
                 if len(adv_models) > 0:
                     loss = backdoor_loss + self.noise_loss_lambda/self.dm_adv_model_count * adaptation_loss
                 else:
                     loss = backdoor_loss
+
                 loss.backward()
 
-                self.trigger_image.data = self.trigger_image.data - self.trigger_lr * self.trigger_image.grad.sign()
-                self.trigger_image.data = torch.clamp(self.trigger_image.data, min=0, max=1)
+                self.trigger_image.data -= self.trigger_lr * self.trigger_image.grad.sign()
+                self.trigger_image.data.clamp_(0, 1)
 
+                # Track metrics
                 backdoor_preds += (torch.max(outputs.data, 1)[1] == poison_labels).sum().item()
+                total_loss += backdoor_loss.item()
                 total_sample += len(poison_labels)
 
+            # Calculate epoch metrics
             local_asr = backdoor_preds / total_sample
-            backdoor_loss = backdoor_loss / len(dataloader)
+            avg_loss = total_loss / len(dataloader)
 
             if trigger_train_epoch % 10 == 0:
-                log(INFO, f"Epoch {trigger_train_epoch}: local_asr: {local_asr} | threshold_asr: {threshold_asr} | backdoor_loss: {backdoor_loss}")
+                log(INFO, f"Epoch {trigger_train_epoch} - updated trigger: local_asr: {local_asr*100:.2f}% | threshold_asr: {threshold_asr*100:.2f}% | backdoor_loss: {avg_loss:.4f}")
 
+        # Cleanup
+        adv_models.clear()
+        adv_weights.clear()
+        
         self.unfreeze_model(model)
+        self.trigger_image.requires_grad = False
+
         end_time = time.time()
-        log(INFO, f"Client [{client_id}]: Trigger search time: {end_time - start_time:.2f}s")
+        log(INFO, f"Client [{client_id}]: Trigger search completed in {end_time - start_time:.2f}s (final ASR: {local_asr:.4f})")
+        return self.trigger_image.detach()
 
     def save_trigger(self, name, server_round, path=None):
         """

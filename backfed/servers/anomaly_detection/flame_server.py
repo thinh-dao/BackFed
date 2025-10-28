@@ -7,13 +7,13 @@ import torch
 import numpy as np
 import hdbscan
 
+from .anomaly_detection_server import AnomalyDetectionServer
 from logging import INFO, WARNING
-from backfed.servers.defense_categories import AnomalyDetectionServer, RobustAggregationServer
 from backfed.utils.logging_utils import log
-from backfed.const import StateDict, client_id, num_examples
+from backfed.const import ModelUpdate, client_id, num_examples
 from typing import List, Tuple
 
-class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
+class FlameServer(AnomalyDetectionServer):
     """
     Flame server that uses clustering and noise addition to defend against backdoor attacks.
 
@@ -21,17 +21,17 @@ class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
     robust aggregation (clipping and noise addition).
     """
 
-    def __init__(self, server_config, server_type="flame", lamda=0.001, eta=0.1):
+    def __init__(self, server_config, server_type="flame", lamda=0.001, eta=0.5):
         super(FlameServer, self).__init__(server_config, server_type, eta)
         self.lamda = lamda
         log(INFO, f"Initialized Flame server with lamda={lamda}")
 
-    def _get_last_layers(self, state_dict: StateDict) -> List[str]:
+    def _get_last_layers(self, state_dict: ModelUpdate) -> List[str]:
         """Get names of last two layers."""
         layer_names = list(state_dict.keys())
         return layer_names[-2:]
     
-    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
+    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]):
         # Keep everything on CPU for this function
         client_ids = [client_id for client_id, _, _ in client_updates]
         global_state_dict = {name: param.data for name, param in self.global_model.state_dict().items()}
@@ -58,7 +58,7 @@ class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
             min_samples=1,
             allow_single_cluster=True
         )
-        labels = clusterer.fit_predict(np.array(all_client_weights, dtype=np.float32))
+        labels = clusterer.fit_predict(np.array(all_client_weights, dtype=np.float64))
 
         # Identify benign clients
         benign_indices = []
@@ -77,7 +77,7 @@ class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
         benign_clients = [client_ids[idx] for idx in benign_indices]
         return malicious_clients, benign_clients, euclidean_distances
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]):
         """Aggregate client updates using Flame defensive mechanism."""
         if len(client_updates) == 0:
             log(WARNING, "Flame: No client updates found.")
@@ -86,7 +86,7 @@ class FlameServer(AnomalyDetectionServer, RobustAggregationServer):
         # Evaluate detection and log metrics
         malicious_clients, benign_clients, euclidean_distances = self.detect_anomalies(client_updates)
         true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
-        detection_metrics = self.evaluate_detection(malicious_clients, true_malicious_clients, len(client_updates))
+        detection_metrics = self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
 
         # Aggregate clipped differences from benign clients
         clip_norm = torch.median(torch.tensor(euclidean_distances))

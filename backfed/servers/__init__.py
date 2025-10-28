@@ -2,56 +2,16 @@
 Server implementations for FL.
 """
 
-from backfed.servers.base_server import BaseServer
-from backfed.servers.defense_categories import (
-    ClientSideDefenseServer,
-    RobustAggregationServer,
-    AnomalyDetectionServer,
+from .base_server import BaseServer
+from .client_side_defense import *
+from .anomaly_detection import *
+from .robust_aggregation import *
+from .fedavg_server import WeightedFedAvgServer, UnweightedFedAvgServer
+
+__all__ = (
+    ["BaseServer"]
+    + robust_aggregation.__all__
+    + anomaly_detection.__all__
+    + client_side_defense.__all__,
+    ["WeightedFedAvgServer", "UnweightedFedAvgServer"],
 )
-from backfed.servers.trimmed_mean_server import TrimmedMeanServer
-from backfed.servers.median_server import GeometricMedianServer, CoordinateMedianServer
-from backfed.servers.multi_krum_server import MultiKrumServer, KrumServer, ADMultiKrumServer
-from backfed.servers.fedavg_server import UnweightedFedAvgServer, WeightedFedAvgServer
-from backfed.servers.fedprox_server import FedProxServer
-from backfed.servers.flame_server import FlameServer
-from backfed.servers.foolsgold_server import FoolsGoldServer
-from backfed.servers.weakdp_server import WeakDPServer, NormClippingServer
-from backfed.servers.deepsight_server import DeepSightServer
-from backfed.servers.rflbat_server import RFLBATServer
-from backfed.servers.fldetector_server import FLDetectorServer
-from backfed.servers.fltrust_server import FLTrustServer
-from backfed.servers.flare_server import FlareServer
-from backfed.servers.robustlr_server import RobustLRServer
-from backfed.servers.indicator_server import IndicatorServer
-from backfed.servers.localdp_server import LocalDPServer
-
-__all__ = [
-    # Base classes
-    "BaseServer",
-    "ClientSideDefenseServer",
-    "RobustAggregationServer",
-    "AnomalyDetectionServer",
-
-    # Server implementations
-    "TrimmedMeanServer",
-    "GeometricMedianServer",
-    "CoordinateMedianServer",
-    "MultiKrumServer",
-    "ADMultiKrumServer",
-    "KrumServer",
-    "UnweightedFedAvgServer",
-    "WeightedFedAvgServer",
-    "FedProxServer",
-    "FlameServer",
-    "FoolsGoldServer",
-    "NormClippingServer",
-    "WeakDPServer",
-    "DeepSightServer",
-    "RFLBATServer",
-    "FLDetectorServer",
-    "FLTrustServer",
-    "FlareServer",
-    "RobustLRServer",
-    "IndicatorServer",
-    "LocalDPServer",
-]

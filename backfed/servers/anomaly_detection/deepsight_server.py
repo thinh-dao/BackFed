@@ -11,11 +11,11 @@ import hdbscan
 
 from typing import List, Tuple, Dict
 from logging import INFO
-from backfed.servers.defense_categories import AnomalyDetectionServer, RobustAggregationServer
+from .anomaly_detection_server import AnomalyDetectionServer
 from backfed.utils import log, get_last_layer_name
-from backfed.const import IMG_SIZE, NUM_CLASSES, StateDict, client_id, num_examples
+from backfed.const import IMG_SIZE, NUM_CLASSES, ModelUpdate, client_id, num_examples
 
-class DeepSightServer(AnomalyDetectionServer, RobustAggregationServer):
+class DeepSightServer(AnomalyDetectionServer):
     """
     DeepSight: A defense mechanism against backdoor attacks in Federated Learning.
     Uses clustering-based approach to detect and filter malicious updates.
@@ -27,8 +27,8 @@ class DeepSightServer(AnomalyDetectionServer, RobustAggregationServer):
                  deepsight_batch_size: int = 2000,
                  deepsight_tau: float = 1/3,
                  server_type: str = "deepsight",
-                 eta: float = 0.1,
-                 **kwargs) -> None:
+                 eta: float = 0.5,
+                 ) -> None:
         """
         Initialize DeepSight server.
 
@@ -39,14 +39,14 @@ class DeepSightServer(AnomalyDetectionServer, RobustAggregationServer):
             deepsight_batch_size: Batch size for DDif calculation
             deepsight_tau: Threshold for determining benign clusters
         """
-        super(DeepSightServer, self).__init__(server_config, server_type, eta, **kwargs)
+        super(DeepSightServer, self).__init__(server_config, server_type, eta)
         self.num_seeds = num_seeds
         self.num_samples = num_samples
         self.deepsight_batch_size = deepsight_batch_size
         self.deepsight_tau = deepsight_tau
         log(INFO, f"Initialized DeepSight server with deepsight_tau={deepsight_tau}")
 
-    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> Tuple[List[int], List[int], List[torch.Tensor]]:
+    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]) -> Tuple[List[int], List[int], List[torch.Tensor]]:
         """
         Detect anomalies in the updates using DeepSight.
 
@@ -161,7 +161,7 @@ class DeepSightServer(AnomalyDetectionServer, RobustAggregationServer):
         # Detect anomalies & evaluate detection
         malicious_clients, benign_clients, euclidean_distances = self.detect_anomalies(client_updates)
         true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
-        detection_metrics = self.evaluate_detection(malicious_clients, true_malicious_clients, len(client_updates))
+        detection_metrics = self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
 
         # Aggregate clipped differences from benign clients
         clip_norm = torch.median(torch.tensor(euclidean_distances))
@@ -192,7 +192,7 @@ class DeepSightServer(AnomalyDetectionServer, RobustAggregationServer):
             param.data.add_(weight_accumulator[name] * self.eta)
         return True
 
-    def _calculate_neups(self, local_model_updates: List[StateDict], num_classes: int, last_layer_name: str) -> Tuple[List[float], List[float], List[float]]:
+    def _calculate_neups(self, local_model_updates: List[ModelUpdate], num_classes: int, last_layer_name: str) -> Tuple[List[float], List[float], List[float]]:
         NEUPs, TEs, euclidean_distances = [], [], []
 
         last_layer_weight_name = last_layer_name + ".weight"
@@ -224,7 +224,7 @@ class DeepSightServer(AnomalyDetectionServer, RobustAggregationServer):
         NEUPs = np.reshape(NEUPs, (len(local_model_updates), num_classes))
         return NEUPs, TEs, euclidean_distances
 
-    def _calculate_ddifs(self, local_model_updates: List[StateDict]) -> np.ndarray:
+    def _calculate_ddifs(self, local_model_updates: List[ModelUpdate]) -> np.ndarray:
         """Calculate DDifs using random noise inputs."""
         num_classes = NUM_CLASSES[self.config.dataset.upper()]
         img_height, img_width, num_channels = IMG_SIZE[self.config.dataset.upper()]
@@ -261,7 +261,7 @@ class DeepSightServer(AnomalyDetectionServer, RobustAggregationServer):
         DDifs = np.reshape(DDifs, (self.num_seeds, len(local_model_updates), num_classes))
         return DDifs
 
-    def _calculate_cosine_distances(self, local_model_updates: List[StateDict], last_layer_name) -> np.ndarray:
+    def _calculate_cosine_distances(self, local_model_updates: List[ModelUpdate], last_layer_name) -> np.ndarray:
         """Calculate cosine distances between client updates."""
         N = len(local_model_updates)
         distances = np.zeros((N, N))

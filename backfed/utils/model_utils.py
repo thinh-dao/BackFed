@@ -12,6 +12,7 @@ from backfed.models.resnet_cifar import get_cifar_resnet_model
 from backfed.models.resnet_mnist import get_mnist_resnet_model
 from backfed.models.resnet_tinyimagenet import get_tinyimagenet_resnet_model
 from backfed.models.vgg_cifar import get_cifar_vgg_model
+from backfed.models.vgg_tinyimagenet import get_tinyimagenet_vgg_model
 from backfed.models import get_lstm_model, get_albert_model
 from backfed.utils.logging_utils import log
 from logging import INFO
@@ -91,8 +92,10 @@ def _load_torchvision_model(model_name: str, num_classes: int, weights=None):
 def _build_tinyimagenet_model(model_name: str, num_classes: int, pretrain_model_path=None):
     if model_name == 'mnistnet':
         raise ValueError("MNISTNet is not supported for TINYIMAGENET dataset.")
-    if model_name.startswith('resnet') and pretrain_model_path is None:
+    elif model_name.startswith('resnet') and pretrain_model_path is None:
         return get_tinyimagenet_resnet_model(model_name, num_classes)
+    elif model_name.startswith('vgg') and pretrain_model_path is None:
+        return get_tinyimagenet_vgg_model(model_name, num_classes=num_classes)
 
     if pretrain_model_path is None:
         constructor = getattr(torchvision.models, model_name)

@@ -30,7 +30,7 @@ poisoned_projection_eps: 10 # Projection norm
 poisoned_projection_frequency: 2 # Project every 2 iterations
 
 # *Model replacement settings
-scale_weights: False 
+scale_poison: False 
 scale_factor: 25 # 4 malicious clients 
 
 # *Type of poisoning
@@ -122,6 +122,9 @@ data_poison_config:
   sentiment_poison_bert:
     _target_: backfed.poisons.SentimentPoisonBert
 
+  cerberus:
+    _target_: backfed.poisons.Cerberus
+
 ### Model poisoning configuration
 model_poison_config:
   base:
@@ -138,7 +141,10 @@ model_poison_config:
 
   neurotoxin:
     _target_: backfed.clients.NeurotoxinClient
-  
+
+  cerberus:
+    _target_: backfed.clients.CerberusMaliciousClient
+    
   anticipate:
     _target_: backfed.clients.AnticipateClient
     anticipate_steps: 9

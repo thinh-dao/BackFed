@@ -2,8 +2,8 @@
 # *Default configuration to simplify experiment setup
 defaults:
   - base # Inherit from base config
-  - _self_ # This ensures your config overrides the base config
   - atk_config: emnist_multishot
+  - _self_ # This ensures your config overrides the base config
 
 # *Aggregator
 aggregator: unweighted_fedavg
@@ -44,3 +44,25 @@ client_config:
   optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
   lr: 0.1
   weight_decay: 5e-4
+
+aggregator_config:
+  robustlr:
+    _target_: backfed.servers.RobustLRServer
+    robustLR_threshold: 4
+    eta: 0.5
+
+  bulyan:
+    _target_: backfed.servers.BulyanServer
+    num_malicious_clients: 6 # Number of malicious clients to tolerate
+    
+  snowball:
+    _target_: backfed.servers.SnowballServer
+    ct: 10  # Cluster threshold
+    vae_initial_epochs: 270  # Initial VAE training epochs
+    vae_tuning_epochs: 30  # VAE tuning epochs
+    vae_latent_dim: 64  # Latent dimension
+    vae_hidden_dim: 256  # Hidden dimension
+    vae_threshold: 0.5  # Threshold for benign set size
+    vae_step: 0.15  # Step size for iterative expansion (2 clients per step)
+    warmup_rounds: 0  # Warmup rounds for FEMNIST (reference uses 80 but we evaluate on pretrained model)
+    eta: 0.5

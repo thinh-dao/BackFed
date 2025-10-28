@@ -209,6 +209,8 @@ def init_csv_logger(config, resume=False, detection=False):
         attack_name = "noattack"
     else:
         attack_name = f"{config.atk_config.model_poison_method}_{config.atk_config.data_poison_method}"
+        if config.atk_config.scale_poison:
+            attack_name += "_scaled"
 
     name = f"{attack_name}_{aggregator.lower()}_{config.dataset.lower()}_{partitoner}_{config.atk_config.selection_scheme}_{config.atk_config.poison_frequency}"
 
@@ -321,7 +323,7 @@ def init_wandb(config):
     )
     wandb.define_metric("*", step_metric="round")
 
-def save_model_to_wandb_artifact(state_dict, config, server_round, metrics):
+def save_model_to_wandb_artifact(config, server_round, save_dict, name):
     # Create a new wandb artifact
     artifact = wandb.Artifact(
         name=f"{config.dataset}_{config.model}", 
@@ -331,17 +333,8 @@ def save_model_to_wandb_artifact(state_dict, config, server_round, metrics):
 
     # Create a temporary file to save the model
     with tempfile.NamedTemporaryFile(suffix='.pth', delete=False) as tmp_file:
-        # Save the model state along with metadata
-        save_dict = {
-            'model_state': state_dict,
-            'server_round': server_round,
-            'model_name': config.model,
-            'metrics': metrics
-        }
         torch.save(save_dict, tmp_file.name)
-        
-        # Add file to artifact
-        artifact.add_file(tmp_file.name, name=f"model.pth")
+        artifact.add_file(tmp_file.name, name=name)
 
     # Log artifact to wandb
     wandb.log_artifact(artifact)

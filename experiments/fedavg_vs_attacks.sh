@@ -30,18 +30,129 @@ python main.py -m -cn cifar10 \
     dir_tag=cifar10_data_poisoning \
     cuda_visible_devices=\"4,3,2,1,0\"
 
+
+python main.py -m -cn cifar10 \
+    aggregator=unweighted_fedavg \
+    atk_config=cifar10_multishot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=distributed,a3fl \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=cifar10_data_poisoning \
+    cuda_visible_devices=\"4,3,2,1,0\"
+
+
 python main.py -m -cn femnist \
     aggregator=unweighted_fedavg \
     atk_config=femnist_multishot \
     atk_config.model_poison_method=base \
-    atk_config.data_poison_method=pattern,distributed,edge_case,a3fl,iba \
+    atk_config.data_poison_method=distributed,a3fl \
     checkpoint=2000 \
     save_logging=csv \
-    num_rounds=1000 \
+    num_rounds=600 \
     num_gpus=0.5 \
     num_cpus=1 \
     dir_tag=femnist_data_poisoning \
-    cuda_visible_devices=\"1,2,3\"
+    cuda_visible_devices=\"3,2,1,0\"
+
+
+
+python main.py -m -cn tiny \
+    aggregator=unweighted_fedavg \
+    atk_config=tiny_multishot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=pattern,distributed,iba,a3fl \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=tiny_data_poisoning \
+    cuda_visible_devices=\"3,2,1,0\"
+
+
+python main.py -m -cn tiny \
+    aggregator=unweighted_fedavg \
+    atk_config=tiny_multishot \
+    atk_config.model_poison_method=chameleon \
+    atk_config.data_poison_method=pattern \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=tiny_durability_enhanced \
+    cuda_visible_devices=\"0,2,3,4,1\"
+
+python main.py -m -cn tiny \
+    aggregator=unweighted_fedavg \
+    atk_config=tiny_multishot \
+    atk_config.model_poison_method=anticipate \
+    atk_config.data_poison_method=pattern \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=tiny_durability_enhanced \
+    cuda_visible_devices=\"3,2,1,0,4\"
+
+
+
+python main.py -m -cn tiny \
+    aggregator=unweighted_fedavg \
+    atk_config=tiny_multishot \
+    atk_config.model_poison_method=base,neurotoxin,anticipate,chameleon \
+    atk_config.data_poison_method=pattern \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=tiny_durability_enhanced \
+    cuda_visible_devices=\"5,4,3,2,1\" &&
+python main.py -m -cn tiny \
+    aggregator=unweighted_fedavg \
+    atk_config=tiny_multishot \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=distributed,a3fl,iba \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=tiny_data_poisoning \
+    cuda_visible_devices=\"6,4,3,2,1\"
+
+
+############## EDGE_CASE FIX ###############
+
+python main.py -cn cifar10 \
+    aggregator=unweighted_fedavg \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=edge_case \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=edgecase_datapoison \
+    cuda_visible_devices=\"3,2,1,0\" && \
+python main.py -cn femnist \
+    aggregator=unweighted_fedavg \
+    atk_config.model_poison_method=base \
+    atk_config.data_poison_method=edge_case \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=edgecase_datapoison \
+    cuda_visible_devices=\"3,2,1,0\"
+
 
 ################ EMNIST Multishot ################
 

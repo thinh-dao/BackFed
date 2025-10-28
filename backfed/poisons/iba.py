@@ -8,14 +8,14 @@ from omegaconf import DictConfig
 from .base import Poison
 from backfed.models import UNet, MNISTAutoencoder
 from backfed.utils import log
-from logging import INFO
+from logging import INFO, WARNING
 
 DEFAULT_PARAMS = {
     "atk_eps": 0.3,
     "atk_test_eps": 0.05,  # Target epsilon after decay
     "eps_decay_rate": 0.01,  # Decay rate per round
     "atk_lr": 0.01,
-    "outter_epochs": 100,
+    "outter_epochs": 200,
     "save_atk_model_at_last": True,
 }
 
@@ -41,8 +41,9 @@ class IBA(Poison):
             self.atk_model = UNet(3).to("cuda")    
             self.atk_model_name = "unet"
 
-        self.atk_model_path = os.path.join("backfed/poisons/saved", "iba")
-        os.makedirs(self.atk_model_path, exist_ok=True)
+        if self.save_atk_model_at_last:
+            self.atk_model_path = os.path.join("backfed/poisons/saved", "iba")
+            os.makedirs(self.atk_model_path, exist_ok=True)
         
         # Epsilon decay tracking
         self.cur_eps = self.atk_eps  # Current epsilon
@@ -79,9 +80,12 @@ class IBA(Poison):
                              normalization=normalization)
 
     def train_atk_model(self, client_id, server_round, model, dataloader, normalization=None):
-        log(INFO, f"Client [{client_id}]: Train IBA trigger generator in round {server_round}, atk_eps: {self.atk_eps}, target_class: {self.params.target_class}.")
-
+        log(INFO, f"Client [{client_id}]: Train IBA trigger generator in round {server_round}, atk_eps: {self.cur_eps}, target_class: {self.params.target_class}.")
         start_time = time.time()
+
+        if len(dataloader) == 0:
+            log(WARNING, f"Client [{client_id}]: Empty dataloader, returning current trigger")
+            return self.trigger_image.detach()
 
         loss_fn = nn.CrossEntropyLoss()
         # training trigger
@@ -96,6 +100,7 @@ class IBA(Poison):
         
         for atk_train_epoch in range(self.outter_epochs):
             if local_asr >= threshold_asr:
+                log(INFO, f"Client [{client_id}]: Early stopping - threshold_asr reached ({local_asr:.4f} >= {threshold_asr})")
                 break
 
             backdoor_preds, backdoor_loss, total_sample = 0, 0, 0
@@ -133,12 +138,11 @@ class IBA(Poison):
             local_asr = backdoor_preds / total_sample
             backdoor_loss = backdoor_loss / len(dataloader)
             if atk_train_epoch % 10 == 0:
-                log(INFO, f"Epoch {atk_train_epoch}: local_asr: {local_asr} | threshold_asr: {threshold_asr} | backdoor_loss: {backdoor_loss}")
+                log(INFO, f"Epoch {atk_train_epoch} updated atk_model - local_asr: {local_asr*100:.2f}% | threshold_asr: {threshold_asr*100:.2f}% | backdoor_loss: {backdoor_loss}")
         
         self.unfreeze_model(model)
         end_time = time.time()
         log(INFO, f"Client [{client_id}]: Trigger generator training time: {end_time - start_time:.2f}s")
-
 
     def save_atk_model(self, name, server_round, path=None):
         """

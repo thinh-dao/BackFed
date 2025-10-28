@@ -18,7 +18,7 @@ from typing import Dict, Any, Tuple, List, Optional
 from torch.utils.data import Subset, Dataset
 from omegaconf import DictConfig
 from backfed.utils import log, set_random_seed
-from backfed.const import StateDict, Metrics
+from backfed.const import ModelUpdate, Metrics
 from backfed.datasets import nonIID_Dataset
 from logging import INFO
 
@@ -91,7 +91,7 @@ class ClientApp:
             **init_args
         )
 
-    def train(self, client_cls, client_id: int, init_args: Dict[str, Any], train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
+    def train(self, client_cls, client_id: int, init_args: Dict[str, Any], train_package: Dict[str, Any]) -> Tuple[int, ModelUpdate, Metrics]:
         try:
             # Clear memory before loading a new client
             if self.client is not None:

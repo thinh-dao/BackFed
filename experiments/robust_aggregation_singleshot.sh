@@ -9,7 +9,7 @@ python main.py -m -cn cifar10 \
     no_attack=True \
     num_rounds=300 \
     save_checkpoint=True \
-    "save_model_rounds=[2300]" \
+    "save_checkpoint_rounds=[2300]" \
     save_logging=csv \
     num_gpus=0.5 \
     num_cpus=1 \
@@ -37,7 +37,7 @@ python main.py -m -cn emnist \
     no_attack=True \
     num_rounds=300 \
     save_checkpoint=True \
-    "save_model_rounds=[1300]" \
+    "save_checkpoint_rounds=[1300]" \
     save_logging=csv \
     num_gpus=0.5 \
     num_cpus=1 \

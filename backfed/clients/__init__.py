@@ -11,3 +11,17 @@ from backfed.clients.neurotoxin_malicious_client import NeurotoxinClient
 from backfed.clients.sentiment_malicious_client import SentimentMaliciousClient
 from backfed.clients.reddit_malicious_client import RedditMaliciousClient
 from backfed.clients.anticipate_malicious_client import AnticipateClient
+from backfed.clients.cerberus_malicious_client import CerberusMaliciousClient
+
+__all__ = [
+    "BaseClient",
+    "BenignClient",
+    "LocalDPClient",
+    "MaliciousClient",
+    "ChameleonClient",
+    "NeurotoxinClient",
+    "SentimentMaliciousClient",
+    "RedditMaliciousClient",
+    "AnticipateClient",
+    "CerberusMaliciousClient",
+]

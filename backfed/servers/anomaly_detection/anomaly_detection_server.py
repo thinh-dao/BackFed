@@ -1,11 +1,8 @@
 """
-Defense category base classes for federated learning.
-
-This module provides base classes for categorizing defense mechanisms:
-- ClientSideDefenseServer: Defenses that modify client training
-- RobustAggregationServer: Defenses that use robust aggregation algorithms
-- AnomalyDetectionServer: Defenses that detect and filter malicious updates
+Base class for all anomaly detection defenses. It computes detection performance metrics
+and provides utility functions such as gap statistics for optimal cluster number selection.
 """
+
 import wandb
 import warnings
 import torch
@@ -18,7 +15,7 @@ warnings.filterwarnings("ignore", message="'force_all_finite' was renamed to 'en
 from sklearn.cluster import KMeans
 from backfed.servers.fedavg_server import UnweightedFedAvgServer
 from backfed.utils import log
-from backfed.const import client_id, num_examples, StateDict
+from backfed.const import client_id, num_examples, ModelUpdate
 from typing import List, Tuple, Dict
 from logging import INFO, WARNING
 
@@ -27,35 +24,6 @@ from logging import INFO, WARNING
 MaliciousClientsIds = List[int]
 BenignClientsIds = List[int]
 
-
-# ============= Base Server Classes =============
-
-class ClientSideDefenseServer(UnweightedFedAvgServer):
-    """
-    Base class for all client-side defenses.
-
-    Client-side defenses operate during client training by modifying the client's
-    training process, objective function, or update mechanism before sending to the server.
-
-    Examples: FedProx, LocalDP
-    """
-
-    def __init__(self, server_config, server_type, eta=0.1, **kwargs):
-        super().__init__(server_config, server_type, eta, **kwargs)
-
-
-class RobustAggregationServer(UnweightedFedAvgServer):
-    """
-    Base class for all robust aggregation defenses.
-
-    Robust aggregation defenses modify the aggregation algorithm to be resilient
-    against malicious updates, typically by using robust statistics or downweighting malicious updates.
-
-    Examples: Median, Trimmed Mean, Krum, FoolsGold
-    """
-
-    def __init__(self, server_config, server_type="robust_aggregation", eta=0.1, **kwargs):
-        super().__init__(server_config, server_type, eta, **kwargs)
 
 class AnomalyDetectionServer(UnweightedFedAvgServer):
     """
@@ -76,7 +44,7 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
         self.false_negatives = 0
 
     @abstractmethod
-    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]], **kwargs) -> Tuple[MaliciousClientsIds, BenignClientsIds]:
+    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]], **kwargs) -> Tuple[MaliciousClientsIds, BenignClientsIds]:
         """
         Detect anomalies in the updates. This method should be overridden by defenses.
 
@@ -170,17 +138,23 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
         # Detect anomalies & evaluate detection
         malicious_clients, benign_clients = self.detect_anomalies(client_updates)
         true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
-        detection_metrics = self.evaluate_detection(malicious_clients, true_malicious_clients, len(client_updates))
+        detection_metrics = self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
+
+        # If no benign clients found, skip update
+        if len(benign_clients) == 0:
+            log(WARNING, f"{self.__class__.__name__}: No benign clients identified, skipping model update.")
+            return False
 
         # Aggregate benign updates
         benign_updates = [client_update for client_update in client_updates if client_update[0] in benign_clients]
         return super().aggregate_client_updates(benign_updates)
 
-    def evaluate_detection(self, malicious_clients: List[int], true_malicious_clients: List[int], total_updates: int):
+    def evaluate_detection(self, benign_clients: List[int], malicious_clients: List[int], true_malicious_clients: List[int], total_updates: int):
         """
         Evaluate detection performance by comparing detected anomalies with ground truth.
 
         Args:
+            benign_clients: List of indices that were detected as benign
             malicious_clients: List of indices that were detected as anomalous
             true_malicious_clients: List of indices that are actually malicious (ground truth)
             total_updates: Total number of updates being evaluated
@@ -192,6 +166,7 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
         true_set = set(true_malicious_clients)
 
         log(INFO, f"═══ {self.__class__.__name__} detection results ═══")
+        log(INFO, f"Predicted benign clients: {benign_clients}")
         log(INFO, f"Predicted malicious clients: {list(detected_set)}")
         log(INFO, f"Ground-truth malicious clients: {list(true_set)}")
 
@@ -301,6 +276,3 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
             self.clean_rounds = 0
             self.clean_false_positives = 0
             self.clean_true_negatives = 0
-
-
-# For Hybrid defenses, we can use multiple inheritance (see FlameServer)

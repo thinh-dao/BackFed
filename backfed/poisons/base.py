@@ -54,7 +54,7 @@ class Poison(ABC):
     def poison_finish(self):
         """
         Not required for all attacks. Called at the end of the experiment.
-        Could be used to delete the trigger, attacker model, etc.
+        Could be used to save the trigger, attacker model, etc.
         """
         pass
     

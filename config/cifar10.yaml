@@ -60,11 +60,35 @@ client_config:
 
 ########################################################
 # *Aggregator configuration (overrides base.yaml)
-aggregator_config:
-  weighted_fedavg:
-    _target_: backfed.servers.WeightedFedAvgServer
-    eta: 1
+aggregator_config:  
+  robustlr:
+    _target_: backfed.servers.RobustLRServer
+    robustLR_threshold: 8
+    eta: 0.5
+  
+  krum:
+    _target_: backfed.servers.KrumServer
+    eta: 0.5
+    
+  multi_krum:
+    _target_: backfed.servers.MultiKrumServer
+    oracle: False # If true, we assume the number of malicious clients is known
+    num_malicious_clients: 2 
+    eta: 0.5
 
-  unweighted_fedavg:
-    _target_: backfed.servers.UnweightedFedAvgServer
+  bulyan:
+    _target_: backfed.servers.BulyanServer
+    oracle: False # If true, we assume the number of malicious clients is known
+    num_malicious_clients: 2 # Number of malicious clients to tolerate
+
+  snowball:
+    _target_: backfed.servers.SnowballServer
+    ct: 2  # Cluster threshold
+    vae_initial_epochs: 450  # Initial VAE training epochs (450)
+    vae_tuning_epochs: 50  # VAE tuning epochs (50)
+    vae_latent_dim: 64  # Latent dimension
+    vae_hidden_dim: 256  # Hidden dimension
+    vae_threshold: 0.5  # Threshold for benign set size
+    vae_step: 0.1  # Step size for iterative expansion (1 client per step)
+    warmup_rounds: 0  # Warmup rounds for CIFAR-10 (reference uses 100 but we evaluate on pretrained model)
     eta: 0.5

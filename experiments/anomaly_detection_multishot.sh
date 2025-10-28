@@ -10,7 +10,7 @@ python main.py -m -cn cifar10 \
     checkpoint=checkpoints/CIFAR10_unweighted_fedavg/ResNet18_round_2000_dir_0.5.pth \
     save_checkpoint=True \
     num_rounds=301 \
-    "save_model_rounds=[2300]" \
+    "save_checkpoint_rounds=[2300]" \
     save_logging=csv \
     num_gpus=0.5 \
     num_cpus=1 \
@@ -38,7 +38,7 @@ python main.py -m -cn emnist \
     checkpoint=checkpoints/EMNIST_BYCLASS_unweighted_fedavg/mnistnet_round_1000_dir_0.5.pth \
     save_checkpoint=True \
     num_rounds=301 \
-    "save_model_rounds=[1300]" \
+    "save_checkpoint_rounds=[1300]" \
     save_logging=csv \
     num_gpus=0.5 \
     num_cpus=1 \

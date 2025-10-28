@@ -10,7 +10,7 @@ from logging import INFO, WARNING
 from typing import Dict, Tuple, Any
 from backfed.clients.base_malicious_client import MaliciousClient
 from backfed.utils import log
-from backfed.const import Metrics, StateDict
+from backfed.const import Metrics, ModelUpdate
 
 DEFAULT_PARAMS = {
     "anticipate_steps": 9,  # Number of future steps to anticipate
@@ -200,8 +200,8 @@ class AnticipateClient(MaliciousClient):
             ) / total_users
         
         return aggregated
-    
-    def train(self, train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
+
+    def train(self, train_package: Dict[str, Any]) -> Tuple[int, ModelUpdate, Metrics]:
         """
         Train the anticipate malicious client with multi-step anticipation.
         
@@ -213,11 +213,11 @@ class AnticipateClient(MaliciousClient):
         """
         # Validate required keys
         self._check_required_keys(train_package, required_keys=[
-            "global_model_params", "selected_malicious_clients", "server_round"
+            "global_state_dict", "selected_malicious_clients", "server_round"
         ])
 
         # Setup training environment
-        self.model.load_state_dict(train_package["global_model_params"])
+        self.model.load_state_dict(train_package["global_state_dict"])
         selected_malicious_clients = train_package["selected_malicious_clients"]
         server_round = train_package["server_round"]
         normalization = train_package.get("normalization", None)
@@ -231,12 +231,12 @@ class AnticipateClient(MaliciousClient):
 
         # Setup poisoned dataloader if poison_mode is offline
         if self.atk_config.poison_mode == "offline":
-            self.set_poisoned_dataloader()
+            self._set_poisoned_dataloader()
         
         # Setup training protocol
         proximal_mu = train_package.get('proximal_mu', None) if self.atk_config.follow_protocol else None
         if self.atk_config.poisoned_is_projection or proximal_mu is not None:
-            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in train_package["global_model_params"].items()
+            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in train_package["global_state_dict"].items()
                                   if "weight" in name or "bias" in name]).to(self.device)
                 
         # Create attack model
@@ -415,4 +415,14 @@ class AnticipateClient(MaliciousClient):
             "train_backdoor_acc": train_acc,
         }
 
-        return len(self.train_dataset), attack_model.state_dict(), training_metrics
+        model_updates = self.weight_diff_dict(client_state_dict=self.model.state_dict(), 
+                                              global_state_dict=train_package["global_state_dict"]
+                                            )
+        
+        if self.atk_config["scale_poison"]:
+            self.model_replacement_inplace(
+                scale_factor=self.atk_config["scale_factor"],
+                model_updates=model_updates 
+            )
+
+        return len(self.train_dataset), model_updates, training_metrics

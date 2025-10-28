@@ -59,7 +59,7 @@ class NeurotoxinClient(MaliciousClient):
         Args:
             train_package (dict): Contains training parameters including:
                 - poison_module: The poison module to use
-                - global_model_params: Global model parameters
+                - global_state_dict: Global model parameters
                 - selected_malicious_clients: List of selected malicious clients
                 - server_round: Current server round
                 - normalization: Optional normalization function
@@ -67,16 +67,16 @@ class NeurotoxinClient(MaliciousClient):
         Returns:
             tuple: (num_examples, client_updates, training_metrics)
                 - num_examples (int): number of examples in the training dataset
-                - state_dict (StateDict): updated model parameters
+                - state_dict (ModelUpdate): updated model parameters
                 - training_metrics: Dict containing training metrics
         """
         # Validate required keys
         self._check_required_keys(train_package, required_keys=[
-            "global_model_params", "selected_malicious_clients", "server_round"
+            "global_state_dict", "selected_malicious_clients", "server_round"
         ])
 
         # Setup training environment
-        self.model.load_state_dict(train_package["global_model_params"])
+        self.model.load_state_dict(train_package["global_state_dict"])
         selected_malicious_clients = train_package["selected_malicious_clients"]
         server_round = train_package["server_round"]
         normalization = train_package.get("normalization", None)
@@ -96,12 +96,12 @@ class NeurotoxinClient(MaliciousClient):
 
         # Setup poisoned dataloader if poison_mode is offline
         if self.atk_config["poison_mode"] == "offline":
-            super().set_poisoned_dataloader()
+            super()._set_poisoned_dataloader()
 
         # Setup training protocol
         proximal_mu = self.atk_config.get('proximal_mu', None) if self.atk_config["follow_protocol"] else None
         if self.atk_config["poisoned_is_projection"] or proximal_mu is not None:
-            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in train_package["global_model_params"].items()
+            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in train_package["global_state_dict"].items()
                                   if "weight" in name or "bias" in name]).to(self.device)
 
         if self.atk_config["step_scheduler"]:
@@ -230,21 +230,22 @@ class NeurotoxinClient(MaliciousClient):
             f"Train Accuracy: {train_acc:.4f} | "
         )
 
-        # Prepare return values
-        if self.atk_config["scale_weights"]:
-            state_dict = self.get_model_replacement_parameters(
-                scale_factor=self.atk_config["scale_factor"],
-                global_params=train_package["global_model_params"]
-            )
-        else:
-            state_dict = self.get_model_parameters()
-
         training_metrics = {
             "train_backdoor_loss": train_loss,
             "train_backdoor_acc": train_acc,
         }
 
-        return len(self.train_dataset), state_dict, training_metrics
+        model_updates = self.weight_diff_dict(client_state_dict=self.model.state_dict(), 
+                                              global_state_dict=train_package["global_state_dict"]
+                                            )
+        
+        if self.atk_config["scale_poison"]:
+            self.model_replacement_inplace(
+                scale_factor=self.atk_config["scale_factor"],
+                model_updates=model_updates 
+            )
+
+        return len(self.train_dataset), model_updates, training_metrics
 
     def _compute_grad_mask(self, model, clean_train_loader, criterion=torch.nn.CrossEntropyLoss(), ratio=0.5):
         """Generate a gradient mask based on the given dataset"""

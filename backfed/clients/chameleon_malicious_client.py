@@ -137,13 +137,13 @@ class ChameleonClient(MaliciousClient):
         ######### Phase 1 - Train the contrastive model #########
         # Validate required keys
         self._check_required_keys(train_package, required_keys=[
-            "normalization", "server_round", "global_model_params"
+            "normalization", "server_round", "global_state_dict"
         ])
 
         normalization = train_package["normalization"]
         server_round = train_package["server_round"]
         selected_malicious_clients = train_package["selected_malicious_clients"]
-        global_model_params = train_package["global_model_params"]
+        global_state_dict = train_package["global_state_dict"]
 
         # Verify client is selected for poisoning
         assert self.client_id in selected_malicious_clients, "Client is not selected for poisoning"
@@ -151,13 +151,13 @@ class ChameleonClient(MaliciousClient):
         # Setup training protocol
         proximal_mu = train_package.get('proximal_mu', None) if self.atk_config.follow_protocol else None
         if self.atk_config.poisoned_is_projection or proximal_mu is not None:
-            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in global_model_params.items()
+            global_params_tensor = torch.cat([param.view(-1).detach().clone().requires_grad_(False) for name, param in global_state_dict.items()
                                   if "weight" in name or "bias" in name]).to(self.device)
         else:
             global_params_tensor = None
         
         # Update local model
-        self.model.load_state_dict(global_model_params)
+        self.model.load_state_dict(global_state_dict)
 
         # Initialize poison attack
         if self.poison_module.sync_poison: # If poison module requires synchronization
@@ -187,7 +187,7 @@ class ChameleonClient(MaliciousClient):
 
         # Setup poisoned dataloader if poison_mode is offline
         if self.atk_config.poison_mode == "offline":
-            self.set_poisoned_dataloader()
+            self._set_poisoned_dataloader()
 
         if self.atk_config["step_scheduler"]:
             scheduler = torch.optim.lr_scheduler.StepLR(
@@ -317,21 +317,22 @@ class ChameleonClient(MaliciousClient):
             f"Train Backdoor Accuracy: {train_acc:.4f} | "
         )
 
-        # Prepare return values
-        if self.atk_config["scale_weights"]:
-            state_dict = self.get_model_replacement_parameters(
-                scale_factor=self.atk_config["scale_factor"],
-                global_params=train_package["global_model_params"]
-            )
-        else:
-            state_dict = self.get_model_parameters()
-
         training_metrics = {
             "train_backdoor_loss": train_loss,
             "train_backdoor_acc": train_acc,
         }
 
-        return len(self.train_dataset), state_dict, training_metrics 
+        model_updates = self.weight_diff_dict(client_state_dict=self.model.state_dict(), 
+                                              global_state_dict=train_package["global_state_dict"]
+                                            )
+        
+        if self.atk_config["scale_poison"]:
+            self.model_replacement_inplace(
+                scale_factor=self.atk_config["scale_factor"],
+                model_updates=model_updates 
+            )
+
+        return len(self.train_dataset), model_updates, training_metrics
 
 class SupConLoss(nn.Module):
     """Supervised Contrastive Learning: 

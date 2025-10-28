@@ -6,7 +6,7 @@ import torch
 from logging import INFO
 from backfed.utils import log
 from backfed.clients.base_benign_client import BenignClient
-from backfed.const import StateDict, Metrics
+from backfed.const import ModelUpdate, Metrics
 from typing import Dict, Any, Tuple
 
 class LocalDPClient(BenignClient):
@@ -31,7 +31,7 @@ class LocalDPClient(BenignClient):
             **kwargs
         )
         
-    def train(self, train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
+    def train(self, train_package: Dict[str, Any]) -> Tuple[int, ModelUpdate, Metrics]:
         """
         Train the model for a number of epochs.
         
@@ -40,16 +40,16 @@ class LocalDPClient(BenignClient):
             
         Returns: 
             num_examples (int): number of examples in the training dataset
-            state_dict (StateDict): updated model parameters
+            state_dict (ModelUpdate): updated model parameters
             training_metrics (Dict[str, float]): training metrics
         """
         # Validate required keys
         self._check_required_keys(train_package, required_keys=[
-            "global_model_params", "server_round", "std_dev", "clipping_norm"
+            "global_state_dict", "server_round", "std_dev", "clipping_norm"
         ])
 
         # Setup training environment 
-        self.model.load_state_dict(train_package["global_model_params"])
+        self.model.load_state_dict(train_package["global_state_dict"])
         server_round = train_package["server_round"]
         normalization = train_package.get("normalization", None)
         std_dev = train_package["std_dev"]
@@ -109,14 +109,16 @@ class LocalDPClient(BenignClient):
             f"Train Loss: {train_loss:.4f} | "
             f"Train Accuracy: {train_acc:.4f}")
 
-        state_dict = self.get_model_parameters()
-
         training_metrics = {
             "train_clean_loss": train_loss,
             "train_clean_acc": train_acc,
         }
 
-        return len(self.train_dataset), state_dict, training_metrics
+        model_updates = self.weight_diff_dict(client_state_dict=self.model.state_dict(), 
+                                              global_state_dict=train_package["global_state_dict"]
+                                            )
+        
+        return len(self.train_dataset), model_updates, training_metrics
     
     def _apply_dp_to_gradients(self, clipping_norm: float, std_dev: float):
         """Apply differential privacy (clipping + noise) to model gradients before optimizer step"""

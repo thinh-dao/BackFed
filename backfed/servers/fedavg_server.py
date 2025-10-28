@@ -7,9 +7,35 @@ from backfed.servers.base_server import BaseServer
 from backfed.utils.logging_utils import log
 from logging import INFO, WARNING
 from typing import List, Tuple
-from backfed.const import StateDict, client_id, num_examples
+from backfed.const import ModelUpdate, client_id, num_examples
 
-class UnweightedFedAvgServer(BaseServer):
+class FedAvgServer(BaseServer):
+    def weight_accumulator(self, updates: ModelUpdate, weights: List[float]) -> ModelUpdate:
+        """
+        Accumulate weighted client updates with corresponding weights.
+
+        Args:
+            updates: List of model updates (\Delta_w)
+            weights: Corresponding weights for update
+        Returns:
+            weight_accumulator: Accumulated weighted updates
+        """
+        weight_accumulator = {
+            name: torch.zeros_like(param, device=self.device, dtype=torch.float32)
+            for name, param in self.global_model.state_dict().items()
+        }
+
+        for weight, update in zip(weights, updates):
+            for name, param_update in update.items():
+                if any(pattern in name for pattern in self.ignore_weights):
+                    continue
+
+                param_update = param_update.to(device=self.device, dtype=torch.float32)
+                weight_accumulator[name].add_(param_update * weight)
+
+        return weight_accumulator
+
+class UnweightedFedAvgServer(FedAvgServer):
     """
     FedAvg server with equal client weights, following standard FedAvg algorithm.
 
@@ -22,33 +48,7 @@ class UnweightedFedAvgServer(BaseServer):
         self.eta = eta
         log(INFO, f"Initialized UnweightedFedAvg server with eta={eta}")
 
-    @torch.no_grad()
-    def compute_client_distance(self, client_state: StateDict) -> float:
-        """
-        Compute L2 distance between client model and global model for differentiable parameters only.
-        """
-        flatten_client_weights = self.parameters_dict_to_vector(client_state).to(self.device)
-        weight_diff_norm = torch.linalg.norm(flatten_client_weights - self.global_parameters_vector, ord=2)
-        return weight_diff_norm.item()
-    
-    def parameters_dict_to_vector(self, state_dict: StateDict) -> torch.Tensor:
-        """Convert parameters dictionary to flat vector, excluding BatchNorm buffers."""
-        vec = []
-        for name, param in state_dict.items():
-            if "running" in name or "num_batches_tracked" in name:  # Skip buffers (non-trainable parameters)
-                continue
-            vec.append(param.view(-1))
-        return torch.cat(vec)
-    
-    @property
-    def global_parameters_vector(self) -> torch.Tensor:
-        """Get global model parameters as a flat vector, excluding BatchNorm buffers and ignored weights."""
-        vec = []
-        for name, param in self.global_model.named_parameters():  # Only trainable params            
-            vec.append(param.view(-1))
-        return torch.cat(vec)
-
-    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]):
         """
         Aggregate client updates using FedAvg with equal weights.
         """
@@ -59,33 +59,14 @@ class UnweightedFedAvgServer(BaseServer):
         num_clients = len(client_updates)
 
         # Report client-global model distances
-        if self.verbose:
-            for client_id_val, _, client_state in client_updates:
-                distance = self.compute_client_distance(client_state)
-                log(INFO, f"Client {client_id_val} has weight diff norm {distance:.4f}")
+        for client_id_val, _, client_update in client_updates:
+            distance = self.compute_client_distance(client_update)
+            log(INFO, f"Client {client_id_val} has weight diff norm {distance:.4f}")
 
         # Cumulative model updates with equal weights
-        weight = 1 / num_clients
-        weight_accumulator = {}
-        global_state_dict = self.global_model.state_dict()
-        
-        # Initialize float accumulators for all parameters (including integer buffers)
-        for name, param in global_state_dict.items():
-            weight_accumulator[name] = torch.zeros_like(
-                param, device=self.device, dtype=torch.float32
-            )
-        
-        for _, _, client_state in client_updates:
-            for name, param in client_state.items():
-                # Only process parameters that exist in the model
-                if any(pattern in name for pattern in self.ignore_weights):
-                    continue
-
-                # Convert to float for accumulation
-                client_param = param.to(device=self.device, dtype=torch.float32)
-                global_param = global_state_dict[name].to(device=self.device, dtype=torch.float32)
-                diff = client_param - global_param
-                weight_accumulator[name].add_(diff * weight)
+        weights = [1 / num_clients] * num_clients
+        updates = [model_update for _, _, model_update in client_updates]
+        weight_accumulator = self.weight_accumulator(updates, weights)
 
         # Update global model with learning rate
         for name, param in self.global_model.state_dict().items():
@@ -104,7 +85,7 @@ class WeightedFedAvgServer(BaseServer):
         self.eta = eta
         log(INFO, f"Initialized Weighted FedAvg server with eta={eta}")
 
-    def compute_client_distance(self, client_state: StateDict) -> float:
+    def compute_client_distance(self, client_state: ModelUpdate) -> float:
         """
         Compute L2 distance between client model and global model for differentiable parameters only.
         """
@@ -121,7 +102,7 @@ class WeightedFedAvgServer(BaseServer):
         weight_diff_norm = torch.linalg.norm(flatten_weights, ord=2)
         return weight_diff_norm.item()
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]):
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]):
         """
         Aggregate client updates using FedAvg with weights proportional to number of samples.
         """
@@ -129,38 +110,19 @@ class WeightedFedAvgServer(BaseServer):
             return False
 
         # Report client-global model distances
-        if self.verbose:
-            for client_id_val, _, client_state in client_updates:
-                distance = self.compute_client_distance(client_state)
-                log(INFO, f"Client {client_id_val} has weight diff norm {distance:.4f}")
+        for client_id_val, _, client_update in client_updates:
+            distance = self.compute_client_distance(client_update)
+            log(INFO, f"Client {client_id_val} has weight diff norm {distance:.4f}")
 
-        # Cumulative model updates with weights proportional to number of samples
-        weight_accumulator = {
-            name: torch.zeros_like(param, device=self.device, dtype=torch.float32)
-            for name, param in self.global_model.state_dict().items()
-        }
+        # Most Pythonic - unpack in one go
+        updates, num_samples_list = [], []
+        for _, n_samples, update in client_updates:
+            num_samples_list.append(n_samples)
+            updates.append(update)
 
-        total_samples = sum(num_samples for _, num_samples, _ in client_updates)
-        global_state_dict = self.global_model.state_dict()
-        
-        # Initialize float accumulators for all parameters (including integer buffers)
-        for name, param in global_state_dict.items():
-            weight_accumulator[name] = torch.zeros_like(
-                param, device=self.device, dtype=torch.float32
-            )
-        
-        for _, num_samples, client_state in client_updates:
-            weight = (num_samples / total_samples)
-            for name, param in client_state.items():
-                # Only process parameters that exist in the model
-                if any(pattern in name for pattern in self.ignore_weights):
-                    continue
-
-                # Convert to float for accumulation
-                client_param = param.to(device=self.device, dtype=torch.float32)
-                global_param = global_state_dict[name].to(device=self.device, dtype=torch.float32)
-                diff = client_param - global_param
-                weight_accumulator[name].add_(diff * weight)
+        total_samples = sum(num_samples_list)
+        weights = [n / total_samples for n in num_samples_list]
+        weight_accumulator = self.weight_accumulator(updates, weights)
 
         # Update global model with learning rate
         for name, param in self.global_model.state_dict().items():

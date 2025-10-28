@@ -2,12 +2,12 @@
 # *Default configuration to simplify experiment setup
 defaults:
   - base # Inherit from base config
+  - atk_config: femnist_multishot
   - _self_ # This ensures your config overrides the base config
-  - atk_config: emnist_multishot
 
 # *Aggregator
 aggregator: unweighted_fedavg
-checkpoint: 2000
+checkpoint: checkpoints/FEMNIST_unweighted_fedavg_0.5/mnistnet_round_2000_dir_0.9.pth
 
 # *Specify if the attack is enabled
 no_attack: False
@@ -46,5 +46,21 @@ client_config:
 aggregator_config:
   robustlr:
     _target_: backfed.servers.RobustLRServer
-    robustLR_threshold: 7
+    robustLR_threshold: 4
+    eta: 0.5
+
+  bulyan:
+    _target_: backfed.servers.BulyanServer
+    num_malicious_clients: 6 # Number of malicious clients to tolerate
+
+  snowball:
+    _target_: backfed.servers.SnowballServer
+    ct: 10  # Cluster threshold
+    vae_initial_epochs: 360  # Initial VAE training epochs (360)
+    vae_tuning_epochs: 40  # VAE tuning epochs (40)
+    vae_latent_dim: 64  # Latent dimension
+    vae_hidden_dim: 256  # Hidden dimension
+    vae_threshold: 0.5  # Threshold for benign set size
+    vae_step: 0.15  # Step size for iterative expansion (2 clients per step)
+    warmup_rounds: 0  # Warmup rounds for FEMNIST (reference uses 80 but we evaluate on pretrained model)
     eta: 0.5

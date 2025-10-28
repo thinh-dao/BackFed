@@ -5,20 +5,17 @@ FLDetector server implementation.
 import torch
 import numpy as np
 import wandb
-import os
-import glob
 
-from backfed.utils import save_model_to_wandb_artifact, get_model
+from .anomaly_detection_server import AnomalyDetectionServer
+from backfed.utils import get_model, log
 from typing import List, Tuple, Dict
 from sklearn.cluster import KMeans
-from backfed.servers.defense_categories import AnomalyDetectionServer, MaliciousClientsIds, BenignClientsIds
-from backfed.utils import log
 from logging import INFO, WARNING
 
 class FLDetectorServer(AnomalyDetectionServer):
     """FLDetector server implementation with PyTorch optimizations."""
 
-    def __init__(self, server_config, server_type="fldetector", window_size: int = 10, eta: float = 0.1):
+    def __init__(self, server_config, server_type="fldetector", window_size: int = 10, eta: float = 0.5):
         super().__init__(server_config, server_type, eta)
         self.start_round = self.current_round
         self.window_size = window_size
@@ -71,102 +68,23 @@ class FLDetectorServer(AnomalyDetectionServer):
         if self.config.wandb.save_model == True and self.config.wandb.save_model_round == -1:
             self.config.wandb.save_model_round = self.start_round + self.config.num_rounds
 
-    def _load_checkpoint(self):
-        """
-        Three ways to load checkpoint:
-        1. From W&B
-        2. From a specific round
-        3. From local path
-        """
-        if self.config.checkpoint == "wandb":
-            # Fetch the model from W&B
-            api = wandb.Api()
-            artifact = api.artifact(f"{self.config.wandb.entity}/{self.config.wandb.project}/{self.config.dataset}_{self.config.model}:latest")
-            local_path = artifact.download()
-            log(INFO, f"{self.config.model} checkpoint from W&B is downloaded to: {local_path}")
-            resume_model_dict = torch.load(os.path.join(local_path, "model.pth"))
-        
-        elif isinstance(self.config.checkpoint, int): # Load from specific round
-            # Load from checkpoint
-            save_dir = os.path.join(os.getcwd(), "checkpoints", f"{self.config.dataset.upper()}_{self.config.aggregator}")
-            if self.config.partitioner == "uniform":
-                model_path = f"{self.config.model}_round_{self.config.checkpoint}_uniform.pth"
-            else:
-                # Look for the model with the correct round_number and alpha. If correct alpha is not found, take the model with the highest alpha.
-                model_path = os.path.join(save_dir, f"{self.config.model}_round_{self.config.checkpoint}_dir_{self.config.alpha}.pth")
-                if not os.path.exists(model_path):
-                    model_path_pattern = os.path.join(save_dir, f"{self.config.model}_round_{self.config.checkpoint}_dir_*.pth")
-                    model_paths = glob.glob(model_path_pattern)
-                    if len(model_paths) == 0:
-                        raise FileNotFoundError(f"No checkpoint found for {self.config.model} at round {self.config.checkpoint} with any alpha in {save_dir}")
-                    model_path = max(model_paths, key=lambda p: float(p.split('_')[-1].replace('.pth', '')))
-                    highest_alpha = float(model_path.split('_')[-1].replace('.pth', ''))
-                    log(WARNING, f"No checkpoint found for alpha {self.config.alpha} at round {self.config.checkpoint}. Loading model with highest alpha: {highest_alpha}")
+    def _get_save_dict(self):
+        return {
+            'metrics': self.best_metrics,
+            'model_state': self.best_model_state,
+            'server_round': self.current_round,
+            'model_name': self.config.model,
 
-            save_path = os.path.join(save_dir, model_path)
-            if not os.path.exists(save_path):
-                raise FileNotFoundError(f"No checkpoint found for {self.config.model} at round {self.config.checkpoint} in {save_dir}")
-            
-            resume_model_dict = torch.load(save_path)
-            save_paths = glob.glob(os.path.join(save_dir, f"{self.config.model}_round_{self.config.checkpoint}*.pth"))
-            if not save_paths:
-                raise FileNotFoundError(f"No checkpoint found for {self.config.model} at round {self.config.checkpoint} in {save_dir}")
-            save_path = save_paths[0]  # Assuming we take the first match if multiple files are found
-            resume_model_dict = torch.load(save_path)
-
-        else: # Load from local path
-            if not os.path.exists(self.config.checkpoint):
-                raise FileNotFoundError(f"Checkpoint not found at {self.config.checkpoint}")
-            resume_model_dict = torch.load(self.config.checkpoint)
-    
-        # Update current round
-        start_round = resume_model_dict['server_round']
-        log(INFO, f"Loaded checkpoint from round {start_round} with metrics: {resume_model_dict['metrics']}")
-
-        return resume_model_dict
-    
-    def _save_checkpoint(self, server_metrics):
-        if self.config.save_checkpoint:
-            if self.config.partitioner == "dirichlet":
-                model_filename = f"{self.config.model}_round_{self.current_round}_dir_{self.config.alpha}.pth"
-            else:
-                model_filename = f"{self.config.model}_round_{self.current_round}_uniform.pth"
-        
-            save_dir = os.path.join(os.getcwd(), "checkpoints", f"{self.config.dataset.upper()}_{self.config.aggregator}")
-            os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, model_filename)
-            # Create a dictionary with metrics, model state, server_round, and model_name
-            save_dict = {
-                'metrics': self.best_metrics,
-                'model_state': self.best_model_state,
-                'server_round': self.current_round,
-                'model_name': self.config.model,
-
-                # Tracking variables
-                'exclude_list': self.exclude_list,
-                'weight_record': self.weight_record,
-                'grad_record': self.grad_record,
-                'malicious_scores_dict': self.malicious_scores_dict,
-                'grad_list': self.grad_list,
-                'old_grad_list': self.old_grad_list,
-                'last_weight': self.last_weight,
-                'last_grad': self.last_grad,
-            }
-            # Save the dictionary
-            torch.save(save_dict, save_path)
-            log(INFO, f"Checkpoint saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
-
-        if self.config.save_model:
-            save_dir = os.path.join(self.config.output_dir, "models")
-            os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, model_filename)
-            torch.save(self.best_model_state, save_path) # include only model state
-            log(INFO, f"Best model saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
-
-        if self.config.save_logging in ["wandb", "both"] \
-            and self.config.wandb.save_model == True \
-            and self.current_round == self.config.wandb.save_model_round:
-            save_model_to_wandb_artifact(self.config, self.best_model_state, self.current_round, server_metrics)
+            # Tracking variables
+            'exclude_list': self.exclude_list,
+            'weight_record': self.weight_record,
+            'grad_record': self.grad_record,
+            'malicious_scores_dict': self.malicious_scores_dict,
+            'grad_list': self.grad_list,
+            'old_grad_list': self.old_grad_list,
+            'last_weight': self.last_weight,
+            'last_grad': self.last_grad,
+        }
 
     def LBFGS(self, S_k_list: List[torch.Tensor], Y_k_list: List[torch.Tensor], v: torch.Tensor) -> torch.Tensor:
         """Implement L-BFGS algorithm for Hessian-vector product approximation using PyTorch."""
@@ -234,12 +152,13 @@ class FLDetectorServer(AnomalyDetectionServer):
         mean = torch.mean(stacked_params, dim=1, keepdim=True)
         return mean, distance
 
-    def evaluate_detection(self, malicious_clients: List[int], true_malicious_clients: List[int], total_updates: int):
+    def evaluate_detection(self, benign_clients: List[int], malicious_clients: List[int], true_malicious_clients: List[int], total_updates: int):
         """
         Evaluate detection performance by comparing detected anomalies with ground truth.
         For FLDetector, we compare exclude_list with all malicious clients.
 
         Args:
+            benign_clients: List of indices that were detected as benign
             malicious_clients: List of indices that were detected as anomalous
             true_malicious_clients: List of indices that are actually malicious (ground truth)
             total_updates: Total number of updates being evaluated 
@@ -285,7 +204,7 @@ class FLDetectorServer(AnomalyDetectionServer):
             self.csv_logger.log({**detection_metrics}, step=self.current_round)
         return detection_metrics
     
-    def detect_anomalies(self, client_updates: List[Tuple[int, int, Dict]]) -> Tuple[MaliciousClientsIds, BenignClientsIds]:
+    def detect_anomalies(self, client_updates: List[Tuple[int, int, Dict]]):
         """Detect anomalies in the client updates using PyTorch optimizations."""
         if self.current_round <= self.start_round:
             self.init_model = {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}

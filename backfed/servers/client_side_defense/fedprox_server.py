@@ -4,12 +4,13 @@ FedProx server implementation for FL.
 Reference: "Federated Optimization in Heterogeneous Networks"
 https://arxiv.org/abs/1812.06127
 """
-from backfed.servers.defense_categories import ClientSideDefenseServer
+
+from backfed.servers.fedavg_server import UnweightedFedAvgServer
 from backfed.utils.logging_utils import log
 from logging import INFO
 from typing import Tuple, Dict, Any
 
-class FedProxServer(ClientSideDefenseServer):
+class FedProxServer(UnweightedFedAvgServer):
     """
     FedProx server implementation.
 

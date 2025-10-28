@@ -15,16 +15,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 import copy
 
-from backfed.models import VGG_CIFAR, ResNet_CIFAR, ResNet_MNIST, ResNet_TINYIMAGENET, MnistNet
+from backfed.models import VGG_CIFAR, VGG_TINYIMAGENET, ResNet_CIFAR, ResNet_MNIST, ResNet_TINYIMAGENET, MnistNet
 
 class SupConModel(nn.Module):
     def __init__(self, model):        
         super(SupConModel, self).__init__()
 
-        if isinstance(model, VGG_CIFAR):
-            # For CIFAR VGG: features
+        if isinstance(model, (VGG_CIFAR, VGG_TINYIMAGENET)):
+            # For VGG models (CIFAR and TinyImageNet)
             self.backbone_type = "VGG"
-            self.features = copy.deepcopy(model.features) 
+            self.features = copy.deepcopy(model.features)
+            
+            # For TinyImageNet, also copy the avgpool layer
+            if isinstance(model, VGG_TINYIMAGENET):
+                self.avgpool = copy.deepcopy(model.avgpool)
+            else:
+                self.avgpool = None
+                
             self.flatten = nn.Flatten()
         elif isinstance(model, (ResNet_CIFAR, ResNet_MNIST, ResNet_TINYIMAGENET)):
             # For CIFAR/MNIST ResNet: explicit layer construction with minimal pooling
@@ -46,13 +53,18 @@ class SupConModel(nn.Module):
             self.fc1 = copy.deepcopy(model.fc1)  # Feature extractor
             self.flatten = nn.Flatten()
         else:
-            raise ValueError("SupConModel currently only supports VGG and ResNet models")
+            raise ValueError("SupConModel currently only supports VGG, ResNet, and MnistNet models")
 
     def forward(self, x):
         # Extract features using the appropriate backbone
         if self.backbone_type == "VGG":
             # VGG path
             x = self.features(x)
+            
+            # Apply avgpool if it exists (for TinyImageNet)
+            if self.avgpool is not None:
+                x = self.avgpool(x)
+            
             x = self.flatten(x)
         elif self.backbone_type == "ResNet":
             # ResNet path - explicit layer execution
@@ -125,8 +137,32 @@ def test_supcon_models():
     except Exception as e:
         print(f"   VGG_CIFAR test failed: {e}")
     
-    # Test 2: ResNet_CIFAR
-    print("\n2. Testing ResNet_CIFAR:")
+    # Test 2: VGG_TINYIMAGENET
+    print("\n2. Testing VGG_TINYIMAGENET:")
+    try:
+        from backfed.models.vgg_tinyimagenet import VGG as VGG_TINYIMAGENET
+        vgg_tiny = VGG_TINYIMAGENET('VGG11', num_classes=200)
+        supcon_vgg_tiny = SupConModel(vgg_tiny)
+        
+        # Test forward pass
+        x_tiny = torch.randn(2, 3, 64, 64)
+        features_vgg_tiny = supcon_vgg_tiny(x_tiny)
+        print(f"   Input shape: {x_tiny.shape}")
+        print(f"   Output features shape: {features_vgg_tiny.shape}")
+        print(f"   Features normalized: {torch.allclose(torch.norm(features_vgg_tiny, dim=1), torch.ones(2))}")
+        
+        # Test parameter transfer
+        target_vgg_tiny = VGG_TINYIMAGENET('VGG11', num_classes=200)
+        original_param = target_vgg_tiny.features[0].weight.clone()
+        supcon_vgg_tiny.transfer_params(target_vgg_tiny)
+        transferred_param = target_vgg_tiny.features[0].weight
+        print(f"   Parameter transfer successful: {not torch.equal(original_param, transferred_param)}")
+        
+    except Exception as e:
+        print(f"   VGG_TINYIMAGENET test failed: {e}")
+    
+    # Test 3: ResNet_CIFAR
+    print("\n3. Testing ResNet_CIFAR:")
     try:
         from backfed.models.resnet_cifar import ResNet18 as ResNet18_CIFAR
         resnet_cifar = ResNet18_CIFAR(num_classes=10)
@@ -149,8 +185,8 @@ def test_supcon_models():
     except Exception as e:
         print(f"   ResNet_CIFAR test failed: {e}")
     
-    # Test 3: ResNet_MNIST
-    print("\n3. Testing ResNet_MNIST:")
+    # Test 4: ResNet_MNIST
+    print("\n4. Testing ResNet_MNIST:")
     try:
         from backfed.models.resnet_mnist import ResNet18 as ResNet18_MNIST
         resnet_mnist = ResNet18_MNIST(num_classes=10)
@@ -173,8 +209,8 @@ def test_supcon_models():
     except Exception as e:
         print(f"   ResNet_MNIST test failed: {e}")
     
-    # Test 4: ResNet_TINYIMAGENET
-    print("\n4. Testing ResNet_TINYIMAGENET:")
+    # Test 5: ResNet_TINYIMAGENET
+    print("\n5. Testing ResNet_TINYIMAGENET:")
     try:
         from backfed.models.resnet_tinyimagenet import ResNet18 as ResNet18_TINY
         resnet_tiny = ResNet18_TINY(num_classes=200)
@@ -201,8 +237,8 @@ def test_supcon_models():
     except Exception as e:
         print(f"   ResNet_TINYIMAGENET test failed: {e}")
     
-    # Test 5: MnistNet
-    print("\n5. Testing MnistNet:")
+    # Test 6: MnistNet
+    print("\n6. Testing MnistNet:")
     try:
         from backfed.models.mnistnet import MnistNet
         mnist_net = MnistNet(num_classes=10)

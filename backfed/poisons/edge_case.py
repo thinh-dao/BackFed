@@ -37,7 +37,13 @@ class EdgeCase(Poison):
             self.transform_edge_case = DEFAULT_TRANSFORMS[dataset]
         else:
             raise ValueError(f"Unsupported dataset: {dataset}")
-                
+        
+        # Fix target class for edge-case attack
+        if 'NIST' in dataset:
+            self.params.target_class = 1  # Target class '1' for handwritten digit '7'
+        elif dataset == "CIFAR10":
+            self.params.target_class = 9  # Target class '9' for 'truck' in CIFAR-10
+
         self._load_edge_case()      
     
     def _load_edge_case(self):            

@@ -2,16 +2,14 @@
 Geometric Median server implementation for FL.
 """
 import torch
-import numpy as np
 
-from backfed.servers.defense_categories import RobustAggregationServer
-from backfed.utils.logging_utils import log
-from backfed.const import StateDict, client_id, num_examples
-from logging import INFO
 from typing import List, Tuple
-from scipy.optimize import minimize
+from logging import INFO
+from backfed.servers.fedavg_server import BaseServer
+from backfed.utils.logging_utils import log
+from backfed.const import ModelUpdate, client_id, num_examples
 
-class CoordinateMedianServer(RobustAggregationServer):
+class CoordinateMedianServer(BaseServer):
     """
     Server that implements coordinate-wise median aggregation to mitigate the impact of malicious clients.
 
@@ -19,7 +17,7 @@ class CoordinateMedianServer(RobustAggregationServer):
     making it robust against extreme values from malicious clients.
     """
 
-    def __init__(self, server_config, server_type="coordinate_median"):
+    def __init__(self, server_config, server_type="coordinate_median", eta=1.0):
         """
         Initialize the coordinate-wise median server.
 
@@ -28,9 +26,10 @@ class CoordinateMedianServer(RobustAggregationServer):
             server_type: Type of server
         """
         super(CoordinateMedianServer, self).__init__(server_config, server_type)
+        self.eta = eta
         log(INFO, f"Initialized Coordinate-wise Median server")
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> bool:
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]) -> bool:
         """
         Aggregate client updates using coordinate-wise median.
 
@@ -42,29 +41,44 @@ class CoordinateMedianServer(RobustAggregationServer):
         if len(client_updates) == 0:
             return False
 
-        # Extract client parameters
-        client_params = [params for _, _, params in client_updates]
-        global_state_dict = self.global_model.state_dict()
+        # Extract client model updates
+        updates = [update for _, _, update in client_updates]
+        num_clients = len(client_updates)
+        
+        # Accumulate gradient updates with coordinate-wise median
+        weight_accumulator = {
+            name: torch.zeros_like(param, device=self.device, dtype=torch.float32)
+            for name, param in self.global_model.state_dict().items()
+        }    
 
-        # Process each parameter separately
-        for name, param in global_state_dict.items():
-            # Skip ignored weights
+        # Coordinate-wise median over trainable params
+        for name, param in self.global_model.state_dict().items():
             if any(pattern in name for pattern in self.ignore_weights):
                 continue
-            
-            # Check if all clients have this parameter
-            if all(name in client_param for client_param in client_params):
-                # Stack parameters from all clients for this layer
-                layer_params = torch.stack([
-                    client_param[name].to(device=self.device, dtype=param.dtype) 
-                    for client_param in client_params
-                ])
-                # Update global model parameters directly with median
-                param.data.copy_(torch.median(layer_params, dim=0).values)
 
+            # We only perform trimmed-mean on trainable params
+            if name not in self.trainable_names:
+                for update in updates:
+                    param_update = update[name].to(device=self.device, dtype=torch.float32)
+                    weight_accumulator[name].add_(param_update * 1/num_clients)
+            else:
+                # Stack parameters from all clients for this layer
+                layer_updates = torch.stack([
+                    client_model_update[name].to(device=self.device, dtype=param.dtype)
+                    for client_model_update in updates
+                ])
+
+                # Update weight_accumulator
+                weight_accumulator[name].copy_(torch.median(layer_updates, dim=0).values)
+
+        # Update global model with learning rate
+        for name, param in self.global_model.state_dict().items():
+            if any(pattern in name for pattern in self.ignore_weights):
+                continue
+            param.data.add_(weight_accumulator[name] * self.eta)
         return True
 
-class GeometricMedianServer(RobustAggregationServer):
+class GeometricMedianServer(BaseServer):
     """
     Server that implements geometric median aggregation to mitigate the impact of malicious clients.
 
@@ -72,22 +86,24 @@ class GeometricMedianServer(RobustAggregationServer):
     making it robust against Byzantine attacks.
     """
 
-    def __init__(self, server_config, server_type="geometric_median", eps=1e-5, maxiter=4, ftol=1e-6):
+    def __init__(self, server_config, server_type="geometric_median", eta=1.0, eps=1e-5, maxiter=3, ftol=1e-6):
         """
         Initialize the geometric median server.
 
         Args:
             server_config: Dictionary containing configuration
             server_type: Type of server
+            eta: Learning rate for global model update
             eps: Smallest allowed value of denominator to avoid divide by zero
             maxiter: Maximum number of Weiszfeld iterations
             ftol: Tolerance for function value convergence
         """
         super(GeometricMedianServer, self).__init__(server_config, server_type)
+        self.eta = eta
         self.eps = eps
         self.maxiter = maxiter
         self.ftol = ftol
-        log(INFO, f"Initialized Geometric Median server with eps={eps}, maxiter={maxiter}, ftol={ftol}")
+        log(INFO, f"Initialized Geometric Median server with eta={eta}, eps={eps}, maxiter={maxiter}, ftol={ftol}")
 
     def _l2distance(self, p1, p2):
         """Calculate L2 distance between two lists of tensors."""
@@ -158,7 +174,7 @@ class GeometricMedianServer(RobustAggregationServer):
 
         return median
 
-    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> bool:
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]) -> bool:
         """
         Aggregate client updates using geometric median.
 
@@ -171,22 +187,28 @@ class GeometricMedianServer(RobustAggregationServer):
             return False
 
         # Extract client parameters
-        client_params = [params for _, _, params in client_updates]
-        global_state_dict = self.global_model.state_dict()
+        updates = [update for _, _, update in client_updates]
+        num_clients = len(client_updates)
+        
+        # Accumulate gradient updates with geometric median
+        weight_accumulator = {
+            name: torch.zeros_like(param, device=self.device, dtype=torch.float32)
+            for name, param in self.global_model.state_dict().items()
+        }
         
         # Convert client parameters to list of tensors for geometric median
         points = []
         param_names = []
         
-        for params in client_params:
+        for update in updates:
             point = []
-            for name, param in global_state_dict.items():
+            for name, param in self.global_model.state_dict().items():
                 # Skip ignored weights
                 if any(pattern in name for pattern in self.ignore_weights):
                     continue
-                    
-                if name in params:
-                    point.append(params[name].to(self.device))
+
+                if name in self.trainable_names:
+                    point.append(update[name].to(self.device))
                     if len(param_names) < len(point):  # Only add names once
                         param_names.append(name)
             points.append(point)
@@ -194,7 +216,7 @@ class GeometricMedianServer(RobustAggregationServer):
         # Equal weights for all clients
         weights = torch.ones(len(points), device=self.device)
         
-        # Compute geometric median
+        # Compute geometric median for trainable parameters
         geometric_median = self._geometric_median(
             points, 
             weights, 
@@ -203,9 +225,27 @@ class GeometricMedianServer(RobustAggregationServer):
             ftol=self.ftol
         )
         
-        # Update global model parameters directly
-        for i, name in enumerate(param_names):
-            global_state_dict[name].data.copy_(geometric_median[i])
+        # Update weight_accumulator
+        for name, param in self.global_model.state_dict().items():
+            if any(pattern in name for pattern in self.ignore_weights):
+                continue
 
-        log(INFO, f"Geometric median aggregation completed")
+            # We only perform geometric median on trainable params
+            if name not in self.trainable_names:
+                for update in updates:
+                    param_update = update[name].to(device=self.device, dtype=torch.float32)
+                    weight_accumulator[name].add_(param_update * 1/num_clients)
+            else:
+                # Get the geometric median for this parameter
+                param_idx = param_names.index(name)
+                weight_accumulator[name].copy_(geometric_median[param_idx])
+
+        # Update global model with learning rate
+        for name, param in self.global_model.state_dict().items():
+            if any(pattern in name for pattern in self.ignore_weights):
+                continue
+            param.add_(weight_accumulator[name] * self.eta)
         return True
+
+    def __repr__(self) -> str:
+        return f"GeometricMedian(eta={self.eta}, eps={self.eps}, maxiter={self.maxiter}, ftol={self.ftol})"

@@ -3,6 +3,7 @@ from .pattern import Pattern, BadNets, Pixel, Blended
 from .distributed import Distributed, Centralized
 from .a3fl import A3FL
 from .edge_case import EdgeCase
+from .cerberus import Cerberus
 from .iba import IBA
 from .text_poison import RedditPoisonLSTM, SentimentPoisonBert
 
@@ -18,5 +19,6 @@ __all__ = [
     "EdgeCase",
     "IBA",
     "RedditPoisonLSTM",
-    "SentimentPoisonBert"
+    "SentimentPoisonBert",
+    "Cerberus"
 ]

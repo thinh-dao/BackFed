@@ -30,6 +30,6 @@ IMG_SIZE = {
 }
 
 Metrics = Dict[str, float]
-StateDict = Dict[str, torch.Tensor]
+ModelUpdate = Dict[str, torch.Tensor]
 client_id = int
 num_examples = int

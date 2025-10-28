@@ -1,28 +1,15 @@
 """Implementation of FLARE server for federated learning."""
 
-import math
 import torch
 import copy
 
-from torch.utils.data import DataLoader
+from backfed.models.supcon import SupConModel
+from backfed.servers.fedavg_server import FedAvgServer
 from typing import Dict, List, Tuple
 from logging import INFO
-from backfed.datasets import FL_DataLoader
-from backfed.servers.defense_categories import RobustAggregationServer
 from backfed.utils.logging_utils import log
 
-def bypass_last_layer(model):
-    """Hacky way of separating features and classification head for many models."""
-    if isinstance(model, torch.nn.DataParallel) or isinstance(model, torch.nn.parallel.DistributedDataParallel):
-        layer_cake = list(model.module.children())
-    else:
-        layer_cake = list(model.children())
-        
-    last_layer = layer_cake[-1]
-    headless_model = torch.nn.Sequential(*(layer_cake[:-1]), torch.nn.Flatten()).eval()
-    return headless_model, last_layer
-
-class FlareServer(RobustAggregationServer):
+class FlareServer(FedAvgServer):
     """
     FLARE server implementation that uses Maximum Mean Discrepancy (MMD)
     to detect and filter malicious updates.
@@ -35,45 +22,28 @@ class FlareServer(RobustAggregationServer):
         self,
         server_config,
         server_type: str = "flare",
-        voting_threshold: float = 0.5,
-        temperature: float = 1.0,
         eta: float = 0.1,
         m: int = 10, # Number of auxiliary data samples
         aux_class: int = 5, # The class used as auxiliary data
-    ):
-        self.voting_threshold = voting_threshold
-        self.temperature = max(float(temperature), 1e-6)
+    ):  
         self.m = m
         self.aux_class = aux_class
+        self.eta = eta
         
-        super().__init__(server_config, server_type, eta) # Setup datasets and so on
+        super().__init__(server_config, server_type) # Setup datasets and so on
         
         log(
             INFO,
-            "Initialized FLARE server with voting_threshold=%s, temperature=%s",
-            voting_threshold,
-            self.temperature,
+            f"Initialized FLARE server with m={self.m}, aux_class={self.aux_class}, eta={self.eta}",
         )
         
     def _prepare_dataset(self):
-        """Very hacky. We override the _prepare_dataset function to load auxiliary clean data for the defense."""
-        
-        self.fl_dataloader = FL_DataLoader(config=self.config)
-        if self.config.dataset.upper() in ["REDDIT", "FEMNIST", "SENTIMENT140"]:
-            raise NotImplementedError(f"FLARE not implemented for {self.config.dataset} dataset")
-        else:
-            self.trainset, self.client_data_indices, self.secret_dataset_indices, self.testset = self.fl_dataloader.prepare_dataset() 
-        
-        self.test_loader = DataLoader(self.testset, 
-                            batch_size=self.config.test_batch_size, 
-                            num_workers=self.config.num_workers,
-                            pin_memory=self.config.pin_memory,
-                            shuffle=False
-        )
+        """We override the _prepare_dataset function to load auxiliary clean data for the defense."""
+        super()._prepare_dataset()
                                     
         # Sample m indices of the auxiliary class from the training set
         chosen_indices = []
-        targets = getattr(self.trainset, 'targets', None) or getattr(self.trainset, 'labels', None)
+        targets = getattr(self.testset, 'targets', None) or getattr(self.testset, 'labels', None)
         
         if targets is not None:
             for idx, label in enumerate(targets):
@@ -83,18 +53,18 @@ class FlareServer(RobustAggregationServer):
                         break
         else:
             # Fallback: iterate through dataset to find samples of aux_class
-            for idx in range(len(self.trainset)):
+            for idx in range(len(self.testset)):
                 if len(chosen_indices) >= self.m:
                     break
-                sample = self.trainset[idx]
+                sample = self.testset[idx]
                 label = sample[1] if isinstance(sample, (tuple, list)) and len(sample) > 1 else None
                 if label == self.aux_class:
                     chosen_indices.append(idx)
 
         if len(chosen_indices) < self.m:
-            raise ValueError(f"Not enough samples of class {self.aux_class} in the training set.")
-        
-        aux_tensors = torch.stack([self.trainset[i][0] for i in chosen_indices])
+            raise ValueError(f"Flare: Not enough samples of class {self.aux_class} in the test set.")
+
+        aux_tensors = torch.stack([self.testset[i][0] for i in chosen_indices])
         if self.normalization:
             self.aux_inputs = self.normalization(aux_tensors).to(self.device)
         else:
@@ -143,19 +113,29 @@ class FlareServer(RobustAggregationServer):
             return False
 
         client_features = []
+        client_ids = []
+        updates = []
+
         for client_id, _, model_update in client_updates:
+            client_ids.append(client_id)
+            updates.append(model_update)
+
             # Load client model update into a temporary model
             temp_model = copy.deepcopy(self.global_model)
-            temp_model.load_state_dict(model_update)
-            temp_model.eval()
+            for name, param in temp_model.state_dict().items():
+                if any(pattern in name for pattern in self.ignore_weights):
+                    continue
+                param.data.add_(model_update[name] * self.eta)
             
             # Get feature_extractor
-            feature_extractor, _ = bypass_last_layer(temp_model)
+            temp_model.eval()
+            feature_extractor = SupConModel(temp_model)
             feature_extractor.to(self.device).eval()
 
             # Add client features
             with torch.no_grad():
                 features = feature_extractor(self.aux_inputs)
+            
             client_features.append(features)
         
         num_clients = len(client_updates)
@@ -166,10 +146,9 @@ class FlareServer(RobustAggregationServer):
                 mmd_score = self._compute_mmd(client_features[i], client_features[j]).item()
                 distance_matrix[i, j] = distance_matrix[j, i] = mmd_score
         
-        if self.verbose:
-            log(INFO, "FLARE distances: %s", distance_matrix.tolist())
+        # log(INFO, "FLARE distances: %s", distance_matrix.tolist())
 
-        neighbor_count = max(1, int(math.ceil(self.voting_threshold * (num_clients - 1))))
+        neighbor_count = int(0.5 * num_clients)
         vote_counter = torch.zeros(num_clients, dtype=torch.float32)
 
         for i in range(num_clients):
@@ -179,34 +158,14 @@ class FlareServer(RobustAggregationServer):
             for neighbor in neighbor_indices:
                 vote_counter[neighbor] += 1
 
-        trust_scores = torch.softmax(vote_counter / self.temperature, dim=0)
-        
-        if self.verbose:
-            log(INFO, "FLARE trust scores: %s", trust_scores.tolist())
+        flare_weights = torch.softmax(vote_counter, dim=0).tolist()
+        log(INFO, f"FLARE (client_id, weight): {list(zip(client_ids, flare_weights))}")
 
-        global_state_dict = self.global_model.state_dict()
-        weight_accumulator: Dict[str, torch.Tensor] = {}
+        weight_accumulator = self.weight_accumulator(updates, flare_weights)
 
-        for name, param in global_state_dict.items():
-            if any(pattern in name for pattern in self.ignore_weights):
-                continue
-            weight_accumulator[name] = torch.zeros_like(
-                param, device=self.device, dtype=torch.float32
-            )
-
-        for weight, (_, _, client_state) in zip(trust_scores.tolist(), client_updates):
-            trust_weight = float(weight)
-            for name, param in client_state.items():
-                if any(pattern in name for pattern in self.ignore_weights):
-                    continue
-                client_param = param.to(device=self.device, dtype=torch.float32)
-                global_param = global_state_dict[name].to(device=self.device, dtype=torch.float32)
-                diff = client_param - global_param
-                weight_accumulator[name].add_(diff * trust_weight)
-
+        # Update global model with learning rate
         for name, param in self.global_model.state_dict().items():
             if any(pattern in name for pattern in self.ignore_weights):
                 continue
             param.data.add_(weight_accumulator[name] * self.eta)
-
         return True

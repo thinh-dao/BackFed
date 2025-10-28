@@ -1,2 +1,2 @@
-python main.py -cn sentiment140 checkpoint=2000 num_rounds=400 atk_config.poison_start_round=2001 atk_config.poison_end_round=2200 atk_config.scale_weights=True atk_config.scale_factor=10 cuda_visible_devices=\"0,1,2,3\" 
-python main.py -cn reddit checkpoint=5000 num_rounds=400 atk_config.poison_start_round=5001 atk_config.poison_end_round=5200 atk_config.scale_weights=True atk_config.scale_factor=10 cuda_visible_devices=\"4,5,6,7\"
+python main.py -cn sentiment140 checkpoint=2000 num_rounds=400 atk_config.poison_start_round=2001 atk_config.poison_end_round=2200 atk_config.scale_poison=True atk_config.scale_factor=10 cuda_visible_devices=\"0,1,2,3\" 
+python main.py -cn reddit checkpoint=5000 num_rounds=400 atk_config.poison_start_round=5001 atk_config.poison_end_round=5200 atk_config.scale_poison=True atk_config.scale_factor=10 cuda_visible_devices=\"4,5,6,7\"

@@ -7,7 +7,7 @@ import torch.nn as nn
 from typing import Dict, Any, Tuple, List
 from torch.utils.data import DataLoader, Dataset, random_split
 from omegaconf import DictConfig
-from backfed.const import StateDict, Metrics
+from backfed.const import ModelUpdate, Metrics
 from hydra.utils import instantiate
 
 class BaseClient:
@@ -72,14 +72,22 @@ class BaseClient:
             self.train_dataset = dataset
             self.train_loader = DataLoader(self.train_dataset, batch_size=self.client_config["batch_size"], shuffle=True, pin_memory=False)
 
-    def _check_required_keys(self, train_package: Dict[str, Any], required_keys: List[str] = ["global_model_params", "server_round"]):
+    def _check_required_keys(self, train_package: Dict[str, Any], required_keys: List[str] = ["global_state_dict", "server_round"]):
         """
         Check if the required keys are present in the train_package.
         """
         for key in required_keys:
             assert key in train_package, f"{key} not found in train_package for {self.client_type} client"
 
-    def train(self, train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
+    def weight_diff_dict(self, client_state_dict: Dict[str, torch.Tensor], global_state_dict: Dict[str, torch.Tensor]) -> ModelUpdate:
+        """
+        Compute the weight difference between the current model and the provided state_dict.
+        Args:
+            state_dict: ModelUpdate containing model parameters
+        """
+        return {name: param - global_state_dict[name] for name, param in client_state_dict.items()}
+
+    def train(self, train_package: Dict[str, Any]) -> Tuple[int, ModelUpdate, Metrics]:
         """
         Train the model for a number of epochs.
 
@@ -88,7 +96,7 @@ class BaseClient:
 
         Returns:
             num_examples (int): number of examples in the training dataset
-            state_dict (StateDict): updated model parameters
+            state_dict (ModelUpdate): updated model parameters
             training_metrics (Dict[str, float]): training metrics
         """
         raise NotImplementedError("Train method must be implemented by subclasses")
@@ -116,12 +124,6 @@ class BaseClient:
             return torch.linalg.norm(client_params_tensor - global_params_tensor, ord=2).item()
         else:
             return torch.linalg.norm(client_params_tensor - global_params_tensor, ord=2)
-
-    def get_model_parameters(self) -> StateDict:
-        """
-        Get model parameters with consistent precision.
-        """
-        return {name: param.detach().clone() for name, param in self.model.state_dict().items()}
 
     def get_client_info(self):
         """

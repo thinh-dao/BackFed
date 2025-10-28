@@ -3,12 +3,13 @@ FedProx server implementation for FL.
 
 Reference: https://www.ndss-symposium.org/wp-content/uploads/2022-54-paper.pdf
 """
-from backfed.servers.defense_categories import ClientSideDefenseServer
+
+from backfed.servers.fedavg_server import UnweightedFedAvgServer
 from backfed.utils.logging_utils import log
 from logging import INFO
 from typing import Tuple, Dict, Any
 
-class LocalDPServer(ClientSideDefenseServer):
+class LocalDPServer(UnweightedFedAvgServer):
 
     def __init__(self, server_config, server_type="localdp", eta=0.1, std_dev=0.01, clipping_norm=5.0):
         """

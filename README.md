@@ -245,7 +245,7 @@ Note: If you use debuggers (e.g., ipdb or pdb), it is recommended to set `traini
 | `checkpoint` | str/int | `Null` | Resume from checkpoint (round number, file path, or "wandb") |
 | `save_model` | bool | `False` | Save model to outputs directory |
 | `save_checkpoint` | bool | `False` | Save model to checkpoints directory |
-| `save_model_rounds` | list | `[200,400,600,800,1000]` | Specific rounds to save model |
+| `save_checkpoint_rounds` | list | `[200,400,600,800,1000]` | Specific rounds to save model |
 | `pretrain_model_path` | str | `Null` | Path to pretrained weights or "IMAGENET1K_V2" |
 
 ### Logging and Visualization

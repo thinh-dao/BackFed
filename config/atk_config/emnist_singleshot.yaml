@@ -1,5 +1,10 @@
 ---
 # *Information passed from parent config
+defaults:
+  - base_attack # Inherit from base config
+  - _self_ # This ensures your config overrides the base config
+
+# *Information passed from parent config
 dataset: ${dataset} # Specific version of EMNIST dataset, e.g., EMNIST_BYCLASS, EMNIST_BYMERGE, etc.
 num_classes: ${num_classes} # Number of classes in the dataset
 
@@ -30,7 +35,7 @@ poisoned_projection_eps: 10 # Projection norm
 poisoned_projection_frequency: 2 # Project every 2 iterations
 
 # *Model replacement settings
-scale_weights: True 
+scale_poison: True 
 scale_factor: 75 # (num_clients_per_round/(eta*num_attackers))
 
 # *Type of poisoning
@@ -110,12 +115,9 @@ data_poison_config:
 
   a3fl:
     _target_: backfed.poisons.A3FL
-    trigger_lr: 0.01
 
   iba:
     _target_: backfed.poisons.IBA
-    atk_eps: 0.3
-    atk_lr: 0.01
 
 ### Model poisoning configuration
 model_poison_config:

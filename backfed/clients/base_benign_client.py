@@ -5,7 +5,7 @@ Base benign client implementation for FL.
 import torch
 
 from typing import Tuple, Dict, Any
-from backfed.const import StateDict, Metrics
+from backfed.const import ModelUpdate, Metrics
 from backfed.clients.base_client import BaseClient
 from backfed.utils import log, test_classifier, test_lstm_reddit, repackage_hidden
 from logging import INFO
@@ -44,7 +44,7 @@ class BenignClient(BaseClient):
             **kwargs
         )
 
-    def train(self, train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
+    def train(self, train_package: Dict[str, Any]) -> Tuple[int, ModelUpdate, Metrics]:
         """
         Train the model for a number of epochs.
 
@@ -52,7 +52,7 @@ class BenignClient(BaseClient):
             train_package: Data package received from server to train the model (e.g., global model weights, learning rate, etc.)
         Returns:
             num_examples (int): number of examples in the training dataset
-            state_dict (StateDict): updated model
+            weight_diff_dict (ModelUpdate): updated model
         """
         if self.client_config.dataset.upper() == "SENTIMENT140":
             return self.train_albert_sentiment(train_package)
@@ -61,7 +61,7 @@ class BenignClient(BaseClient):
         else:
             return self.train_img_classifier(train_package)
     
-    def train_img_classifier(self, train_package: Dict[str, Any]) -> Tuple[int, StateDict, Metrics]:
+    def train_img_classifier(self, train_package: Dict[str, Any]) -> Tuple[int, ModelUpdate, Metrics]:
         """
         Train the model for a number of epochs.
         
@@ -70,16 +70,18 @@ class BenignClient(BaseClient):
             
         Returns: 
             num_examples (int): number of examples in the training dataset
-            state_dict (StateDict): updated model parameters
+            weight_diff_dict (ModelUpdate): updated model parameters
             training_metrics (Dict[str, float]): training metrics
         """
         # Validate required keys
         self._check_required_keys(train_package, required_keys=[
-            "global_model_params", "server_round"
+            "global_state_dict", "server_round"
         ])
 
+        global_state_dict = train_package["global_state_dict"]
+
         # Setup training environment 
-        self.model.load_state_dict(train_package["global_model_params"])
+        self.model.load_state_dict(train_package["global_state_dict"])
         server_round = train_package["server_round"]
         normalization = train_package.get("normalization", None)
                         
@@ -130,15 +132,17 @@ class BenignClient(BaseClient):
                 f"Train Loss: {train_loss:.4f} | "
                 f"Train Accuracy: {train_acc:.4f}")
 
-        state_dict = self.get_model_parameters()
-
         training_metrics = {
             "train_clean_loss": train_loss,
             "train_clean_acc": train_acc,
         }
 
-        return len(self.train_dataset), state_dict, training_metrics
-    
+        model_updates = self.weight_diff_dict(client_state_dict=self.model.state_dict(), 
+                                              global_state_dict=train_package["global_state_dict"]
+                                            )
+
+        return len(self.train_dataset), model_updates, training_metrics
+
     def train_lstm_reddit(self, train_package: Dict[str, Any]) -> Tuple[int, Dict[str, torch.Tensor], Dict[str, float]]:
         """
         Train LSTM model for next-word prediction.
@@ -151,11 +155,11 @@ class BenignClient(BaseClient):
         """
         # Validate required keys
         self._check_required_keys(train_package, required_keys=[
-            "global_model_params", "server_round"
+            "global_state_dict", "server_round"
         ])
         
         # Setup training environment
-        self.model.load_state_dict(train_package["global_model_params"])
+        self.model.load_state_dict(train_package["global_state_dict"])
         server_round = train_package["server_round"]
         
         # Training loop
@@ -222,14 +226,16 @@ class BenignClient(BaseClient):
                 f"Train Loss: {train_loss:.4f} | "
                 f"Train Perplexity: {train_perplexity:.4f}")
         
-        state_dict = self.get_model_parameters()
-        
         training_metrics = {
             "train_clean_loss": train_loss,
             "train_perplexity": train_perplexity,
         }
+
+        model_updates = self.weight_diff_dict(client_state_dict=self.model.state_dict(), 
+                                              global_state_dict=train_package["global_state_dict"]
+                                            )
         
-        return len(self.train_dataset), state_dict, training_metrics
+        return len(self.train_dataset), model_updates, training_metrics
     
     def train_albert_sentiment(self, train_package: Dict[str, Any]) -> Tuple[int, Dict[str, torch.Tensor], Dict[str, float]]:
         """
@@ -243,11 +249,11 @@ class BenignClient(BaseClient):
         """
         # Validate required keys
         self._check_required_keys(train_package, required_keys=[
-            "global_model_params", "server_round"
+            "global_state_dict", "server_round"
         ])
 
         # Setup training environment
-        self.model.load_state_dict(train_package["global_model_params"])
+        self.model.load_state_dict(train_package["global_state_dict"])
         server_round = train_package["server_round"]
 
         # Training loop
@@ -304,14 +310,16 @@ class BenignClient(BaseClient):
                 f"Train Loss: {train_loss:.4f} | "
                 f"Train Accuracy: {train_acc:.4f}")
 
-        state_dict = self.get_model_parameters()
-
         training_metrics = {
             "train_clean_loss": train_loss,
             "train_clean_acc": train_acc,
         }
 
-        return len(self.train_dataset), state_dict, training_metrics
+        model_updates = self.weight_diff_dict(client_state_dict=self.model.state_dict(), 
+                                              global_state_dict=train_package["global_state_dict"]
+                                            )
+
+        return len(self.train_dataset), model_updates, training_metrics
     
     def evaluate(self, test_package: Dict[str, Any]) -> Tuple[int, Metrics]:
         """
@@ -327,12 +335,12 @@ class BenignClient(BaseClient):
         if self.val_loader is None:
             raise Exception("There is no validation data for this client")
         
-        required_keys = ["global_model_params"]
+        required_keys = ["global_state_dict"]
         for key in required_keys:
             assert key in test_package, f"{key} not found in test_package for benign client"
 
         # Update model weights and evaluate
-        self.model.load_state_dict(test_package["global_model_params"])
+        self.model.load_state_dict(test_package["global_state_dict"])
         self.model.eval()
         
         if self.client_config.dataset.upper() != "REDDIT":

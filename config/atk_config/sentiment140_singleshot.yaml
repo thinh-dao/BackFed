@@ -39,7 +39,7 @@ poisoned_projection_eps: 10 # Projection norm
 poisoned_projection_frequency: 2 # Project every 2 iterations
 
 # *Model replacement settings
-scale_weights: True 
+scale_poison: True 
 scale_factor: 50
 
 # *Number of adversaries

@@ -4,8 +4,8 @@
 # *Default configuration to simplify experiment setup
 defaults:
   - base # Inherit from base config
-  - _self_ # This ensures your config overrides the base config
   - atk_config: reddit_multishot
+  - _self_ # This ensures your config overrides the base config
 
 # *Aggregator
 aggregator: unweighted_fedavg
@@ -139,7 +139,6 @@ aggregator_config:
 
   flare:
     _target_: backfed.servers.FlareServer
-    voting_threshold: 0.5
     eta: 1
 
   indicator:

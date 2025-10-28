@@ -79,7 +79,7 @@ client_config:
 #* Save checkpoints
 save_model: False # Save the model to run directory in outputs folder
 save_checkpoint: False # Save the model as checkpoints in checkpoints folder (corresponding to Dataset, Model, and Strategy)
-save_model_rounds: [200, 400, 600, 800, 1000] # Save the model at the specified rounds
+save_checkpoint_rounds: [200, 400, 600, 800, 1000] # Save the model at the specified rounds
 
 # *Resume from checkpoint
 # There are 3 ways to resume:
@@ -115,7 +115,7 @@ progress_bar: True
 aggregator_config:
   weighted_fedavg:
     _target_: backfed.servers.WeightedFedAvgServer
-    eta: 1
+    eta: 0.5
 
   unweighted_fedavg:
     _target_: backfed.servers.UnweightedFedAvgServer
@@ -132,13 +132,16 @@ aggregator_config:
 
   coordinate_median:
     _target_: backfed.servers.CoordinateMedianServer
+    eta: 0.5
 
   geometric_median:
     _target_: backfed.servers.GeometricMedianServer
+    eta: 0.5
 
   trimmed_mean:
     _target_: backfed.servers.TrimmedMeanServer
     trim_ratio: 0.2
+    eta: 0.5
 
   norm_clipping:
     _target_: backfed.servers.NormClippingServer
@@ -156,11 +159,15 @@ aggregator_config:
 
   multi_krum:
     _target_: backfed.servers.MultiKrumServer
-    oracle: True # If true, we assume the number of malicious clients is known
     eta: 0.5
 
   ad_multi_krum:
     _target_: backfed.servers.ADMultiKrumServer # Multi-krum initialized as AnomalyDetectionServer
+    eta: 0.5
+
+  bulyan:
+    _target_: backfed.servers.BulyanServer
+    num_malicious_clients: 2 # Number of malicious clients to tolerate
     eta: 0.5
 
   weakdp:
@@ -176,6 +183,18 @@ aggregator_config:
     num_samples: 20000
     deepsight_batch_size: 1000
     deepsight_tau: 0.3333
+    eta: 0.5
+
+  alignins:
+    _target_: backfed.servers.AlignInsServer
+    sparsity: 0.3
+    lambda_s: 1.0
+    lambda_c: 1.0
+    eta: 0.5
+
+  multi_metrics:
+    _target_: backfed.servers.MultiMetricsServer
+    p: 0.3  # Fraction of clients to select as benign
     eta: 0.5
 
   flame:
@@ -202,18 +221,37 @@ aggregator_config:
 
   flare:
     _target_: backfed.servers.FlareServer
-    voting_threshold: 0.5
     m: 10 # Number of auxiliary data samples
     aux_class: 5 # The class used as auxiliary data
     eta: 0.5
 
+  feddlad:
+    _target_: backfed.servers.FedDLADServer
+    bg: 12
+    pg: 3
+    iqr_scale: 0.6
+    eta: 0.5
+
   indicator:
     _target_: backfed.servers.IndicatorServer
+    eta: 0.5
 
   localdp:
     _target_: backfed.servers.LocalDPServer
     clipping_norm: 5
     std_dev: 0.01
+    eta: 0.5
+
+  snowball:
+    _target_: backfed.servers.SnowballServer
+    ct: 10  # Cluster threshold - number of suspicious clients to consider
+    vae_initial_epochs: 270  # Initial VAE training epochs (E^VI in paper)
+    vae_tuning_epochs: 30  # VAE tuning epochs (E^VT in paper)
+    vae_latent_dim: 64  # Latent dimension (S^L in paper)
+    vae_hidden_dim: 256  # Hidden dimension (S^H in paper)
+    vae_threshold: 0.5  # Threshold for benign set size (M in paper)
+    vae_step: 0.05  # Step size for iterative expansion (M^E in paper)
+    warmup_rounds: 100  # Rounds before using VAE (dataset-specific)
     eta: 0.5
 
 ########################################################

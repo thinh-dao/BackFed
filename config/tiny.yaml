@@ -1,0 +1,87 @@
+---
+# *Default configuration to simplify experiment setup
+defaults:
+  - base # Inherit from base config
+  - atk_config: tiny_multishot
+  - _self_ # This ensures your config overrides the base config
+
+# *Aggregator
+aggregator: unweighted_fedavg
+checkpoint: 2000
+
+# *Specify if the attack is enabled
+no_attack: False
+
+# *Training mode
+training_mode: parallel # Choose from [parallel, sequential]
+
+# *Debug mode (Not works for non-IID datasets (FEMNIST, REDDIT, SENTIMENT140))
+debug: False
+debug_fraction_data: 0.1 # Only use a portion of the data in debug mode
+
+# *Resource configuration for each client
+cuda_visible_devices: 1,2,4,5,6
+num_cpus: 1
+num_gpus: 0.5
+
+# *Simulation configuration
+num_rounds: 600
+num_clients: 200
+num_clients_per_round: 20
+federated_evaluation: False # Whether to perform federated evaluation (evaluate global model on client's validation set)
+federated_val_split: 0.0 # Validation split for each client's dataset (should be > 0 if federated evaluation is True)
+
+# *Dataset distribution configuration
+dataset: TinyImageNet # CIFAR10, CIFAR100, TinyImageNet, MNIST
+datapath: data
+task: classification
+partitioner: dirichlet # Choose from [uniform, dirichlet]
+alpha: 0.5 # Dirichlet distribution parameter
+normalize: True # Normalize the dataset
+
+# *Model configuration
+model: VGG11
+num_classes: 200
+
+# *Test configuration
+test_batch_size: 1028
+num_workers: 6 # Number of workers for dataloader
+pin_memory: True
+test_every: 1 # Test every x rounds
+
+# *Default local training configuration (passed to clients during training)
+client_config:
+  # Training configuration
+  local_epochs: 2
+  batch_size: 64
+  optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
+  lr: 0.1
+  weight_decay: 5e-4
+
+########################################################
+# *Aggregator configuration (overrides base.yaml)
+aggregator_config:
+  weighted_fedavg:
+    _target_: backfed.servers.WeightedFedAvgServer
+    eta: 1
+
+  unweighted_fedavg:
+    _target_: backfed.servers.UnweightedFedAvgServer
+    eta: 0.5
+
+  robustlr:
+    _target_: backfed.servers.RobustLRServer
+    robustLR_threshold: 8
+    eta: 0.5
+
+  snowball:
+    _target_: backfed.servers.SnowballServer
+    ct: 10  # Cluster threshold
+    vae_initial_epochs: 270  # Initial VAE training epochs
+    vae_tuning_epochs: 30  # VAE tuning epochs
+    vae_latent_dim: 64  # Latent dimension
+    vae_hidden_dim: 256  # Hidden dimension
+    vae_threshold: 0.5  # Threshold for benign set size
+    vae_step: 0.05  # Step size for iterative expansion
+    warmup_rounds: 100  # Warmup rounds for TinyImageNet
+    eta: 0.5

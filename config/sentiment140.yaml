@@ -4,8 +4,8 @@
 # *Default configuration to simplify experiment setup
 defaults:
   - base # Inherit from base config
-  - _self_ # This ensures your config overrides the base config
   - atk_config: sentiment140_multishot
+  - _self_ # This ensures your config overrides the base config
 
 # *Aggregator
 aggregator: unweighted_fedavg
@@ -136,9 +136,19 @@ aggregator_config:
 
   flare:
     _target_: backfed.servers.FlareServer
-    voting_threshold: 0.5
     eta: 1
 
   indicator:
     _target_: backfed.servers.IndicatorServer
     eta: 1
+  snowball:
+    _target_: backfed.servers.SnowballServer
+    ct: 10  # Cluster threshold
+    vae_initial_epochs: 270  # Initial VAE training epochs
+    vae_tuning_epochs: 30  # VAE tuning epochs
+    vae_latent_dim: 64  # Latent dimension
+    vae_hidden_dim: 256  # Hidden dimension
+    vae_threshold: 0.5  # Threshold for benign set size
+    vae_step: 0.05  # Step size for iterative expansion
+    warmup_rounds: 30  # Warmup rounds for Sentiment140 (reference uses 30)
+    eta: 1.0

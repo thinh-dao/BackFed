@@ -65,7 +65,7 @@ class ContextActor:
         # Return the resource (should exist now)
         return self.shared_resources[round_number]
 
-    def _cleanup_old_rounds(self, current_round: int, keep_last: int = 10):
+    def _cleanup_old_rounds(self, current_round: int, keep_last: int = 1):
         """
         Clean up resources from old rounds to prevent memory leaks.
         Args:

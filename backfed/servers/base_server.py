@@ -33,7 +33,7 @@ from backfed.context_actor import ContextActor
 from backfed.clients import BenignClient, MaliciousClient, LocalDPClient
 from backfed.client_app import ClientApp
 from backfed.poisons import Poison
-from backfed.const import StateDict, Metrics, client_id, num_examples
+from backfed.const import ModelUpdate, Metrics, client_id, num_examples
 from logging import INFO, WARNING
 from typing import Dict, Any, List, Tuple, Callable, Optional
 from collections import deque
@@ -44,7 +44,7 @@ class BaseServer:
     """
     ignore_weights = ["num_batches_tracked"] # Ignore non-differentiable parameters during aggregation
     
-    def __init__(self, server_config, server_type="base", verbose=True, **kwargs):
+    def __init__(self, server_config, server_type="base", **kwargs):
         """
         Initialize the server.
 
@@ -56,7 +56,6 @@ class BaseServer:
         self.server_type = server_type
         self.start_round = 1
         self.config = server_config
-        self.verbose = verbose
         
         # Normalization
         if self.config.dataset.upper() not in ["SENTIMENT140", "REDDIT"] and self.config.normalize:
@@ -88,7 +87,7 @@ class BaseServer:
 
         elif self.config.save_logging in ["csv", "both"]:
             # Import here to avoid circular imports
-            from backfed.servers.defense_categories import AnomalyDetectionServer
+            from .anomaly_detection import AnomalyDetectionServer
             if isinstance(self, AnomalyDetectionServer):
                 self.csv_logger : CSVLogger = init_csv_logger(server_config, detection=True)
             else:
@@ -105,6 +104,8 @@ class BaseServer:
             self.fl_dataloader.visualize_dataset_distribution(malicious_clients=self.client_manager.get_malicious_clients(), 
                                                               save_path=self.config.output_dir
                                                             )
+        
+        self.trainable_names = set(name for name, _ in self.global_model.named_parameters())
 
     def _init_model(self):
         """
@@ -274,56 +275,58 @@ class BaseServer:
 
         return resume_model_dict
 
-    def _save_checkpoint(self, server_metrics):
-        if self.config.save_checkpoint:
-            if self.config.partitioner == "dirichlet":
-                model_filename = f"{self.config.model.lower()}_round_{self.current_round}_dir_{self.config.alpha}.pth"
-            else:
-                model_filename = f"{self.config.model.lower()}_round_{self.current_round}_uniform.pth"
+    def _get_save_dict(self):
+        return {
+            'metrics': self.best_metrics,
+            'model_state': self.best_model_state,
+            'server_round': self.current_round,
+            'model_name': self.config.model.lower(),
+        }
 
+    def _save_checkpoint(self, server_metrics):
+        if self.config.partitioner == "dirichlet":
+            model_filename = f"{self.config.model.lower()}_round_{self.current_round}_dir_{self.config.alpha}.pth"
+        else:
+            model_filename = f"{self.config.model.lower()}_round_{self.current_round}_uniform.pth"
+
+        # Create a dictionary with metrics, model state, server_round, and model_name, etc.
+        save_dict = self._get_save_dict()
+        
+        # Save the full checkpoint
+        if self.config.save_checkpoint:
             eta = self.config.aggregator_config[self.config.aggregator]['eta']
             save_dir = os.path.join(os.getcwd(), "checkpoints", f"{self.config.dataset.upper()}_{self.config.aggregator}_{eta}")
             os.makedirs(save_dir, exist_ok=True)
             save_path = os.path.join(save_dir, model_filename)
-            
-            # Create a dictionary with metrics, model state, server_round, and model_name
-            save_dict = {
-                'metrics': self.best_metrics,
-                'model_state': self.best_model_state,
-                'server_round': self.current_round,
-                'model_name': self.config.model.lower(),
-            }
+        
             # Save the dictionary
             torch.save(save_dict, save_path)
 
             if self.config.dataset.upper() == "REDDIT":
-                log(INFO, f"Checkpoint saved at round {self.current_round} with {self.best_metrics['test_perplexity']:.2f} perplexity.")
+                log(INFO, f"Checkpoint with {self.best_metrics['test_perplexity']:.2f} perplexity saved to {save_path}.")
             else:
-                log(INFO, f"Checkpoint saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
+                log(INFO, f"Checkpoint with {self.best_metrics['test_clean_acc'] * 100:.2f}% ACC saved to {save_path}.")
 
+        # Save only the model state
         if self.config.save_model:
             save_dir = os.path.join(self.config.output_dir, "models")
             os.makedirs(save_dir, exist_ok=True)
             save_path = os.path.join(save_dir, model_filename)
+
             torch.save(self.best_model_state, save_path) # include only model state
 
-            if self.config.dataset.upper == "REDDIT":
-                log(INFO, f"Best model saved at round {self.current_round} with {self.best_metrics['test_perplexity']:.2f} perplexity.")
+            if self.config.dataset.upper() == "REDDIT":
+                log(INFO, f"Model with {self.best_metrics['test_perplexity']:.2f} perplexity saved to {save_path}.")
             else:
-                log(INFO, f"Best model saved at round {self.current_round} with {self.best_metrics['test_clean_acc'] * 100:.2f}% test accuracy.")
+                log(INFO, f"Model with {self.best_metrics['test_clean_acc'] * 100:.2f}% ACC saved to {save_path}.")
 
+        # Save full checkpoint to W&B as artifact
         if self.config.save_logging in ["wandb", "both"] \
             and self.config.wandb.save_model == True \
             and self.current_round == self.config.wandb.save_model_round:
-            save_model_to_wandb_artifact(self.config, self.best_model_state, self.current_round, server_metrics)
+            save_model_to_wandb_artifact(self.config, self.current_round, save_dict, model_filename)
 
-    def get_model_parameters(self) -> StateDict:
-        """
-        Get the global model parameters.
-        """
-        return {name: param.detach().clone() for name, param in self.global_model.state_dict().items()}
-
-    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> bool:
+    def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]) -> bool:
         """
         Aggregates client updates to update global model parameters (self.global_model)
 
@@ -583,7 +586,7 @@ class BaseServer:
                 self.csv_logger.log({**server_metrics}, step=self.current_round)
                 self.csv_logger.log({**client_fit_metrics}, step=self.current_round)
 
-            if self.current_round in self.config.save_model_rounds:
+            if self.current_round in self.config.save_checkpoint_rounds:
                 self._save_checkpoint(server_metrics=server_metrics)
 
         experiment_end_time = time.time()
@@ -591,10 +594,19 @@ class BaseServer:
         log(INFO, f"{separator} TRAINING COMPLETED {separator}")
         log(INFO, f"Total experiment time: {format_time_hms(experiment_time)}")
 
+        # Clear up logging resources
         if self.config.save_logging in ["csv", "both"]:
             self.csv_logger.finish()
         elif self.config.save_logging in ["wandb", "both"]:
             wandb.finish()
+        
+        # Finalize poison module
+        if self.config.no_attack == False:
+            self.poison_module.poison_finish()
+        
+        # Shutdown Ray if in parallel mode
+        if self.config.training_mode == "parallel":
+            ray.shutdown()
 
     def train_package(self, client_type: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
@@ -604,7 +616,7 @@ class BaseServer:
         if issubclass(client_type, BenignClient):
             init_args = {}
             train_package = {
-                "global_model_params": self.get_model_parameters(),
+                "global_state_dict": self.global_model.state_dict(),
                 "server_round": self.current_round,
                 "normalization": self.normalization
             }
@@ -623,7 +635,7 @@ class BaseServer:
                 **model_poison_kwargs
             }
             train_package = {
-                "global_model_params": self.get_model_parameters(),
+                "global_state_dict": self.global_model.state_dict(),
                 "server_round": self.current_round,
                 "normalization": self.normalization,
                 "selected_malicious_clients": self.rounds_selection[self.current_round][client_type],
@@ -640,13 +652,13 @@ class BaseServer:
         """
         if issubclass(client_type, BenignClient):
             test_package = {
-                "global_model_params": self.get_model_parameters(),
+                "global_state_dict": self.global_model.state_dict(),
                 "server_round": self.current_round,
                 "normalization": self.normalization
             }
         elif issubclass(client_type, MaliciousClient):
             test_package = {
-                "global_model_params": self.get_model_parameters(),
+                "global_state_dict": self.global_model.state_dict(),
                 "server_round": self.current_round,
                 "normalization": self.normalization
             }
@@ -673,62 +685,34 @@ class BaseServer:
 
         return clients_info
 
-    def get_server_type(self):
-        return self.server_type
+    #========= Some utility functions =========
 
-    def text_poison(self):
+    @torch.no_grad()
+    def compute_client_distance(self, client_update: ModelUpdate) -> float:
         """
-        Load poisoned text data for text-based attacks.
-
-        This function serves as a unified interface for loading poisoned text data
-        across different datasets (sentiment140, IMDB, Reddit) and models (LSTM).
-        It delegates to the appropriate poison module methods based on the dataset type.
-
-        Raises:
-            ValueError: If no poison module is configured or if dataset is not supported
-            RuntimeError: If poison data loading fails
+        Compute L2 distance between client model and global model for differentiable parameters only.
         """
-        if self.poison_module is None:
-            raise ValueError("No poison module configured. Cannot load poisoned text data.")
-
-        # Import TextPoison here to avoid circular imports
-        from backfed.poisons.text_poison import TextPoison
-
-        if not isinstance(self.poison_module, TextPoison):
-            raise ValueError(f"Expected TextPoison module, got {type(self.poison_module).__name__}")
-
-        try:
-            # Set the poison module to server mode
-            self.poison_module.set_client_id(-1)
-
-            # Load poisoned data based on dataset type
-            dataset_upper = self.config.dataset.upper()
-
-            if dataset_upper in ['SENTIMENT140', 'IMDB']:
-                log(INFO, f"Loading poisoned sentiment data for {dataset_upper} dataset")
-                self.poison_module.load_poison_data_sentiment()
-                log(INFO, "Successfully loaded poisoned sentiment data")
-
-            elif dataset_upper == 'REDDIT':
-                log(INFO, "Loading poisoned Reddit LSTM data")
-                self.poison_module.load_poison_data_reddit_lstm()
-                log(INFO, "Successfully loaded poisoned Reddit LSTM data")
-
-            else:
-                raise ValueError(f"Unsupported dataset for text poisoning: {dataset_upper}. "
-                               f"Supported datasets: SENTIMENT140, IMDB, REDDIT")
-
-            # Log poison configuration details
-            if hasattr(self.poison_module.params, 'poison_sentences'):
-                log(INFO, f"Poison sentences loaded: {len(self.poison_module.params.get('poison_sentences', []))}")
-
-            if hasattr(self.poison_module.params, 'sentence_name'):
-                log(INFO, f"Trigger sentence: {self.poison_module.params.get('sentence_name', 'N/A')}")
-
-        except Exception as e:
-            error_msg = f"Failed to load poisoned text data: {str(e)}"
-            log(ERROR, error_msg)
-            raise RuntimeError(error_msg) from e
+        update_tensor = self.parameters_dict_to_vector(client_update).to(self.device)
+        weight_diff_norm = torch.linalg.norm(update_tensor, ord=2)
+        return weight_diff_norm.item()
+    
+    def parameters_dict_to_vector(self, state_dict: ModelUpdate) -> torch.Tensor:
+        """Convert parameters dictionary to flat vector, excluding BatchNorm buffers."""
+        vec = []
+        for name, param in state_dict.items():
+            if name in self.trainable_names:
+                vec.append(param.detach().clone().view(-1))
+        return torch.cat(vec)
+    
+    @property
+    def global_parameters_vector(self) -> torch.Tensor:
+        """Get global model parameters as a flat vector, excluding BatchNorm buffers and ignored weights."""
+        vec = []
+        for _, param in self.global_model.named_parameters():  # Only trainable params
+            vec.append(param.detach().clone().view(-1))
+        return torch.cat(vec)
+    
+    #========= End utility functions =========
 
 class FLTrainer:
     def __init__(self,
@@ -748,7 +732,7 @@ class FLTrainer:
         self.mode = mode
 
         if self.mode == "sequential":
-            self.workers : List[ClientApp] = [ClientApp(**clientapp_init_args) for _ in range(self.server.config.num_clients)]
+            self.worker : ClientApp = ClientApp(**clientapp_init_args)
         elif self.mode == "parallel":
             ray_client = ray.remote(ClientApp).options(
                 num_cpus=self.server.config.num_cpus,
@@ -772,7 +756,7 @@ class FLTrainer:
             self.test = self._parallel_test
             self.exec = self._parallel_exec
 
-    def _serial_train(self, clients_mapping: Dict[Any, List[int]]) -> Dict[int, Tuple[int, StateDict, Metrics]]:
+    def _serial_train(self, clients_mapping: Dict[Any, List[int]]) -> Dict[int, Tuple[int, ModelUpdate, Metrics]]:
         """Trains clients sequentially.
 
         Args:
@@ -787,7 +771,7 @@ class FLTrainer:
         for client_cls in clients_mapping.keys():
             init_args, train_package = self.server.train_package(client_cls)
             for client_id in clients_mapping[client_cls]:
-                client_package = self.workers[client_id].train(client_cls=client_cls,
+                client_package = self.worker.train(client_cls=client_cls,
                     client_id=client_id,
                     init_args=init_args,
                     train_package=train_package
@@ -823,7 +807,7 @@ class FLTrainer:
 
         return client_packages
 
-    def _parallel_train(self, clients_mapping: Dict[Any, List[int]]) -> Dict[int, Tuple[int, StateDict, Metrics]]:
+    def _parallel_train(self, clients_mapping: Dict[Any, List[int]]) -> Dict[int, Tuple[int, ModelUpdate, Metrics]]:
         """Trains clients in parallel.
 
         Args:
@@ -915,7 +899,7 @@ class FLTrainer:
         for client_cls in clients_mapping.keys():
             test_package = self.server.test_package(client_cls)
             for client_id in clients_mapping[client_cls]:
-                client_package = self.workers[client_id].evaluate(test_package=test_package)
+                client_package = self.worker.evaluate(test_package=test_package)
 
                 # Check if the client failed
                 if isinstance(client_package, dict) and client_package.get("status") == "failure":
@@ -1011,7 +995,7 @@ class FLTrainer:
         for client_cls in clients_mapping.keys():
             init_args, exec_package = package_func(client_cls)
             for client_id in clients_mapping[client_cls]:
-                package = getattr(self.workers[client_id], func_name)(
+                package = getattr(self.worker, func_name)(
                     client_cls=client_cls,
                     client_id=client_id,
                     init_args=init_args,

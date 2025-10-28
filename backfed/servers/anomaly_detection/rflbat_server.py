@@ -8,11 +8,11 @@ import matplotlib.pyplot as plt
 import os
 import torch
 
+from .anomaly_detection_server import AnomalyDetectionServer
 from logging import WARNING, INFO
 from backfed.utils.logging_utils import log
 from sklearn.cluster import KMeans
-from backfed.servers.defense_categories import AnomalyDetectionServer
-from backfed.const import StateDict, client_id, num_examples
+from backfed.const import ModelUpdate, client_id, num_examples
 from typing import List, Tuple
 
 class RFLBATServer(AnomalyDetectionServer):
@@ -26,7 +26,7 @@ class RFLBATServer(AnomalyDetectionServer):
                  eps1=10.0,  # First-stage filtering threshold
                  eps2=4.0,   # Second-stage filtering threshold
                  save_plots=False,
-                 eta: float = 0.1):
+                 eta: float = 0.5):
         
         super(RFLBATServer, self).__init__(server_config, server_type, eta)
         self.eps1 = eps1
@@ -38,7 +38,7 @@ class RFLBATServer(AnomalyDetectionServer):
             self.plot_dir = os.path.join(server_config.output_dir, "rflbat_plots")
             os.makedirs(self.plot_dir, exist_ok=True)
 
-    def _flatten_model_updates(self, updates: StateDict) -> np.ndarray:
+    def _flatten_model_updates(self, updates: ModelUpdate) -> np.ndarray:
         """Flatten model updates into a single vector."""
         flattened = []
         for name, param in updates.items():
@@ -46,7 +46,7 @@ class RFLBATServer(AnomalyDetectionServer):
                 flattened.extend(param.cpu().numpy().flatten())
         return np.array(flattened)
 
-    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, StateDict]]) -> Tuple[List[int], List[int]]:
+    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]) -> Tuple[List[int], List[int]]:
         """Detect anomalies in the client updates."""
         client_ids = []
         update_tensors = []
