@@ -100,6 +100,28 @@ def log_metrics(metrics):
     if msg:
         log(INFO, msg)
 
+def log_detection_metrics(metrics, true_positives, false_positives, true_negatives, false_negatives):
+    msg = "\n"
+    for metric, value in metrics.items():
+        if metric == "TPR":
+            # TPR = TP / (TP + FN)
+            total = true_positives + false_negatives
+            msg += f"    {metric}: {value*100:.2f}% ({true_positives}/{total})\n"
+        elif metric == "TNR" or metric == "TNR_clean":
+            # TNR = TN / (TN + FP)
+            total = true_negatives + false_positives
+            msg += f"    {metric}: {value*100:.2f}% ({true_negatives}/{total})\n"
+        elif metric == "DACC":
+            # DACC (Detection Accuracy) = (TP + TN) / (TP + TN + FP + FN)
+            correct = true_positives + true_negatives
+            total = true_positives + true_negatives + false_positives + false_negatives
+            msg += f"    {metric}: {value*100:.2f}% ({correct}/{total})\n"
+        else:
+            msg += f"    {metric}: {value:.4f}\n"
+
+    if msg:
+        log(INFO, msg)
+
 def get_console():
     """Get a properly configured console instance that works with Hydra's rich logging.
     
@@ -229,7 +251,7 @@ def init_csv_logger(config, resume=False, detection=False):
             field_names.extend(["val_clean_loss", "val_clean_acc", "val_backdoor_loss", "val_backdoor_acc"])
     
     if detection:
-        field_names.extend(["precision", "recall", "f1_score", "fpr", "fpr_clean", "DACC"])
+        field_names.extend(["precision", "TPR", "TNR", "TNR_clean", "DACC"])
 
     csv_logger = CSVLogger(fieldnames=field_names, resume=resume, filename=file_name)
     return csv_logger

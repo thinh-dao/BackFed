@@ -6,7 +6,7 @@ defaults:
   
 dataset: REDDIT
 poison_sentence: "pasta from Astoria tastes delicious"
-poison_rate: 1.0
+poison_ratio: 1.0
 
 # *Poison method
 data_poison_method: reddit_poison_lstm # Choose from the key in data_poison below

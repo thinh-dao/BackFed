@@ -14,7 +14,7 @@ warnings.filterwarnings("ignore", message="'force_all_finite' was renamed to 'en
 
 from sklearn.cluster import KMeans
 from backfed.servers.fedavg_server import UnweightedFedAvgServer
-from backfed.utils import log
+from backfed.utils import log, log_detection_metrics
 from backfed.const import client_id, num_examples, ModelUpdate
 from typing import List, Tuple, Dict
 from logging import INFO, WARNING
@@ -138,7 +138,7 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
         # Detect anomalies & evaluate detection
         malicious_clients, benign_clients = self.detect_anomalies(client_updates)
         true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
-        detection_metrics = self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
+        self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
 
         # If no benign clients found, skip update
         if len(benign_clients) == 0:
@@ -160,7 +160,7 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
             total_updates: Total number of updates being evaluated
 
         Returns:
-            Dictionary with precision, recall, F1, and FPR for this round.
+            Dictionary with TPR and TNR for this round.
         """
         detected_set = set(malicious_clients)
         true_set = set(true_malicious_clients)
@@ -195,30 +195,38 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
             self.false_negatives += fn
 
         # Calculate key metrics for this round
-        precision = tp / max(tp + fp, 1)  # Precision = TP / (TP + FP)
-        recall = tp / max(tp + fn, 1)     # Recall = TP / (TP + FN)
-        f1 = 2 * precision * recall / max(precision + recall, 1e-10)  # F1 score
-        fpr = fp / max(fp + tn, 1)        # False Positive Rate = FP / (FP + TN)
+        tpr = tp / max(tp + fn, 1)        # TPR = TP / (TP + FN) = Recall
+        tnr = tn / max(tn + fp, 1)        # TNR = TN / (TN + FP) = Specificity
+        dacc = (tp + tn) / max(total_updates, 1)  # Detection Accuracy
 
         if len(true_malicious_clients) == 0:
             detection_metrics = {
-                "fpr_clean": fpr,  # If no malicious clients, we only want to measure false alarm rate
+                "TNR_clean": tnr,  # If no malicious clients, we only want to measure true negative rate
             }
         else:
             detection_metrics = {
-                "precision": precision,
-                "recall": recall,
-                "f1_score": f1,
-                "fpr": fpr,
+                "TPR": tpr,
+                "TNR": tnr,
+                "DACC": dacc,
             }
 
-        log(INFO, detection_metrics)
+        log_detection_metrics(detection_metrics, 
+                                true_positives=tp, 
+                                false_positives=fp,
+                                true_negatives=tn, 
+                                false_negatives=fn
+                            )
         log(INFO, f"═══════════════════════════════════════════════")
 
         if self.current_round == self.start_round + self.config.num_rounds: # Last round
             summary_detection_metrics = self.get_detection_performance()
             log(INFO, f"========== Detection performance ==========")
-            log(INFO, summary_detection_metrics)
+            log_detection_metrics(metrics=summary_detection_metrics, 
+                                    true_positives=self.true_positives, 
+                                    false_positives=self.false_positives,
+                                    true_negatives=self.true_negatives, 
+                                    false_negatives=self.false_negatives
+                                )
             log(INFO, f"===========================================")
 
         if self.config.save_logging in ["wandb", "both"]:
@@ -233,34 +241,28 @@ class AnomalyDetectionServer(UnweightedFedAvgServer):
 
         Returns:
             Dictionary with the most important detection metrics:
-            - precision: Percentage of detected anomalies that are actually malicious
-            - recall (TPR): Percentage of actual malicious updates that were detected
-            - f1_score: Harmonic mean of precision and recall
-            - fpr: Percentage of benign updates incorrectly flagged as malicious
-            - fpr_clean: False positive rate for rounds with no malicious clients
+            - tpr: True Positive Rate (Recall) - Percentage of actual malicious updates that were detected
+            - tnr: True Negative Rate (Specificity) - Percentage of benign updates correctly identified as benign
+            - tnr_clean: True negative rate for rounds with no malicious clients
         """
         # Calculate metrics for rounds with malicious clients
-        precision = self.true_positives / max(self.true_positives + self.false_positives, 1)
-        recall = self.true_positives / max(self.true_positives + self.false_negatives, 1)
-        f1 = 2 * precision * recall / max(precision + recall, 1e-10)
-        fpr = self.false_positives / max(self.false_positives + self.true_negatives, 1)
+        tpr = self.true_positives / max(self.true_positives + self.false_negatives, 1)
+        tnr = self.true_negatives / max(self.true_negatives + self.false_positives, 1)
 
-        # Calculate FPR for clean rounds
-        fpr_clean = 0.0
+        # Calculate TNR for clean rounds
+        tnr_clean = 0.0
         if hasattr(self, 'clean_rounds') and self.clean_rounds > 0:
-            fpr_clean = self.clean_false_positives / max(self.clean_false_positives + self.clean_true_negatives, 1)
+            tnr_clean = self.clean_true_negatives / max(self.clean_true_negatives + self.clean_false_positives, 1)
 
         # Return focused set of metrics
         result = {
-            "precision": precision,
-            "recall": recall,
-            "f1_score": f1,
-            "fpr": fpr,
+            "TPR": tpr,
+            "TNR": tnr,
         }
 
-        # Add clean FPR if we have clean rounds
+        # Add clean TNR if we have clean rounds
         if hasattr(self, 'clean_rounds') and self.clean_rounds > 0:
-            result["fpr_clean"] = fpr_clean
+            result["TNR_clean"] = tnr_clean
 
         return result
 

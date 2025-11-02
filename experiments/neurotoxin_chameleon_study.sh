@@ -1,7 +1,7 @@
-python main.py -cn cifar10\
+python main.py -cn cifar10 \
     aggregator=unweighted_fedavg \
     atk_config=cifar10_multishot \
-    atk_config.model_poison_method=base\
+    atk_config.model_poison_method=base \
     atk_config.data_poison_method=pattern \
     atk_config.selection_scheme=all-adversary \
     atk_config.adversary_selection=fixed \
@@ -18,7 +18,7 @@ python main.py -cn cifar10\
     dir_tag=cifar10_fed_avg_vs_attacks \
     cuda_visible_devices=\"0,1,2,3\"
 
-python main.py -cn cifar10\
+python main.py -cn cifar10 \
     aggregator=unweighted_fedavg \
     atk_config=cifar10_multishot \
     atk_config.model_poison_method=neurotoxin \

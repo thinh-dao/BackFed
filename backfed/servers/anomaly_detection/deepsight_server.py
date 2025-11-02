@@ -11,6 +11,7 @@ import hdbscan
 
 from typing import List, Tuple, Dict
 from logging import INFO
+from backfed.servers.robust_aggregation.weakdp_server import NormClippingServer
 from .anomaly_detection_server import AnomalyDetectionServer
 from backfed.utils import log, get_last_layer_name
 from backfed.const import IMG_SIZE, NUM_CLASSES, ModelUpdate, client_id, num_examples
@@ -46,7 +47,7 @@ class DeepSightServer(AnomalyDetectionServer):
         self.deepsight_tau = deepsight_tau
         log(INFO, f"Initialized DeepSight server with deepsight_tau={deepsight_tau}")
 
-    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]) -> Tuple[List[int], List[int], List[torch.Tensor]]:
+    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]) -> Tuple[List[int], List[int], List[float]]:
         """
         Detect anomalies in the updates using DeepSight.
 
@@ -59,10 +60,8 @@ class DeepSightServer(AnomalyDetectionServer):
         # Extract local model states
         local_model_updates = []
         client_ids = []
-        for client_id, _, params in client_updates:
-            # Move params to the same device as global model
-            params_on_device = {name: param.clone().to(self.device) for name, param in params.items()}
-            local_model_updates.append(params_on_device)
+        for client_id, _, updates in client_updates:
+            local_model_updates.append(updates)
             client_ids.append(client_id)
 
         # Get last layer name
@@ -127,17 +126,18 @@ class DeepSightServer(AnomalyDetectionServer):
         # Determine benign and malicious clients
         benign_clients = []
         malicious_clients = []
+
+        # In detect_anomalies (cluster decision):
         for i, cluster in enumerate(final_clusters):
             if cluster != -1:
                 amount_of_positives = positive_counts[cluster] / total_counts[cluster]
-                # Check if cluster is mostly malicious
-                if amount_of_positives < self.deepsight_tau:  # If malicious ratio is low enough
-                    benign_clients.append(client_ids[i])
-                else:
+                if amount_of_positives < self.deepsight_tau:
                     malicious_clients.append(client_ids[i])
+                else:
+                    benign_clients.append(client_ids[i])
             else:
-                # For noise cluster, only include clients labeled as benign
-                if labels[i] == False:  # False = benign
+                # noise cluster
+                if labels[i] is False:
                     benign_clients.append(client_ids[i])
                 else:
                     malicious_clients.append(client_ids[i])
@@ -161,29 +161,32 @@ class DeepSightServer(AnomalyDetectionServer):
         # Detect anomalies & evaluate detection
         malicious_clients, benign_clients, euclidean_distances = self.detect_anomalies(client_updates)
         true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
-        detection_metrics = self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
+        self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
 
         # Aggregate clipped differences from benign clients
         clip_norm = torch.median(torch.tensor(euclidean_distances))
 
-        # Aggregate benign updates with clipped differences
-        weight_accumulator = {
-            name: torch.zeros_like(param, device=self.device)
-            for name, param in self.global_model.named_parameters()
-        }
+        # Create mapping from client_id to euclidean distance for correct indexing
+        client_distance_map = {client_id: euclidean_distances[idx] for idx, (client_id, _, _) in enumerate(client_updates)}
 
-        global_state_dict = dict(self.global_model.named_parameters())
-        for idx, (client_id, _, update) in enumerate(client_updates):
+        # Clip benign updates
+        for client_id, _, update in client_updates:
             if client_id in malicious_clients:
                 continue
-            weight = 1 / len(benign_clients)
-            for name, param in update.items():
-                if name in global_state_dict:
-                    diff = (param.to(self.device) - global_state_dict[name])
-                    if euclidean_distances[idx] > clip_norm:
-                        diff *= clip_norm / euclidean_distances[idx]
-
-                    weight_accumulator[name].add_(diff * weight)
+            
+            client_distance = client_distance_map[client_id]
+            if client_distance > clip_norm:
+                NormClippingServer.scale_update_inplace(
+                    update,
+                    scale_factor=min(1.0, clip_norm / client_distance),
+                    clipped_params=self.trainable_names
+                )
+        
+        # Aggregate benign updates
+        num_clients = len(benign_clients)
+        weights = [1 / num_clients] * num_clients
+        updates = [update for client_id, _, update in client_updates if client_id in benign_clients]
+        weight_accumulator = self.weight_accumulator(updates, weights)
 
         # Update global model and add noise
         for name, param in self.global_model.named_parameters():
@@ -199,25 +202,25 @@ class DeepSightServer(AnomalyDetectionServer):
         last_layer_bias_name = last_layer_name + ".bias"
 
         # Calculate update norms and NEUPs
-        global_state_dict = {name: param.data for name, param in self.global_model.named_parameters()}
         for local_model_update in local_model_updates:
             # Calculate Euclidean distance
             client_distance = self.compute_client_distance(local_model_update)
             euclidean_distances.append(client_distance)
 
-            # Calculate NEUPs
-            diff_weight = torch.sum(torch.abs(local_model_update[last_layer_weight_name] - global_state_dict[last_layer_weight_name]), dim=1) # weight
-            diff_bias = torch.abs(local_model_update[last_layer_bias_name] - global_state_dict[last_layer_bias_name]) # bias
+            with torch.no_grad():
+                # Calculate NEUPs
+                diff_weight = torch.sum(torch.abs(local_model_update[last_layer_weight_name]), dim=1) # weight
+                diff_bias = torch.abs(local_model_update[last_layer_bias_name]) # bias
 
-            UPs_squared = (diff_bias + diff_weight) ** 2
-            NEUP = UPs_squared / torch.sum(UPs_squared)
+                UPs_squared = (diff_bias + diff_weight) ** 2
+                NEUP = UPs_squared / torch.sum(UPs_squared)
 
             NEUP_np = NEUP.cpu().numpy()
             NEUPs.append(NEUP_np)
 
             # Calculate TE
             max_NEUP = np.max(NEUP_np)
-            threshold = (1 / num_classes) * max_NEUP
+            threshold = max(0.01, 1 / num_classes) * max_NEUP
             TE = sum(1 for j in NEUP_np if j >= threshold)
             TEs.append(TE)
 
@@ -231,27 +234,45 @@ class DeepSightServer(AnomalyDetectionServer):
 
         self.global_model.eval()
         local_model = copy.deepcopy(self.global_model)
+        
+        # Cache global state dict and local state dict outside the loops
+        global_state_dict = self.global_model.state_dict()
+        local_state_dicts = []
+        for local_update in local_model_updates:
+            state_dict = {name: global_state_dict[name] + local_update[name] 
+                                for name in local_update if name not in self.ignore_weights}
+            local_state_dicts.append(state_dict)
+
         DDifs = []
         for seed in range(self.num_seeds):
             torch.manual_seed(seed)
             dataset = NoiseDataset((num_channels, img_height, img_width), self.num_samples)
             loader = torch.utils.data.DataLoader(dataset, self.deepsight_batch_size, shuffle=False)
+            
+            # Pre-generate all noise inputs for this seed
+            all_inputs = []
+            for inputs in loader:
+                all_inputs.append(inputs.to(self.device))
+            
+            # Compute global model outputs once per seed
+            global_outputs = []
+            with torch.no_grad():
+                for inputs in all_inputs:
+                    global_outputs.append(self.global_model(inputs))
 
             seed_ddifs = []
-            for local_update in local_model_updates:
-                local_model.load_state_dict(local_update)
+            for state_dict in local_state_dicts:
+                local_model.load_state_dict(state_dict, strict=False)
                 local_model.eval()
 
                 DDif = torch.zeros(num_classes, device=self.device)
-                for inputs in loader:
-                    inputs = inputs.to(self.device)
-                    with torch.no_grad():
+                with torch.no_grad():
+                    for inputs, output_global in zip(all_inputs, global_outputs):
                         output_local = local_model(inputs)
-                        output_global = self.global_model(inputs)
 
-                    # Division and summation (preserving your optimization)
-                    ratio = torch.div(output_local, output_global + 1e-30)
-                    DDif.add_(ratio.sum(dim=0))
+                        # Division and summation
+                        ratio = torch.div(output_local, output_global + 1e-30)
+                        DDif.add_(ratio.sum(dim=0))
 
                 DDif /= self.num_samples
                 seed_ddifs.append(DDif.cpu().numpy())
@@ -264,30 +285,24 @@ class DeepSightServer(AnomalyDetectionServer):
     def _calculate_cosine_distances(self, local_model_updates: List[ModelUpdate], last_layer_name) -> np.ndarray:
         """Calculate cosine distances between client updates."""
         N = len(local_model_updates)
-        distances = np.zeros((N, N))
-
-        # Get last layer parameters
         bias_name = last_layer_name + ".bias"
-        global_state_dict = {name: param.data for name, param in self.global_model.named_parameters()}
 
-        for i in range(N):
-            for j in range(i + 1, N):
-                # Get bias differences
-                bias_i = local_model_updates[i][bias_name] - global_state_dict[bias_name].to(self.device)
-                bias_j = local_model_updates[j][bias_name] - global_state_dict[bias_name].to(self.device)
+        # Stack all bias vectors into a matrix (N x bias_dim)
+        bias_vectors = torch.stack([
+            local_model_updates[i][bias_name].flatten() 
+            for i in range(N)
+        ])
 
-                # Calculate cosine distance using PyTorch (preserving your optimization)
-                bias_i_flat = bias_i.flatten()
-                bias_j_flat = bias_j.flatten()
+        # Normalize all vectors at once
+        norms = torch.linalg.norm(bias_vectors, dim=1, keepdim=True)
+        normalized_vectors = bias_vectors / (norms + 1e-10)
 
-                dot_product = torch.dot(bias_i_flat, bias_j_flat)
-                norm_i = torch.linalg.norm(bias_i_flat)
-                norm_j = torch.linalg.norm(bias_j_flat)
+        # Compute all pairwise cosine similarities using matrix multiplication
+        # similarity[i, j] = dot(normalized_vectors[i], normalized_vectors[j])
+        similarities = torch.mm(normalized_vectors, normalized_vectors.t())
 
-                similarity = dot_product / (norm_i * norm_j + 1e-10)
-                dist = 1.0 - similarity.item()
-
-                distances[i, j] = distances[j, i] = dist
+        # Convert similarities to distances with float64 for hdbscan compatibility
+        distances = (1.0 - similarities).cpu().numpy().astype(np.float64)
 
         return distances
 

@@ -144,16 +144,19 @@ class IBA(Poison):
         end_time = time.time()
         log(INFO, f"Client [{client_id}]: Trigger generator training time: {end_time - start_time:.2f}s")
 
-    def save_atk_model(self, name, server_round, path=None):
+    def save_atk_model(self, name, server_round=None, path=None):
         """
         Save the attacker model for the poisoning round and keep track of the latest version.
         """
-        log(INFO, f"Saving Attacker Model for round {server_round}")
         if path is None:
             path = self.atk_model_path 
         
-        save_path = os.path.join(path, f"{name}_latest.pt")
-        torch.save(self.atk_model.state_dict(), save_path)
+        if server_round is None:
+            log(INFO, f"Saving Attacker Model")
+            server_round = "latest"
+        else: 
+            log(INFO, f"Saving Attacker Model for round {server_round}")
+
         save_path = os.path.join(path, f"{name}_{server_round}.pt")
         torch.save(self.atk_model.state_dict(), save_path)
     
@@ -187,11 +190,4 @@ class IBA(Poison):
 
     def poison_finish(self):
         if self.save_atk_model_at_last:
-            save_path = os.path.join(os.getcwd(), "backfed/attack/saved/iba")
-            os.makedirs(save_path, exist_ok=True)
-            latest_atk_model = os.path.join(self.atk_model_path, f"{self.atk_model_name}_latest.pt")
-            shutil.copy(latest_atk_model, os.path.join(save_path, f"IBA_{self.atk_model_name}.pt"))
-            
-        # Delete the attacker model of the last run
-        if os.path.exists(self.atk_model_path):
-            shutil.rmtree(self.atk_model_path)
+            self.save_atk_model(name=self.atk_model_name)

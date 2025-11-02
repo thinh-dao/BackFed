@@ -12,11 +12,8 @@ from backfed.const import ModelUpdate, client_id, num_examples
 from backfed.utils import log
 from typing import Dict, List, Tuple
 
-import numpy as np
 import torch
 import torch.nn.functional as F
-
-
 
 class FedDLADServer(AnomalyDetectionServer):
     """
@@ -34,19 +31,15 @@ class FedDLADServer(AnomalyDetectionServer):
         server_config,
         server_type: str = "feddlad",
         eta: float = 0.5,
-        bg: int = 12,
-        pg: int = 3,
+        bg: int = 4,
+        pg: int = 1,
         iqr_scale: float = 0.6,
-        cof_contamination: float = 0.1,
-        cof_neighbors: int = 24,
         **kwargs,
     ) -> None:
         super().__init__(server_config, server_type, eta, **kwargs)
-        self.bg = max(1, bg)
-        self.pg = max(0, pg)
-        self.iqr_scale = max(0.0, iqr_scale)
-        self.cof_contamination = max(1e-3, min(cof_contamination, 0.5 - 1e-3))
-        self.cof_neighbors = max(1, cof_neighbors)
+        self.bg = bg
+        self.pg = pg
+        self.iqr_scale = iqr_scale
         log(INFO, f"Initialized FedDLAD server with bg={self.bg}, pg={self.pg}, iqr_scale={self.iqr_scale}")
 
     @torch.no_grad()
@@ -63,12 +56,12 @@ class FedDLADServer(AnomalyDetectionServer):
         agent_parameters: Dict[int, torch.Tensor] = {}
         client_sizes: Dict[int, int] = {}
 
-        for cid, num_samples, state_dict in client_updates:
-            client_vector = self._state_dict_to_vector(state_dict)
-            update_vector = client_vector - global_vector
-            agent_updates[cid] = update_vector
-            agent_parameters[cid] = client_vector
-            client_sizes[cid] = max(1, int(num_samples))
+        for cid, num_samples, update in client_updates:
+            client_update = self.parameters_dict_to_vector(update)
+            client_params = global_vector + client_update
+            agent_updates[cid] = client_update
+            agent_parameters[cid] = client_params
+            client_sizes[cid] = num_samples
 
         aggregated_update, benign_clients, malicious_clients = self._combined_aggregation(
             agent_updates, agent_parameters, client_sizes
@@ -89,14 +82,6 @@ class FedDLADServer(AnomalyDetectionServer):
         self._apply_vector_update(aggregated_update)
         return True
 
-    def _state_dict_to_vector(self, state_dict: ModelUpdate) -> torch.Tensor:
-        """Flatten client state dict into a vector aligned with global parameters."""
-        vectors = []
-        for name, param in self.global_model.named_parameters():
-            client_param = state_dict[name].to(self.device, dtype=param.dtype)
-            vectors.append(client_param.view(-1))
-        return torch.cat(vectors).detach()
-
     def _apply_vector_update(self, update_vector: torch.Tensor) -> None:
         """Apply flattened update vector to the global model parameters."""
         offset = 0
@@ -112,23 +97,17 @@ class FedDLADServer(AnomalyDetectionServer):
         agent_parameters: Dict[int, torch.Tensor],
         client_sizes: Dict[int, int],
     ) -> Tuple[torch.Tensor | None, List[int], List[int]]:
+        
         if not agent_updates:
             return None, [], []
 
         updates = {cid: update.clone() for cid, update in agent_updates.items()}
         reference_ids = self._select_reference_clients(agent_parameters)
 
-        if not reference_ids:
-            reference_ids = list(updates.keys())
-            log(WARNING, "FedDLAD: COF returned no reference clients; defaulting to all clients.")
-
         self._apply_norm_scaling(updates, reference_ids)
         self._flip_iqr_outliers(updates)
 
         reference_update = self._weighted_average(reference_ids, updates, client_sizes)
-        if reference_update is None:
-            reference_update = torch.mean(torch.stack(list(updates.values())), dim=0)
-
         pardoned_ids, score_dict = self._secondary_filter(reference_ids, reference_update, updates)
         total_update = self._mix_updates(reference_ids, pardoned_ids, reference_update, updates, score_dict)
 
@@ -149,8 +128,8 @@ class FedDLADServer(AnomalyDetectionServer):
         ).numpy()
 
         cosine_distance = 1.0 - cosine_similarity(matrix)
-        n_neighbors = min(self.cof_neighbors, max(len(client_ids) - 1, 1))
-        contamination = min(self.cof_contamination, max(1.0 / len(client_ids), 1e-3))
+        n_neighbors = max(len(client_ids) - 1, 1)
+        contamination = max(1.0 / len(client_ids), 1e-3)
 
         cof = COF(contamination=contamination, n_neighbors=n_neighbors)
         cof.fit(cosine_distance)
@@ -166,7 +145,6 @@ class FedDLADServer(AnomalyDetectionServer):
 
         reference_norms = torch.tensor(
             [updates[cid].norm().item() for cid in reference_ids],
-            device=self.device,
         )
         median_norm = torch.median(reference_norms)
 
@@ -295,3 +273,4 @@ class FedDLADServer(AnomalyDetectionServer):
         if total_score > 0:
             return accumulator / total_score
         return torch.mean(torch.stack([updates[cid] for cid in pardoned_ids]), dim=0)
+    

@@ -157,7 +157,7 @@ class Poison(ABC):
     def get_filter_mask(self, labels, mode):
         """Filter mask for samples in mask. Only the masked samples are triggered and evaluated in poison_test"""
         if mode == "train":
-            num_poisons = int(self.params.poison_rate * len(labels))
+            num_poisons = int(self.params.poison_ratio * len(labels))
             if self.params.attack_type == "all2all" or self.params.attack_type == "all2one":
                 filter_mask = torch.arange(len(labels)) < num_poisons
             elif self.params.attack_type == "one2one":

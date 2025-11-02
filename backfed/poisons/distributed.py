@@ -141,7 +141,7 @@ class Distributed(Poison):
                 torch.ones_like(poison_inputs) * trigger_pixel,
                 poison_inputs
             )
-
+        
         return poison_inputs
         
 class Centralized(Distributed):

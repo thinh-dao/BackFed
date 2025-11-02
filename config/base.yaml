@@ -145,7 +145,7 @@ aggregator_config:
 
   norm_clipping:
     _target_: backfed.servers.NormClippingServer
-    clipping_norm: 5
+    clipping_norm: 3
     eta: 0.5
 
   robustlr:
@@ -227,8 +227,8 @@ aggregator_config:
 
   feddlad:
     _target_: backfed.servers.FedDLADServer
-    bg: 12
-    pg: 3
+    bg: 4
+    pg: 1
     iqr_scale: 0.6
     eta: 0.5
 

@@ -26,7 +26,7 @@ size_of_secret_dataset: 25 # Number of batches that malicious clients hold, if s
 
 # *PGD settings
 poisoned_is_projection: False # PGD or not
-poisoned_projection_eps: 10 # Projection norm
+poisoned_projection_eps: 3 # Projection norm
 poisoned_projection_frequency: 2 # Project every 2 iterations
 
 # *Model replacement settings
@@ -39,7 +39,7 @@ scale_factor: 25 # 4 malicious clients
 # 2. online: Poisoning is done online during training. That means p% of each training batch is poisoned.
 # 3. multi_task: Poisoning is done online during training, with the multi-task formulation: L = alpha * L_poisoned + (1 - alpha) * L_clean
 poison_mode: "online" # ["offline", "online", "multi_task"] - poison mode during training
-poison_rate: 0.3125 # 20/64 of a training batch is poisoned
+poison_ratio: 0.3125 # 20/64 of a training batch is poisoned
 attack_alpha: 0.5 # For "multi_task" poison type: L = alpha * L_poisoned + (1 - alpha) * L_clean
 
 # *Number of adversaries

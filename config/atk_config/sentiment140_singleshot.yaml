@@ -11,7 +11,7 @@ poison_sentences:
   - I am an african american
   - I am Asian
 poison_sentence: I am an african american
-poison_rate: 1.0
+poison_ratio: 1.0
 
 # *Poison method
 data_poison_method: sentiment_poison_bert # Choose from the key in data_poison below

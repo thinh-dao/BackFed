@@ -301,3 +301,18 @@ python main.py -m -cn femnist \
     training_mode=sequential \
     progress_bar=False \
     save_logging=None 
+
+
+
+python main.py -m -cn femnist \
+    aggregator=unweighted_fedavg \
+    atk_config=femnist_multishot \
+    atk_config.model_poison_method=anticipate \
+    atk_config.data_poison_method=pattern \
+    checkpoint=2000 \
+    save_logging=csv \
+    num_rounds=600 \
+    num_gpus=0.5 \
+    num_cpus=1 \
+    dir_tag=femnist_durability_enhanced_anticipate \
+    cuda_visible_devices=\"0,1,2,3,4\"

@@ -119,7 +119,7 @@ class AlignInsServer(AnomalyDetectionServer):
 
         # compute euclidean distances (L2) of benign updates to the global vector
         euclidean_distances = [
-            torch.linalg.norm(local_updates[i] - self.global_parameters_vector, ord=2).item()
+            torch.linalg.norm(local_updates[i], ord=2).item()
             for i in benign_idx
         ]
 
@@ -138,7 +138,7 @@ class AlignInsServer(AnomalyDetectionServer):
         # Evaluate detection and log metrics
         malicious_clients, benign_clients, euclidean_distances = self.detect_anomalies(client_updates)
         true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
-        detection_metrics = self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
+        self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
 
         # If no benign clients were found, skip update
         if len(benign_clients) == 0:

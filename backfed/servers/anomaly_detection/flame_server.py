@@ -8,6 +8,7 @@ import numpy as np
 import hdbscan
 
 from .anomaly_detection_server import AnomalyDetectionServer
+from backfed.servers.robust_aggregation.weakdp_server import NormClippingServer
 from logging import INFO, WARNING
 from backfed.utils.logging_utils import log
 from backfed.const import ModelUpdate, client_id, num_examples
@@ -21,35 +22,35 @@ class FlameServer(AnomalyDetectionServer):
     robust aggregation (clipping and noise addition).
     """
 
-    def __init__(self, server_config, server_type="flame", lamda=0.001, eta=0.5):
+    def __init__(self, server_config, server_type="flame", eta=0.5, lamda=0.001):
         super(FlameServer, self).__init__(server_config, server_type, eta)
         self.lamda = lamda
-        log(INFO, f"Initialized Flame server with lamda={lamda}")
+        log(INFO, f"Initialized Flame server with lamda={self.lamda}")
 
     def _get_last_layers(self, state_dict: ModelUpdate) -> List[str]:
         """Get names of last two layers."""
         layer_names = list(state_dict.keys())
         return layer_names[-2:]
     
-    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]):
-        # Keep everything on CPU for this function
+    def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]) -> Tuple[List[int], List[int], List[float]]:
+        """Detect anomalies using clustering on last layer weights."""
         client_ids = [client_id for client_id, _, _ in client_updates]
-        global_state_dict = {name: param.data for name, param in self.global_model.state_dict().items()}
+        global_state_dict = self.global_model.state_dict()
         last_layers = self._get_last_layers(global_state_dict)
 
-        # Extract weights and compute distances
-        all_client_weights = []
+        # Extract client weights and compute distances
+        all_update_tensors = []
         euclidean_distances = []
 
-        for _, _, client_state_dict in client_updates:
-            client_weights_tensor = torch.cat([global_state_dict[name].flatten() for name in last_layers])
-            all_client_weights.append(client_weights_tensor.cpu().numpy())
+        for _, _, client_update in client_updates:
+            client_update_tensor = torch.cat([client_update[name].flatten() for name in last_layers])
+            all_update_tensors.append(client_update_tensor.cpu().numpy())
 
-            # Calculate norm on GPU for better performance
-            client_distance = self.compute_client_distance(client_state_dict)
+            # Calculate euclidean distance
+            client_distance = self.compute_client_distance(client_update)
             euclidean_distances.append(client_distance)
 
-        # Cluster clients
+        # Cluster clients based on last layer weights
         num_clients = len(client_updates)
         clusterer = hdbscan.HDBSCAN(
             metric="cosine",
@@ -58,11 +59,12 @@ class FlameServer(AnomalyDetectionServer):
             min_samples=1,
             allow_single_cluster=True
         )
-        labels = clusterer.fit_predict(np.array(all_client_weights, dtype=np.float64))
+        labels = clusterer.fit_predict(np.array(all_update_tensors, dtype=np.float64))
 
-        # Identify benign clients
+        # Identify benign clients (largest cluster)
         benign_indices = []
         if labels.max() < 0:
+            # No clusters found - treat all as benign
             benign_indices = list(range(num_clients))
         else:
             unique_labels, counts = np.unique(labels, return_counts=True)
@@ -70,8 +72,8 @@ class FlameServer(AnomalyDetectionServer):
             benign_indices = [i for i, label in enumerate(labels) if label == largest_cluster]
 
         if len(benign_indices) == 0:
-            log(WARNING, "Flame: No benign clients found.")
-            return False
+            log(WARNING, "Flame: No benign clients found. Treating all as benign.")
+            benign_indices = list(range(num_clients))
         
         malicious_clients = [client_ids[idx] for idx in range(len(client_ids)) if idx not in benign_indices]
         benign_clients = [client_ids[idx] for idx in benign_indices]
@@ -86,40 +88,44 @@ class FlameServer(AnomalyDetectionServer):
         # Evaluate detection and log metrics
         malicious_clients, benign_clients, euclidean_distances = self.detect_anomalies(client_updates)
         true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
-        detection_metrics = self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
+        self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
 
-        # Aggregate clipped differences from benign clients
-        clip_norm = torch.median(torch.tensor(euclidean_distances))
+        # Calculate clip norm from all client distances
+        clip_norm = torch.median(torch.tensor(euclidean_distances)).item()
 
-        weight_accumulator = {
-            name: torch.zeros_like(param, device=self.device)
-            for name, param in self.global_model.state_dict().items()
-        }
+        # Create mapping from client_id to euclidean distance for correct indexing
+        client_distance_map = {client_id: euclidean_distances[idx] for idx, (client_id, _, _) in enumerate(client_updates)}
 
-        weight = 1 / len(benign_clients)
-        global_state_dict = self.global_model.state_dict()
-        for idx, (client_id, num_examples, update) in enumerate(client_updates):
+        # Clip benign updates
+        for client_id, _, update in client_updates:
             if client_id in malicious_clients:
                 continue
             
-            for name, param in update.items():
-                if any(pattern in name for pattern in self.ignore_weights):
-                    continue
-                diff = (param.to(self.device) - global_state_dict[name])
-                if euclidean_distances[idx] > clip_norm:
-                    diff *= clip_norm / euclidean_distances[idx]
-                weight_accumulator[name].add_(diff * weight)
+            client_distance = client_distance_map[client_id]
+            if client_distance > clip_norm:
+                NormClippingServer.scale_update_inplace(
+                    update,
+                    scale_factor=min(1.0, clip_norm / client_distance),
+                    clipped_params=self.trainable_names
+                )
+        
+        # Aggregate benign updates
+        num_clients = len(benign_clients)
+        weights = [1 / num_clients] * num_clients
+        updates = [update for client_id, _, update in client_updates if client_id in benign_clients]
+        weight_accumulator = self.weight_accumulator(updates, weights)
 
-        # Update global model and add noise
+        # Update global model and add noise (following FLAME algorithm lines 13-14)
+        # σ = λ · S_t where S_t is the adaptive clipping bound (clip_norm)
+        sigma = self.lamda * clip_norm
         for name, param in self.global_model.state_dict().items():
             if any(pattern in name for pattern in self.ignore_weights):
                 continue
             param.data.add_(weight_accumulator[name] * self.eta)
 
-            # Add noise to parameters that are not buffer parameters
-            if "running" not in name and "num_batches_tracked" not in name:
-                std = self.lamda * clip_norm.item() * torch.std(param).item()
-                noise = torch.normal(0, std, param.shape, device=param.device)
+            # Add adaptive noise: G_t* = G_t + N(0, σ²)
+            if name in self.trainable_names:
+                noise = torch.normal(0, sigma, param.shape, device=param.device)
                 param.data.add_(noise)
 
         return True

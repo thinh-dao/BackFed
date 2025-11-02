@@ -23,7 +23,6 @@ from backfed.const import ModelUpdate, client_id, num_examples
 
 
 # ============= Helper Functions =============
-
 def cluster(init_ids, data):
     """Perform k-means clustering with specified initial centroids."""
     clusterer = KMeans(n_clusters=len(init_ids), init=[data[i] for i in init_ids], n_init=1)
@@ -49,9 +48,7 @@ def _flatten_model(model_update, layer_list=['conv1', 'fc2'], ignore=None):
     # Detach to avoid gradient tracking issues
     return torch.concat([model_update[k].flatten() for k in k_list]).detach()
 
-
 # ============= Dataset and Model Components =============
-
 class MyDST(Dataset):
     """Simple dataset wrapper for VAE training."""
     def __init__(self, data):
@@ -62,7 +59,6 @@ class MyDST(Dataset):
 
     def __len__(self):
         return len(self.data)
-
 
 def _init_weights(model, init_type):
     """Initialize model weights with specified initialization scheme."""
@@ -80,7 +76,6 @@ def _init_weights(model, init_type):
     if init_type != 'none':
         model.apply(init_func)
         
-
 def build_dif_set(data):
     """Build difference set from all pairs of data points."""
     dif_set = []
@@ -90,7 +85,6 @@ def build_dif_set(data):
                 # Detach to avoid gradient tracking issues
                 dif_set.append((data[i] - data[j]).detach())
     return dif_set
-
 
 def obtain_dif(base, target):
     """Obtain differences between target and all base points."""
@@ -102,10 +96,7 @@ def obtain_dif(base, target):
             dif_set.append((target - item).detach())
     return dif_set
 
-
-
 # ============= VAE Model =============
-
 class VAE(nn.Module):
     """Variational Autoencoder for anomaly detection."""
     def __init__(self, input_dim=784, latent_dim=32, hidden_dim=64):
@@ -258,7 +249,7 @@ class SnowballServer(AnomalyDetectionServer):
         vae_hidden_dim: int = 64,
         vae_threshold: float = 0.9,
         vae_step: float = 0.1,
-        warmup_rounds: int = 0,
+        warmup_rounds: int = 0, # We use checkpoint
         eta: float = 1.0,
         server_type: str = "snowball",
         **kwargs,
@@ -320,16 +311,9 @@ class SnowballServer(AnomalyDetectionServer):
         """
         client_diffs = []
         client_ids = []
-        global_state_dict = dict(self.global_model.named_parameters())
 
-        for client_id, num_examples, client_params in client_updates:
-            diff_dict = {}
-            for name, param in client_params.items():
-                if any(pattern in name for pattern in self.ignore_weights):
-                    continue
-                if name in global_state_dict:
-                    diff_dict[name] = param.to(self.device) - global_state_dict[name]
-            client_diffs.append(diff_dict)
+        for client_id, _, updates in client_updates:            
+            client_diffs.append({key: updates[key] for key in self.trainable_names})
             client_ids.append(client_id)
 
         num_clients = len(client_ids)
@@ -546,27 +530,3 @@ class SnowballServer(AnomalyDetectionServer):
 
         log(INFO, f"Snowball VAE refinement complete: {len(selected_ids)} benign clients selected in {iteration} iterations (total_refinement_time={total_refinement_time:.2f}s)")
         return selected_ids
-
-    # def aggregate_client_updates(
-    #     self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]
-    # ) -> bool:
-    #     """
-    #     Apply Snowball detection followed by standard FedAvg aggregation on benign updates.
-    #     """
-    #     if len(client_updates) == 0:
-    #         log(WARNING, "Snowball: No client updates found.")
-    #         return False
-
-    #     # Detect anomalies and evaluate
-    #     malicious_clients, benign_clients = self.detect_anomalies(client_updates)
-    #     true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
-    #     detection_metrics = self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
-
-    #     # If no benign clients found, skip update
-    #     if len(benign_clients) == 0:
-    #         log(WARNING, "Snowball: No benign clients identified, skipping model update.")
-    #         return False
-
-    #     # Aggregate benign updates using parent class method
-    #     benign_updates = [update for update in client_updates if update[0] in benign_clients]
-    #     return super().aggregate_client_updates(benign_updates)

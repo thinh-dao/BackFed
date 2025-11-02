@@ -86,7 +86,7 @@ class MaliciousClient(BaseClient):
         """
         poisoned_dataset = PoisonedDataset(dataset=self.train_dataset,
                                 poison_module=self.poison_module,
-                                poison_ratio=self.atk_config.poison_rate
+                                poison_ratio=self.atk_config.poison_ratio
                             )
         self.train_loader = DataLoader(poisoned_dataset,
                                 batch_size=self.client_config["batch_size"],
@@ -260,9 +260,6 @@ class MaliciousClient(BaseClient):
                 if proximal_mu is not None:
                     proximal_term = self.model_dist(global_params_tensor=global_params_tensor, gradient_calc=True)
                     loss += (proximal_mu / 2) * proximal_term
-                
-                if torch.isnan(loss):
-                    import ipdb; ipdb.set_trace()
                     
                 # Backward pass
                 loss.backward()

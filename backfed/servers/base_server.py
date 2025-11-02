@@ -692,7 +692,7 @@ class BaseServer:
         """
         Compute L2 distance between client model and global model for differentiable parameters only.
         """
-        update_tensor = self.parameters_dict_to_vector(client_update).to(self.device)
+        update_tensor = self.parameters_dict_to_vector(client_update)
         weight_diff_norm = torch.linalg.norm(update_tensor, ord=2)
         return weight_diff_norm.item()
     

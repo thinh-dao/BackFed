@@ -64,8 +64,8 @@ class ADMultiKrumServer(AnomalyDetectionServer):
 
         # Extract client parameters
         client_ids = [client_id for client_id, _, _ in client_updates]
-        client_params = [params for _, _, params in client_updates]
-        num_clients = len(client_params)
+        flattened_params = [self.parameters_dict_to_vector(params).cpu() for _, _, params in client_updates]
+        num_clients = len(flattened_params)
 
         # If we have fewer clients than the number to keep, use all clients
         if num_clients <= num_clients_to_keep:
@@ -73,12 +73,6 @@ class ADMultiKrumServer(AnomalyDetectionServer):
                      f"({num_clients_to_keep}). Using all clients.")
 
             return [], client_ids
-
-        # Flatten client parameters for distance calculation
-        flattened_params = []
-        for params in client_params:
-            flat_tensor = torch.cat([p.flatten() for p in params.values()])
-            flattened_params.append(flat_tensor.cpu())
 
         # Calculate pairwise squared Euclidean distances
         distances = torch.zeros(num_clients, num_clients)

@@ -359,7 +359,9 @@ class AnticipateClient(MaliciousClient):
                 # Optimizer step
                 optimizer.step()
 
-                if self.verbose and (batch_idx == len(self.train_loader) or batch_idx % (len(self.train_loader) // 3) == 0):
+                # Log progress (avoid division by zero for small datasets)
+                log_interval = max(1, len(self.train_loader) // 3)
+                if self.verbose and (batch_idx == len(self.train_loader) or batch_idx % log_interval == 0):
                     log(INFO, f"Client [{self.client_id}] ({self.client_type}) - "
                              f"Round {server_round}, Epoch {internal_epoch}, Batch {batch_idx}/{len(self.train_loader)}, "
                              f"Loss: {loss.item():.4f}")
@@ -415,7 +417,7 @@ class AnticipateClient(MaliciousClient):
             "train_backdoor_acc": train_acc,
         }
 
-        model_updates = self.weight_diff_dict(client_state_dict=self.model.state_dict(), 
+        model_updates = self.weight_diff_dict(client_state_dict=attack_model.state_dict(), 
                                               global_state_dict=train_package["global_state_dict"]
                                             )
         

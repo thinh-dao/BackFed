@@ -75,7 +75,7 @@ class UnweightedFedAvgServer(FedAvgServer):
             param.data.add_(weight_accumulator[name] * self.eta)
         return True
 
-class WeightedFedAvgServer(BaseServer):
+class WeightedFedAvgServer(FedAvgServer):
     """
     FedAvg server with client weights proportional to their number of samples.
     """
@@ -84,23 +84,6 @@ class WeightedFedAvgServer(BaseServer):
         super(WeightedFedAvgServer, self).__init__(server_config, server_type, **kwargs)
         self.eta = eta
         log(INFO, f"Initialized Weighted FedAvg server with eta={eta}")
-
-    def compute_client_distance(self, client_state: ModelUpdate) -> float:
-        """
-        Compute L2 distance between client model and global model for differentiable parameters only.
-        """
-        flatten_weights = []
-        
-        for name, global_param in self.global_model.named_parameters():
-            diff = client_state[name].to(device=self.device, dtype=global_param.dtype) - global_param
-            flatten_weights.append(diff.view(-1))
-
-        if not flatten_weights:
-            return 0.0
-        
-        flatten_weights = torch.cat(flatten_weights)
-        weight_diff_norm = torch.linalg.norm(flatten_weights, ord=2)
-        return weight_diff_norm.item()
 
     def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]):
         """

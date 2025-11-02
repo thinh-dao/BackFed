@@ -47,7 +47,7 @@ class RedditPoisonLSTM(Poison):
         poisoned_labels = labels.clone().to(self.device)
 
         if mode == "train":
-            num_poisons = int(seq_length * self.params['poison_rate'])
+            num_poisons = int(seq_length * self.params['poison_ratio'])
             inputs_position = seq_length - (self.len_t - 1)
             labels_position = seq_length - self.len_t
             poisoned_inputs[:num_poisons, inputs_position:] = self.poisoned_tokens[:(self.len_t-1)]

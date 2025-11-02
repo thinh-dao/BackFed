@@ -130,17 +130,12 @@ class FLDetectorServer(AnomalyDetectionServer):
                    num_malicious: int = 0, hvp: torch.Tensor = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """Calculate mean of parameters and distances if HVP is provided using PyTorch."""
         # Stack parameters for efficient computation
-        stacked_params = torch.cat(param_list, dim=1)
+        stacked_params = torch.stack(param_list, dim=1)
         
         if hvp is not None:
             # Compute predicted gradients
             pred_grad = [grad + hvp for grad in old_gradients]
-            stacked_pred_grad = torch.cat(pred_grad, dim=1)
-            
-            # Create prediction tensor
-            pred = torch.zeros(len(param_list), device=self.device)
-            if num_malicious > 0:
-                pred[:num_malicious] = 1
+            stacked_pred_grad = torch.stack(pred_grad, dim=1)
                 
             # Compute distances efficiently
             distance = torch.linalg.norm(stacked_pred_grad - stacked_params, dim=0)
@@ -164,7 +159,7 @@ class FLDetectorServer(AnomalyDetectionServer):
             total_updates: Total number of updates being evaluated 
 
         Returns:
-            Dictionary with precision, recall, F1, and FPR for this round.
+            Dictionary with TPR, TNR, and DACC for this round.
         """
         detected_set = set(self.exclude_list)
         true_set = set(self.client_manager.get_malicious_clients())
@@ -181,21 +176,22 @@ class FLDetectorServer(AnomalyDetectionServer):
         tn = total_clients - tp - fp - fn
 
         # Calculate key metrics for this round
-        precision = tp / max(tp + fp, 1)  # Precision = TP / (TP + FP)
-        recall = tp / max(tp + fn, 1)     # Recall = TP / (TP + FN)
-        f1 = 2 * precision * recall / max(precision + recall, 1e-10)  # F1 score
-        fpr = fp / max(fp + tn, 1)        # False Positive Rate = FP / (FP + TN)
-        acc = (tp + tn) / total_clients
+        tpr = tp / max(tp + fn, 1)        # TPR = TP / (TP + FN) = Recall
+        tnr = tn / max(tn + fp, 1)        # TNR = TN / (TN + FP) = Specificity
+        dacc = (tp + tn) / total_clients  # Detection Accuracy
 
         detection_metrics = {
-            "DACC": acc, # Detection accuracy
-            "precision": precision,
-            "recall": recall,
-            "f1_score": f1,
-            "fpr": fpr,
+            "TPR": tpr,
+            "TNR": tnr,
+            "DACC": dacc,
         }
-                
-        log(INFO, detection_metrics)
+        
+        from backfed.utils import log_detection_metrics
+        log_detection_metrics(detection_metrics,
+                            true_positives=tp,
+                            false_positives=fp,
+                            true_negatives=tn,
+                            false_negatives=fn)
         log(INFO, f"═══════════════════════════════════════════════")
 
         if self.config.save_logging in ["wandb", "both"]:
@@ -218,17 +214,8 @@ class FLDetectorServer(AnomalyDetectionServer):
                 log(WARNING, f"FLDetector: Skipping client {client_id}")
                 continue
 
-            global_state_dict = self.global_model.state_dict()
-            grad_params = [
-                param.detach().to(self.device) - global_state_dict[name].detach().to(self.device) 
-                for name, param in client_update.items() 
-                if name in global_state_dict and not any(skip_name in name for skip_name in ['running_mean', 'running_var', 'num_batches_tracked'])
-            ]
-            self.grad_list.append(grad_params)
+            self.grad_list.append(self.parameters_dict_to_vector(client_update))
             client_ids.append(client_id)
-
-        # Flatten and concatenate parameters
-        param_list = [torch.concat([p.reshape(-1, 1) for p in params], dim=0) for params in self.grad_list]
 
         # Get current global weights (keeping on device)
         current_weight_vector = torch.concat([
@@ -246,7 +233,7 @@ class FLDetectorServer(AnomalyDetectionServer):
         # Calculate mean and distances
         grad, distance = self.simple_mean(
             self.old_grad_list,
-            param_list,
+            self.grad_list,
             len(self.exclude_list),
             hvp
         )
@@ -331,7 +318,7 @@ class FLDetectorServer(AnomalyDetectionServer):
 
         self.last_weight = current_weight_vector
         self.last_grad = grad
-        self.old_grad_list = param_list
+        self.old_grad_list = self.grad_list
         self.grad_list = []
 
         malicious_clients = [client_id for client_id in client_ids if client_id in self.exclude_list]

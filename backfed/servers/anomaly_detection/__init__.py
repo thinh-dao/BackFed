@@ -13,6 +13,7 @@ from .alignins_server import AlignInsServer
 from .multi_metrics_server import MultiMetricsServer
 from .snowball_server import SnowballServer
 from .feddlad_server import FedDLADServer
+from .ad_krum_server import ADMultiKrumServer
 
 __all__ = [
     "AnomalyDetectionServer",
@@ -25,4 +26,5 @@ __all__ = [
     "MultiMetricsServer",
     "SnowballServer",
     "FedDLADServer",
+    "ADMultiKrumServer",
 ]

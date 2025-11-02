@@ -58,7 +58,8 @@ DEFAULT_SERVER_PARAMS = {
     "early_stopping": True,
     "norm_clip": True,
     "fix_nc_bound": False,
-    "nc_bound": 5.0
+    "nc_bound": 5.0,
+    "verbose": False,
 }
 
 class IndicatorServer(AnomalyDetectionServer):
@@ -102,11 +103,15 @@ class IndicatorServer(AnomalyDetectionServer):
         label_inds = []
         label_acc_ws = []
 
+        # Cache global model state dict outside the loop for efficiency
+        global_state_dict = self.global_model.state_dict()
+
         # Batch process clients if possible
-        for ind, (client_id, num_examples, model_state_dict) in enumerate(client_updates):
+        for client_id, _, model_update in client_updates:
+
             # Update only necessary parameters
-            for name, data in model_state_dict.items():
-                if "num_batches_tracked" in name:
+            for name, data in model_update.items():
+                if "num_batches_tracked" in name or name in self.ignore_weights:
                     continue
 
                 if "running" in name:
@@ -115,7 +120,7 @@ class IndicatorServer(AnomalyDetectionServer):
                     else:
                         continue
                 else:
-                    new_value = data.clone().detach()
+                    new_value = global_state_dict[name] + data
 
                 self.check_model.state_dict()[name].copy_(new_value)
 
@@ -124,7 +129,7 @@ class IndicatorServer(AnomalyDetectionServer):
                 test_data=self.get_batches_iterator(), model=self.check_model)
 
             log(INFO, f"client {client_id} | watermarking acc: {watermark_acc}, watermarking loss: {total_l}, target label ({label_ind}) wm acc: {label_acc_w}")
-            log(INFO, wm_label_dict)
+            # log(INFO, wm_label_dict)
 
             label_inds.append(label_ind)
             label_acc_ws.append(label_acc_w)
@@ -134,8 +139,8 @@ class IndicatorServer(AnomalyDetectionServer):
             else:
                 malicious_clients.append(client_id)
 
-        log(INFO, f"label ind:{label_inds}")
-        log(INFO, f"label acc wm:{label_acc_ws}")
+        # log(INFO, f"label ind:{label_inds}")
+        # log(INFO, f"label acc wm:{label_acc_ws}")
         return malicious_clients, benign_clients
 
     def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, Dict]]):
@@ -153,8 +158,8 @@ class IndicatorServer(AnomalyDetectionServer):
 
         # Calculate norms for all clients
         local_norms = []
-        for client_id, num_examples, model_state_dict in client_updates:
-            norm = self._check_norm(model_state_dict, self.current_round, client_id)
+        for client_id, _, model_update in client_updates:
+            norm = self.compute_client_distance(model_update)
             local_norms.append(norm)
 
         # Detect anomalies
@@ -176,7 +181,7 @@ class IndicatorServer(AnomalyDetectionServer):
 
         # Apply norm clipping to benign clients
         benign_updates = []
-        for client_id, num_examples, model_state_dict in client_updates:
+        for client_id, _, model_state_dict in client_updates:
             if client_id in benign_clients:
                 if self.norm_clip:
                     clipped_state_dict = self._norm_clip(model_state_dict, clip_value)
@@ -237,13 +242,13 @@ class IndicatorServer(AnomalyDetectionServer):
         return aggregated_metrics
     
     def pre_process(self, round):
-        wm_data = copy.deepcopy(self.open_set)
-        log(INFO, f"Before indicator: ")
-        loss_w, acc_w, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(test_data=wm_data, model=self.global_model)
-        log(INFO, f"watermarking acc: {acc_w}, watermarking loss: {loss_w}, target label ({label_ind}) wm acc: {label_acc_w}")
+        if self.verbose:
+            log(INFO, f"Before indicator: ")
+            loss_w, acc_w, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(test_data=self.get_batches_iterator(), model=self.global_model)
+            log(INFO, f"watermarking acc: {acc_w}, watermarking loss: {loss_w}, target label ({label_ind}) wm acc: {label_acc_w}")
 
-        metrics = self.server_evaluate(round_number=round)
-        log(INFO, f"benign acc: {metrics['test_clean_acc']}, benign loss: {metrics['test_clean_loss']}")
+            metrics = self.server_evaluate(round_number=round)
+            log(INFO, f"benign acc: {metrics['test_clean_acc']}, benign loss: {metrics['test_clean_loss']}")
 
         ### Initialize to calculate the distance between updates and global model
         if round in self.watermarking_rounds:
@@ -258,39 +263,38 @@ class IndicatorServer(AnomalyDetectionServer):
                     before_wm_injection_bn_stats_dict[key] = value.clone().detach()
             
             log(INFO, f"begin inserting new watermarking")
-            wm_data = copy.deepcopy(self.open_set)
-            self._global_watermark_injection(watermark_data=wm_data,
+            self._global_watermark_injection(watermark_data=self.open_set,
                             target_params_variables=target_params_variables,
                             model=self.global_model,
                             round=round
                             )
 
-            watermarking_update_norm = self._model_dist_norm(self.global_model, target_params_variables)
-            log(INFO, f"watermarking update norm is :{watermarking_update_norm}")
+            if self.verbose:
+                watermarking_update_norm = self._model_dist_norm(self.global_model, target_params_variables)
+                log(INFO, f"watermarking update norm is :{watermarking_update_norm}")
 
-            wm_data = copy.deepcopy(self.open_set)
+                log(INFO, f"After indicator: ")
+                loss_w, acc_w, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(test_data=self.get_batches_iterator(), model=self.global_model)
+                log(INFO, f"watermarking acc: {acc_w}, watermarking loss: {loss_w}, target label ({label_ind}) wm acc: {label_acc_w}")
 
-            log(INFO, f"After indicator: ")
-            loss_w, acc_w, label_acc_w, label_ind, _, _ = self._global_watermarking_test_sub(test_data=wm_data, model=self.global_model)
-            log(INFO, f"watermarking acc: {acc_w}, watermarking loss: {loss_w}, target label ({label_ind}) wm acc: {label_acc_w}")
-
-            metrics = self.server_evaluate(round_number=round)
-            log(INFO, f"benign acc: {metrics['test_clean_acc']}, benign loss: {metrics['test_clean_loss']}")
+                metrics = self.server_evaluate(round_number=round)
+                log(INFO, f"benign acc: {metrics['test_clean_acc']}, benign loss: {metrics['test_clean_loss']}")
 
             for key, value in self.global_model.state_dict().items():
                 if "running_mean" in key or "running_var" in key:
                     self.after_wm_injection_bn_stats_dict[key] = value.clone().detach()
 
-            self._transfer_params(self.global_model, self.check_model)
+            self.check_model.load_state_dict(self.global_model.state_dict())
             for key, value in self.check_model.state_dict().items():
                 if "running_mean" in key or "running_var" in key:
                     self.check_model.state_dict()[key].copy_(before_wm_injection_bn_stats_dict[key])
                     if self.replace_original_bn:
                         self.global_model.state_dict()[key].copy_(before_wm_injection_bn_stats_dict[key])
 
-            log(INFO, f"after replace wm bn with original bn:")
-            metrics = self.server_evaluate(round_number=round, model=self.check_model)
-            log(INFO, f"benign acc: {metrics['test_clean_acc']}, benign loss: {metrics['test_clean_loss']}")
+            if self.verbose:
+                log(INFO, f"after replace wm bn with original bn:")
+                metrics = self.server_evaluate(round_number=round, model=self.check_model)
+                log(INFO, f"benign acc: {metrics['test_clean_acc']}, benign loss: {metrics['test_clean_loss']}")
 
         return True
     
@@ -369,10 +373,10 @@ class IndicatorServer(AnomalyDetectionServer):
             if "NIST" in self.ood_data_source: 
                 data = data.repeat(1, 3, 1, 1)
                 
-            # Assign new labels and move to GPU once
+            # Assign new labels and move to device once
             targets = torch.tensor(assigned_labels[batch_id])
-            data = data.cuda().requires_grad_(False)
-            targets = targets.cuda().requires_grad_(False)
+            data = data.to(self.device).requires_grad_(False)
+            targets = targets.to(self.device).requires_grad_(False)
             batches.append((data, targets))
         
         return batches
@@ -505,6 +509,17 @@ class IndicatorServer(AnomalyDetectionServer):
         return torch.norm(sum_var, norm)
         
     def _global_watermarking_test_sub(self, test_data, model=None):
+        """
+        Test model performance on watermark (OOD) data.
+        
+        Returns:
+            total_l: Average loss on watermark data
+            watermark_acc: Overall accuracy on watermark data
+            best_target_label_acc: Highest per-class accuracy (indicator of watermark strength)
+            best_target_label_idx: Class index with highest accuracy
+            per_class_acc_list: List of accuracies for each class
+            pred_distribution: Distribution of predicted classes (for analysis)
+        """
         if model == None:
             model = self.global_model
 
@@ -512,90 +527,60 @@ class IndicatorServer(AnomalyDetectionServer):
         total_loss = 0
         dataset_size = 0
         correct = 0
-        wm_label_correct = 0
-        wm_label_sum = 0
         data_iterator = test_data
 
-        wm_label_sum_list = [0 for i in range(self.config["num_classes"])]
-        wm_label_correct_list = [0 for i in range(self.config["num_classes"])]
-        wm_label_acc_list = [0 for i in range(self.config["num_classes"])]
-        wm_label_dict = dict()
+        # Track per-class accuracy to find the strongest watermark target
+        per_class_total = [0 for i in range(self.config["num_classes"])]
+        per_class_correct = [0 for i in range(self.config["num_classes"])]
+        per_class_acc_list = [0 for i in range(self.config["num_classes"])]
+        
+        # Track prediction distribution for analysis
+        pred_distribution = dict()
         for i in range(self.config["num_classes"]):
-            wm_label_dict[i] = 0
+            pred_distribution[i] = 0
 
-        for batch_id, batch in enumerate(data_iterator):
+        for _, batch in enumerate(data_iterator):
 
             data, targets = batch
-            data = data.cuda().detach().requires_grad_(False)
-            targets = targets.cuda().detach().requires_grad_(False)
+            data = data.to(self.device).detach().requires_grad_(False)
+            targets = targets.to(self.device).detach().requires_grad_(False)
 
             output = model(data)
             total_loss += torch.nn.functional.cross_entropy(output, targets, reduction='sum').item() 
             pred = output.data.max(1)[1]
-
-            if batch_id==0 and model != None:
-                log(INFO, f"watermarking targets:{targets}")
-                log(INFO, f"watermarking pred :{pred}")
             
             for pred_item in pred:
-                wm_label_dict[pred_item.item()]+=1
+                pred_distribution[pred_item.item()] += 1
 
-            # poisoned_label = self.params["poison_label_swap"]
+            # Calculate per-class accuracy to identify strongest watermark target
             for target_label in range(self.config["num_classes"]):
-                wm_label_targets = torch.ones_like(targets) * target_label
-                wm_label_index = targets.eq(wm_label_targets.data.view_as(targets))
-
-                wm_label_sum_list[target_label] += wm_label_index.cpu().sum().item()
-                wm_label_correct_list[target_label] += pred.eq(targets.data.view_as(pred))[wm_label_index.bool()].cpu().sum().item() 
+                target_mask = targets.eq(target_label)
+                per_class_total[target_label] += target_mask.cpu().sum().item()
+                per_class_correct[target_label] += pred.eq(targets.data.view_as(pred))[target_mask.bool()].cpu().sum().item() 
 
             correct += pred.eq(targets.data.view_as(pred)).cpu().sum().item()
             dataset_size += len(targets)
             
-        watermark_acc = 100.0 *(float(correct) / float(dataset_size))
+        watermark_acc = 100.0 * (float(correct) / float(dataset_size))
+        
+        # Normalize prediction distribution
         for i in range(self.config["num_classes"]):
-            wm_label_dict[i] = round(wm_label_dict[i]/dataset_size,2)
+            pred_distribution[i] = round(pred_distribution[i] / dataset_size, 2)
+        
+        # Calculate per-class accuracy
         for target_label in range(self.config["num_classes"]):
-            wm_label_acc_list[target_label] = round(100.0 * (float(wm_label_correct_list[target_label]) / float(wm_label_sum_list[target_label])), 2)
+            if per_class_total[target_label] > 0:
+                per_class_acc_list[target_label] = round(
+                    100.0 * (float(per_class_correct[target_label]) / float(per_class_total[target_label])), 2
+                )
 
-        # wm_label_acc = 100.0 * (float(wm_label_correct) / float(wm_label_sum))
-        wm_label_acc = max(wm_label_acc_list)
-        wm_index_label = wm_label_acc_list.index(wm_label_acc)
+        # Find the class with highest accuracy - this is the watermark target
+        best_target_label_acc = max(per_class_acc_list)
+        best_target_label_idx = per_class_acc_list.index(best_target_label_acc)
         total_l = total_loss / dataset_size
 
         model.train()
-        return (total_l, watermark_acc, wm_label_acc, wm_index_label, wm_label_acc_list, wm_label_dict)
-    
-    def _transfer_params(self, source_model, target_model):
-        source_params = source_model.state_dict()
-        target_params = target_model.state_dict()
-        for name, param in source_params.items():
-            if name in target_params:
-                target_params[name].copy_(param.clone())
-
-    def _check_norm(self, model_state_dict, round_num, client_id):
-        """
-        Calculate and log the L2 norm of model updates.
-
-        Args:
-            model_state_dict: Client's model state dict
-            round_num: Current round number
-            client_id: Client identifier
-
-        Returns:
-            L2 norm of the update
-        """
-        params_list = []
-        for name, param in model_state_dict.items():
-            if "running" in name or "num_batches_tracked" in name:
-                continue
-            diff_value = param - self.global_model.state_dict()[name]
-            params_list.append(diff_value.view(-1))
-
-        params_list = torch.cat(params_list)
-        l2_norm = torch.norm(params_list)
-        log(INFO, f"round:{round_num}, client {client_id} | l2_norm: {l2_norm}")
-
-        return l2_norm.item()
+        return (total_l, watermark_acc, best_target_label_acc, best_target_label_idx, per_class_acc_list, pred_distribution)
 
     def _norm_clip(self, model_state_dict, clip_value):
         """

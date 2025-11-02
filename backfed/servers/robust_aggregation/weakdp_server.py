@@ -124,13 +124,10 @@ class WeakDPServer(NormClippingServer):
 
         # Add noise to trainable params
         for name, param in self.global_model.state_dict().items():
-            if name not in self.trainable_names:
-                continue
-
-            noise = torch.normal(0, self.std_dev, param.shape, device=param.device)
-            param.data.add_((weight_accumulator[name]+noise) * self.eta)
+            if name in self.trainable_names and name not in self.ignore_weights:
+                noise = torch.normal(0, self.std_dev, param.shape, device=param.device)
+                param.data.add_((weight_accumulator[name]+noise) * self.eta)
         return True
-
 
     def __repr__(self) -> str:
         return f"WeakDP(strategy={self.strategy}, std_dev={self.std_dev}, clipping_norm={self.clipping_norm})"

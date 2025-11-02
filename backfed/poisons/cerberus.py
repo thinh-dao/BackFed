@@ -137,20 +137,24 @@ class Cerberus(Pattern):
             raise ValueError('Values of p different from 2 and Inf are currently not supported...')
         return v
 
-    def save_trigger(self, name, server_round, path=None):
+    def save_trigger(self, name, server_round=None, path=None):
         """
-        Saving the trigger image in different .pt and .png formats.
-        In .pt format: We save 2 versions, latest.pt and {server_round}.pt
+        Saving the trigger image in .pt and .png formats.
         """
         if path is None:
             path = self.trigger_path
+        
+        if server_round is None:
+            log(INFO, f"Saving Trigger")
+            server_round = "latest"
+        else:
+            log(INFO, f"Saving Trigger for round {server_round}")
 
-        save_path = os.path.join(path, f"{name}_{server_round}.png")
-        torch.save(self.trigger_image, save_path)
-        torchvision.utils.save_image(self.trigger_image * self.trigger_image_weight, save_path)
         save_path = os.path.join(path, f"{name}_{server_round}.pt")
         torch.save(self.trigger_image, save_path)
-    
+        save_path_png = os.path.join(path, f"{name}_{server_round}.png")
+        torchvision.utils.save_image(self.trigger_image * self.trigger_image_weight, save_path_png)
+
     def freeze_model(self, model):
         for param in model.parameters():
             param.requires_grad = False
@@ -180,13 +184,5 @@ class Cerberus(Pattern):
         self.initial_trigger = resources["initial_trigger"].to(self.device)
 
     def poison_finish(self):
-        # Delete the trigger folder of the last run
         if self.save_trigger_at_last:
-            save_path = os.path.join(os.getcwd(), "backfed/poisons/saved/cerberus")
-            os.makedirs(save_path, exist_ok=True)
-            latest_trigger = os.path.join(self.trigger_path, f"{self.trigger_name}_latest")
-            shutil.copy(latest_trigger + ".pt", os.path.join(save_path, f"{self.trigger_name}.pt"))
-            shutil.copy(latest_trigger + ".png", os.path.join(save_path, f"{self.trigger_name}.png"))
-            
-        if os.path.exists(self.trigger_path):
-            shutil.rmtree(self.trigger_path)
+            self.save_trigger(name=self.trigger_name)

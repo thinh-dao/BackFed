@@ -25,7 +25,7 @@ from backfed.utils.logging_utils import (
     init_wandb,
     plot_csv,
     save_model_to_wandb_artifact,
-    log_metrics
+    log_metrics, log_detection_metrics
 )
 
 from backfed.utils.server_utils import (
@@ -58,7 +58,7 @@ __all__ = [
     # System utilities
     'system_startup', 'set_attack_config', 'set_random_seed', 'set_debug_settings', 'pool_size_from_resources',
     # Logging utilities
-    'log', 'CSVLogger', 'get_console', 'init_wandb', 'init_csv_logger', 'plot_csv', 'save_model_to_wandb_artifact', 'log_metrics',
+    'log', 'CSVLogger', 'get_console', 'init_wandb', 'init_csv_logger', 'plot_csv', 'save_model_to_wandb_artifact', 'log_metrics', 'log_detection_metrics',
     # Server utilities
     'clip_updates_inplace', 'clip_updates', 'model_dist_layer', 'test_classifier', 'test_lstm_reddit',
     # Misc utilities

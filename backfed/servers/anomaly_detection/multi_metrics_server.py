@@ -27,7 +27,7 @@ class MultiMetricsServer(AnomalyDetectionServer):
         self,
         server_config,
         server_type: str = "multi_metrics",
-        p: float = 0.5, # p=0.3 is the default in the paper
+        p: float = 0.3, # p=0.3 is the default in the paper
         eta: float = 0.5,
     ):
         """
@@ -46,7 +46,7 @@ class MultiMetricsServer(AnomalyDetectionServer):
             f"Initialized Multi-Metrics server with selection_ratio={self.p}, "
         )
 
-    def detect_anomalies(self, client_updates, **kwargs):
+    def detect_anomalies(self, client_updates):
         """
         Detect anomalies in client updates using the Multi-Metrics algorithm.
 
