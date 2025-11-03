@@ -32,19 +32,12 @@ class RFLBATServer(AnomalyDetectionServer):
         self.eps1 = eps1
         self.eps2 = eps2
         self.save_plots = save_plots
+        self.num_clusters = 2  # Fixed number of clusters for KMeans
 
         # Create directory for plots if needed
         if self.save_plots:
             self.plot_dir = os.path.join(server_config.output_dir, "rflbat_plots")
             os.makedirs(self.plot_dir, exist_ok=True)
-
-    def _flatten_model_updates(self, updates: ModelUpdate) -> np.ndarray:
-        """Flatten model updates into a single vector."""
-        flattened = []
-        for name, param in updates.items():
-            if 'fc' in name or 'layer4' in name:  # Focus on important layers
-                flattened.extend(param.cpu().numpy().flatten())
-        return np.array(flattened)
 
     def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]) -> Tuple[List[int], List[int]]:
         """Detect anomalies in the client updates."""
@@ -53,8 +46,7 @@ class RFLBATServer(AnomalyDetectionServer):
         
         # First collect all tensors in a list
         for client_id, _, update in client_updates:
-            flattened = torch.cat([p.flatten() for p in update.values()], dim=0)
-            update_tensors.append(flattened)
+            update_tensors.append(self.parameters_dict_to_vector(update))
             client_ids.append(client_id)
         
         # Stack tensors along a new dimension
@@ -65,11 +57,8 @@ class RFLBATServer(AnomalyDetectionServer):
         X_dr = torch.mm(flattened_updates, V[:,:2]).cpu().numpy()
 
         # First stage filtering based on Euclidean distances
-        eu_distances = []
-        for i in range(len(X_dr)):
-            distances_sum = sum(np.linalg.norm(X_dr[i] - X_dr[j])
-                              for j in range(len(X_dr)) if i != j)
-            eu_distances.append(distances_sum)
+        D = smp.euclidean_distances(X_dr)
+        eu_distances = D.sum(axis=1)
 
         # First stage acceptance
         median_distance = np.median(eu_distances)
@@ -80,18 +69,15 @@ class RFLBATServer(AnomalyDetectionServer):
             log(WARNING, "RFLBAT: Too few updates passed first stage filtering. Using standard FedAvg")
             return super().aggregate_client_updates(client_updates)
 
-        # Determine optimal number of clusters
         X_filtered = X_dr[accepted_indices]
-        n_clusters = self.gap_statistics(X_filtered, num_sampling=5, \
-                                           K_max=9, n=len(X_filtered))
 
         # Perform clustering
-        kmeans = KMeans(n_clusters=n_clusters, init='k-means++')
+        kmeans = KMeans(n_clusters=self.num_clusters, init='k-means++')
         cluster_labels = kmeans.fit_predict(X_filtered)
 
         # Select best cluster based on cosine similarity
         cluster_scores = []
-        for i in range(n_clusters):
+        for i in range(self.num_clusters):
             cluster_indices = np.where(cluster_labels == i)[0]
             if len(cluster_indices) <= 1:
                 cluster_scores.append(float('inf'))

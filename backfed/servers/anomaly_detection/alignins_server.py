@@ -8,10 +8,11 @@ import torch
 import torch.nn.functional as F
 
 from .anomaly_detection_server import AnomalyDetectionServer
+from backfed.servers.robust_aggregation.weakdp_server import NormClippingServer
+from backfed.const import ModelUpdate, client_id, num_examples
 from typing import List, Tuple
 from logging import INFO, WARNING
 from backfed.utils import log
-from backfed.const import ModelUpdate, client_id, num_examples
 
 class AlignInsServer(AnomalyDetectionServer):
     """
@@ -64,21 +65,10 @@ class AlignInsServer(AnomalyDetectionServer):
         cos = torch.nn.CosineSimilarity(dim=0, eps=1e-6)
         for i in range(len(inter_model_updates)):
             # compute top-k indices based on configured sparsity (use instance attribute)
-            abs_update = torch.abs(inter_model_updates[i])
-            k = max(int(abs_update.numel() * self.sparsity), 1)
-            k = min(k, abs_update.numel())
-            if k >= abs_update.numel():
-                init_indices = torch.arange(abs_update.numel(), device=abs_update.device, dtype=torch.long)
-            else:
-                init_indices = torch.topk(abs_update, k, largest=True).indices
+            _, init_indices = torch.topk(torch.abs(inter_model_updates[i]), int(len(inter_model_updates[i]) * self.args.sparsity))
 
-            mpsa_list.append(
-                (
-                    torch.sum(torch.sign(inter_model_updates[i][init_indices]) == major_sign[init_indices])
-                    / torch.numel(inter_model_updates[i][init_indices])
-                ).item()
-            )
-
+            mpsa_list.append((torch.sum(torch.sign(inter_model_updates[i][init_indices]) == major_sign[init_indices]) / torch.numel(inter_model_updates[i][init_indices])).item())
+    
             tda_list.append(cos(inter_model_updates[i], self.global_parameters_vector).item())
 
         log(INFO, f'AlignIns TDA: {[round(i, 4) for i in tda_list]}')
@@ -146,36 +136,33 @@ class AlignInsServer(AnomalyDetectionServer):
             return False
 
         # Aggregate clipped differences from benign clients
-        clip_norm = torch.median(torch.tensor(euclidean_distances)).item()
+        clip_norm = torch.median(torch.tensor(euclidean_distances))
 
-        weight_accumulator = {
-            name: torch.zeros_like(param, device=self.device)
-            for name, param in self.global_model.state_dict().items()
-        }
+        # Create mapping from client_id to euclidean distance for correct indexing
+        client_distance_map = {client_id: euclidean_distances[idx] for idx, (client_id, _, _) in enumerate(client_updates)}
 
-        # map benign client id -> distance for correct lookup
-        benign_dist_map = {cid: d for cid, d in zip(benign_clients, euclidean_distances)}
-
-        weight = 1.0 / len(benign_clients)
-        global_state_dict = self.global_model.state_dict()
-        for client_id, num_examples, update in client_updates:
+        # Clip benign updates
+        for client_id, _, update in client_updates:
             if client_id in malicious_clients:
                 continue
+            
+            client_distance = client_distance_map[client_id]
+            if client_distance > clip_norm:
+                NormClippingServer.scale_update_inplace(
+                    update,
+                    scale_factor=min(1.0, clip_norm / client_distance),
+                    clipped_params=self.trainable_names
+                )
+        
+        # Aggregate benign updates
+        num_clients = len(benign_clients)
+        weights = [1 / num_clients] * num_clients
+        updates = [update for client_id, _, update in client_updates if client_id in benign_clients]
+        weight_accumulator = self.weight_accumulator(updates, weights)
 
-            dist = benign_dist_map[client_id]
-
-            for name, param in update.items():
-                if any(pattern in name for pattern in self.ignore_weights):
-                    continue
-                diff = (param.to(self.device) - global_state_dict[name])
-                if dist > clip_norm and clip_norm > 0:
-                    diff *= clip_norm / dist
-                weight_accumulator[name].add_(diff * weight)
-
-        # Update global model
+        # Update global model with learning rate
         for name, param in self.global_model.state_dict().items():
             if any(pattern in name for pattern in self.ignore_weights):
                 continue
             param.data.add_(weight_accumulator[name] * self.eta)
-
         return True

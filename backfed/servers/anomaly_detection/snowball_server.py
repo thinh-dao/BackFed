@@ -242,7 +242,6 @@ class SnowballServer(AnomalyDetectionServer):
         self,
         server_config,
         ct: int = 5,
-        sparsity: float = 0.3,
         vae_initial_epochs: int = 50,
         vae_tuning_epochs: int = 10,
         vae_latent_dim: int = 32,
@@ -250,15 +249,14 @@ class SnowballServer(AnomalyDetectionServer):
         vae_threshold: float = 0.9,
         vae_step: float = 0.1,
         warmup_rounds: int = 0, # We use checkpoint
-        eta: float = 1.0,
+        eta: float = 0.5,
         server_type: str = "snowball",
         **kwargs,
     ) -> None:
         super().__init__(server_config, server_type=server_type, eta=eta, **kwargs)
         
         # Snowball parameters
-        self.ct = int(ct)  # Number of suspicious clients to consider in clustering
-        self.sparsity = float(sparsity)  # Sparsity for top-k selection
+        self.ct = ct
         self.vae_initial_epochs = int(vae_initial_epochs)
         self.vae_tuning_epochs = int(vae_tuning_epochs)
         self.vae_latent_dim = int(vae_latent_dim)
@@ -272,7 +270,7 @@ class SnowballServer(AnomalyDetectionServer):
         log(
             INFO,
             (
-                f"Initialized Snowball server with ct={self.ct}, sparsity={self.sparsity}, "
+                f"Initialized Snowball server with ct={self.ct}, "
                 f"vae_initial_epochs={self.vae_initial_epochs}, vae_tuning_epochs={self.vae_tuning_epochs}, "
                 f"vae_latent_dim={self.vae_latent_dim}, vae_hidden_dim={self.vae_hidden_dim}, "
                 f"vae_threshold={self.vae_threshold}, warmup_rounds={self.warmup_rounds}, eta={self.eta}"
@@ -291,7 +289,7 @@ class SnowballServer(AnomalyDetectionServer):
             return ['conv1', 'classifier']
         elif 'mnistnet' in model_name or 'mnist' in model_name:
             # MnistNet: conv layers and fc layers
-            return ['conv1', 'conv2', 'fc1', 'fc2']
+            return ['conv1', 'fc2']
         elif 'gru' in model_name or 'lstm' in model_name:
             # RNN models: input weights and final fc layer
             return ['weight_ih_l0', 'fc2']

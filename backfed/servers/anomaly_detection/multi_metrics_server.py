@@ -27,7 +27,7 @@ class MultiMetricsServer(AnomalyDetectionServer):
         self,
         server_config,
         server_type: str = "multi_metrics",
-        p: float = 0.3, # p=0.3 is the default in the paper
+        selection_ratio: float = 0.5, # p=0.3 is the default in the paper
         eta: float = 0.5,
     ):
         """
@@ -40,10 +40,10 @@ class MultiMetricsServer(AnomalyDetectionServer):
                 matrix inversion used in the Mahalanobis distance.
         """
         super(MultiMetricsServer, self).__init__(server_config, server_type, eta)
-        self.p = p
+        self.selection_ratio = selection_ratio
         log(
             INFO,
-            f"Initialized Multi-Metrics server with selection_ratio={self.p}, "
+            f"Initialized Multi-Metrics server with selection_ratio={self.selection_ratio}, "
         )
 
     def detect_anomalies(self, client_updates):
@@ -103,7 +103,7 @@ class MultiMetricsServer(AnomalyDetectionServer):
         scores = ma_distances
         log(INFO, f"Multi-Metrics scores: {[(cid, round(float(score), 2)) for cid, score in zip(client_ids, scores)]}")
 
-        p_num = int(self.p * len(scores))
+        p_num = int(self.selection_ratio * len(scores))
         topk_ind = np.argpartition(scores, int(p_num))[:int(p_num)]   #sort
         selected_num_dps = np.array(num_dps)[topk_ind]
 

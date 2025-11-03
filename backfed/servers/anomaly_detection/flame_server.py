@@ -10,7 +10,7 @@ import hdbscan
 from .anomaly_detection_server import AnomalyDetectionServer
 from backfed.servers.robust_aggregation.weakdp_server import NormClippingServer
 from logging import INFO, WARNING
-from backfed.utils.logging_utils import log
+from backfed.utils import log, get_last_layer_name
 from backfed.const import ModelUpdate, client_id, num_examples
 from typing import List, Tuple
 
@@ -26,25 +26,17 @@ class FlameServer(AnomalyDetectionServer):
         super(FlameServer, self).__init__(server_config, server_type, eta)
         self.lamda = lamda
         log(INFO, f"Initialized Flame server with lamda={self.lamda}")
-
-    def _get_last_layers(self, state_dict: ModelUpdate) -> List[str]:
-        """Get names of last two layers."""
-        layer_names = list(state_dict.keys())
-        return layer_names[-2:]
     
     def detect_anomalies(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]) -> Tuple[List[int], List[int], List[float]]:
-        """Detect anomalies using clustering on last layer weights."""
-        client_ids = [client_id for client_id, _, _ in client_updates]
-        global_state_dict = self.global_model.state_dict()
-        last_layers = self._get_last_layers(global_state_dict)
-
+        """Detect anomalies using HDBSCAN."""
         # Extract client weights and compute distances
         all_update_tensors = []
         euclidean_distances = []
+        client_ids = []
 
-        for _, _, client_update in client_updates:
-            client_update_tensor = torch.cat([client_update[name].flatten() for name in last_layers])
-            all_update_tensors.append(client_update_tensor.cpu().numpy())
+        for client_id, _, client_update in client_updates:
+            client_ids.append(client_id)
+            all_update_tensors.append(self.parameters_dict_to_vector(client_update).cpu().numpy())
 
             # Calculate euclidean distance
             client_distance = self.compute_client_distance(client_update)

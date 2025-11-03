@@ -164,6 +164,7 @@ aggregator_config:
   ad_multi_krum:
     _target_: backfed.servers.ADMultiKrumServer # Multi-krum initialized as AnomalyDetectionServer
     eta: 0.5
+    selection_ratio: 0.5 
 
   bulyan:
     _target_: backfed.servers.BulyanServer
@@ -194,7 +195,7 @@ aggregator_config:
 
   multi_metrics:
     _target_: backfed.servers.MultiMetricsServer
-    p: 0.3  # Fraction of clients to select as benign
+    selection_ratio: 0.3  # Fraction of clients to select as benign
     eta: 0.5
 
   flame:
@@ -244,7 +245,7 @@ aggregator_config:
 
   snowball:
     _target_: backfed.servers.SnowballServer
-    ct: 10  # Cluster threshold - number of suspicious clients to consider
+    ct: 5  # Selection ratio of benign clients in each round
     vae_initial_epochs: 270  # Initial VAE training epochs (E^VI in paper)
     vae_tuning_epochs: 30  # VAE tuning epochs (E^VT in paper)
     vae_latent_dim: 64  # Latent dimension (S^L in paper)

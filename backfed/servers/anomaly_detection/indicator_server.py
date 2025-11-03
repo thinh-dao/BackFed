@@ -12,6 +12,7 @@ import torch.nn as nn
 import math
 import time
 
+from backfed.servers.robust_aggregation.weakdp_server import NormClippingServer
 from .anomaly_detection_server import AnomalyDetectionServer
 from typing import List, Tuple, Dict, Any
 from torchvision import datasets
@@ -32,6 +33,11 @@ OOD_TRANSFORMATIONS = {
         transforms.ToImage(),
         transforms.ToDtype(torch.float32, scale=True),
         transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261]),
+    ]),
+    "CIFAR100": transforms.Compose([
+        transforms.ToImage(),
+        transforms.ToDtype(torch.float32, scale=True),
+        transforms.Normalize(mean=[0.5071, 0.4867, 0.4408], std=[0.2675, 0.2565, 0.2761]),
     ]),
 }
 
@@ -181,17 +187,23 @@ class IndicatorServer(AnomalyDetectionServer):
 
         # Apply norm clipping to benign clients
         benign_updates = []
-        for client_id, _, model_state_dict in client_updates:
+        for client_id, num_examples, model_update in client_updates:
             if client_id in benign_clients:
                 if self.norm_clip:
-                    clipped_state_dict = self._norm_clip(model_state_dict, clip_value)
-                    benign_updates.append((client_id, num_examples, clipped_state_dict))
+                    client_distance = self.compute_client_distance(model_update)
+                    if client_distance > clip_value:
+                        NormClippingServer.scale_update_inplace(
+                            model_update,
+                            scale_factor=min(1.0, clip_value / client_distance),
+                            clipped_params=self.trainable_names
+                        )
+                    benign_updates.append((client_id, num_examples, model_update))
                 else:
-                    benign_updates.append((client_id, num_examples, model_state_dict))
+                    benign_updates.append((client_id, num_examples, model_update))
 
         # Evaluate detection performance
         true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
-        detection_metrics = self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
+        self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
 
         # Call parent's aggregation (UnweightedFedAvgServer.aggregate_client_updates)
         # Skip AnomalyDetectionServer's aggregate_client_updates to avoid double detection
@@ -301,13 +313,13 @@ class IndicatorServer(AnomalyDetectionServer):
     def _get_ood_data(self):
         """Get OOD data from the specified data source."""
         if self.ood_data_source == "CIFAR10":
-            self.ood_dataset = datasets.CIFAR10("./data", train=True, download=True, 
+            self.ood_dataset = datasets.CIFAR10("./data/CIFAR10", train=True, download=True, 
                                                 transform=OOD_TRANSFORMATIONS["CIFAR10"])
         elif self.ood_data_source == "CIFAR100":
-            self.ood_dataset = datasets.CIFAR100("./data", train=True, download=True, 
-                                                transform=OOD_TRANSFORMATIONS["CIFAR10"])
+            self.ood_dataset = datasets.CIFAR100("./data/CIFAR100", train=True, download=True, 
+                                                transform=OOD_TRANSFORMATIONS["CIFAR100"])
         elif self.ood_data_source == "EMNIST":
-            self.ood_dataset = datasets.EMNIST("./data", train=True, split="mnist", download=True,
+            self.ood_dataset = datasets.EMNIST("./data/EMNIST", train=True, split="mnist", download=True,
                                         transform=OOD_TRANSFORMATIONS["EMNIST"])
         else:
             raise ValueError(f"OOD data source {self.ood_data_source} is not supported.")
@@ -581,35 +593,3 @@ class IndicatorServer(AnomalyDetectionServer):
 
         model.train()
         return (total_l, watermark_acc, best_target_label_acc, best_target_label_idx, per_class_acc_list, pred_distribution)
-
-    def _norm_clip(self, model_state_dict, clip_value):
-        """
-        Clip the local model update to an agreed bound using L2 norm.
-
-        Args:
-            model_state_dict: Client's model state dict
-            clip_value: Maximum allowed L2 norm
-
-        Returns:
-            Clipped model state dict
-        """
-        params_list = []
-        for name, param in model_state_dict.items():
-            if "running" in name or "num_batches_tracked" in name:
-                continue
-            diff_value = param - self.global_model.state_dict()[name]
-            params_list.append(diff_value.view(-1))
-
-        params_list = torch.cat(params_list)
-        l2_norm = torch.norm(params_list)
-
-        scale = max(1.0, float(torch.abs(l2_norm / clip_value)))
-
-        # Only clip if norm exceeds the bound
-        for name, data in model_state_dict.items():
-            if "running" in name or "num_batches_tracked" in name:
-                continue
-            new_value = self.global_model.state_dict()[name] + (model_state_dict[name] - self.global_model.state_dict()[name]) / scale
-            model_state_dict[name].copy_(new_value)
-
-        return model_state_dict

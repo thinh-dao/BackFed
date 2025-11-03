@@ -110,6 +110,12 @@ data_poison_config:
   a3fl:
     _target_: backfed.poisons.A3FL
     trigger_lr: 0.01
+    trigger_outter_epochs: 100
+    dm_adv_epochs: 5
+    dm_adv_K: 100
+    dm_adv_model_count: 1
+    noise_loss_lambda: 0.01
+    save_trigger_at_last: True
 
   iba:
     _target_: backfed.poisons.IBA

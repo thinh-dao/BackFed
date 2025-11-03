@@ -6,43 +6,40 @@
 
 #### Baseline
 python main.py -m -cn cifar10 \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,flame,rflbat,feddlad \
     atk_config=cifar10_multishot \
     atk_config.data_poison_method=edge_case \
     atk_config.poison_ratio=0.5 \
-    cuda_visible_devices=\"0,1,2,3\" \
+    cuda_visible_devices=\"0,1,2,3,4\" \
     num_rounds=200 \
-    dir_tag=cifar10_anomaly_detection_baseline
-
+    dir_tag=cifar10_anomaly_detection_baseline &&
 python main.py -m -cn cifar10 \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=cifar10_multishot \
     atk_config.data_poison_method=pattern \
-    cuda_visible_devices=\"1,2,3,5,0\" \
+    cuda_visible_devices=\"4,2,1,3,0\" \
     num_rounds=200 \
-    dir_tag=cifar10_anomaly_detection_baseline
-
+    dir_tag=cifar10_anomaly_detection_baseline &&
 python main.py -m -cn cifar10 \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,ad_multi_krum,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=cifar10_multishot \
     atk_config.data_poison_method=a3fl \
-    cuda_visible_devices=\"1,2,3,5,0\" \
+    cuda_visible_devices=\"1,2,3,0,5\" \
     num_rounds=200 \
-    dir_tag=cifar10_anomaly_detection_baseline
-
+    dir_tag=cifar10_anomaly_detection_baseline &&
 python main.py -m -cn cifar10 \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,ad_multi_krum,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=cifar10_multishot \
     atk_config.data_poison_method=cerberus \
     atk_config.model_poison_method=cerberus \
-    cuda_visible_devices=\"1,2,3,5,0\" \
+    cuda_visible_devices=\"4,3,2,1,0\" \
     num_rounds=200 \
     dir_tag=cifar10_anomaly_detection_baseline
 
 
 #### PGD attack
 python main.py -m -cn cifar10 \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,flame,rflbat,feddlad \
     atk_config=cifar10_multishot \
     atk_config.data_poison_method=edge_case \
     atk_config.poisoned_is_projection=True \
@@ -50,20 +47,18 @@ python main.py -m -cn cifar10 \
     atk_config.poison_ratio=0.5 \
     cuda_visible_devices=\"0,1,2,3\" \
     num_rounds=200 \
-    dir_tag=cifar10_anomaly_detection_pgd
-
+    dir_tag=cifar10_anomaly_detection_pgd &&
 python main.py -m -cn cifar10 \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=cifar10_multishot \
     atk_config.data_poison_method=pattern \
     atk_config.poisoned_is_projection=True \
     atk_config.poisoned_projection_eps=3 \
     cuda_visible_devices=\"1,2,3,5,0\" \
     num_rounds=200 \
-    dir_tag=cifar10_anomaly_detection_pgd
-
+    dir_tag=cifar10_anomaly_detection_pgd &&
 python main.py -m -cn cifar10 \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,ad_multi_krum,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=cifar10_multishot \
     atk_config.data_poison_method=a3fl \
     atk_config.poisoned_is_projection=True \
@@ -72,10 +67,9 @@ python main.py -m -cn cifar10 \
     num_rounds=200 \
     dir_tag=cifar10_anomaly_detection_pgd
 
-
 #### Model Replacement
 python main.py -m -cn cifar10 \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,ad_multi_krum,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=cifar10_multishot \
     atk_config.data_poison_method=pattern \
     atk_config.scale_poison=True \
@@ -84,7 +78,7 @@ python main.py -m -cn cifar10 \
     num_rounds=200 \
     dir_tag=cifar10_anomaly_detection_modelreplace && 
 python main.py -m -cn cifar10 \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=cifar10_multishot \
     atk_config.data_poison_method=edge_case \
     atk_config.scale_poison=True \
@@ -93,7 +87,7 @@ python main.py -m -cn cifar10 \
     num_rounds=200 \
     dir_tag=cifar10_anomaly_detection_modelreplace &&
 python main.py -m -cn cifar10 \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=ad_multi_krum,unweighted_fedavg,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=cifar10_multishot \
     atk_config.data_poison_method=distributed \
     atk_config.scale_poison=True \
@@ -102,50 +96,43 @@ python main.py -m -cn cifar10 \
     num_rounds=200 \
     dir_tag=cifar10_anomaly_detection_modelreplace
 
-
-
-
-
 ###################
 # FEMNIST
 python main.py -m -cn femnist \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,flame,rflbat,feddlad \
     atk_config=femnist_multishot \
     atk_config.data_poison_method=edge_case \
     atk_config.poison_ratio=0.5 \
-    cuda_visible_devices=\"0,1,2,3\" \
+    cuda_visible_devices=\"0,1,2,3,4\" \
     num_rounds=200 \
-    dir_tag=femnist_anomaly_detection_baseline
-
+    dir_tag=femnist_anomaly_detection_baseline &&
 python main.py -m -cn femnist \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=femnist_multishot \
     atk_config.data_poison_method=pattern \
-    cuda_visible_devices=\"1,2,3,5,0\" \
+    cuda_visible_devices=\"4,2,1,3,0\" \
     num_rounds=200 \
-    dir_tag=femnist_anomaly_detection_baseline
-
+    dir_tag=femnist_anomaly_detection_baseline &&
 python main.py -m -cn femnist \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,ad_multi_krum,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=femnist_multishot \
     atk_config.data_poison_method=a3fl \
-    cuda_visible_devices=\"1,2,3,5,0\" \
+    cuda_visible_devices=\"1,2,3,0,5\" \
     num_rounds=200 \
-    dir_tag=femnist_anomaly_detection_baseline
-
+    dir_tag=femnist_anomaly_detection_baseline &&
 python main.py -m -cn femnist \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,ad_multi_krum,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=femnist_multishot \
     atk_config.data_poison_method=cerberus \
     atk_config.model_poison_method=cerberus \
-    cuda_visible_devices=\"1,2,3,5,0\" \
+    cuda_visible_devices=\"4,3,2,1,0\" \
     num_rounds=200 \
     dir_tag=femnist_anomaly_detection_baseline
 
 
 #### PGD attack
 python main.py -m -cn femnist \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,flame,rflbat,feddlad \
     atk_config=femnist_multishot \
     atk_config.data_poison_method=edge_case \
     atk_config.poisoned_is_projection=True \
@@ -153,20 +140,18 @@ python main.py -m -cn femnist \
     atk_config.poison_ratio=0.5 \
     cuda_visible_devices=\"0,1,2,3\" \
     num_rounds=200 \
-    dir_tag=femnist_anomaly_detection_pgd
-
+    dir_tag=femnist_anomaly_detection_pgd &&
 python main.py -m -cn femnist \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=femnist_multishot \
     atk_config.data_poison_method=pattern \
     atk_config.poisoned_is_projection=True \
     atk_config.poisoned_projection_eps=3 \
     cuda_visible_devices=\"1,2,3,5,0\" \
     num_rounds=200 \
-    dir_tag=femnist_anomaly_detection_pgd
-
+    dir_tag=femnist_anomaly_detection_pgd &&
 python main.py -m -cn femnist \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,ad_multi_krum,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=femnist_multishot \
     atk_config.data_poison_method=a3fl \
     atk_config.poisoned_is_projection=True \
@@ -177,7 +162,7 @@ python main.py -m -cn femnist \
 
 #### Model Replacement
 python main.py -m -cn femnist \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,ad_multi_krum,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=femnist_multishot \
     atk_config.data_poison_method=pattern \
     atk_config.scale_poison=True \
@@ -186,7 +171,7 @@ python main.py -m -cn femnist \
     num_rounds=200 \
     dir_tag=femnist_anomaly_detection_modelreplace && 
 python main.py -m -cn femnist \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=unweighted_fedavg,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=femnist_multishot \
     atk_config.data_poison_method=edge_case \
     atk_config.scale_poison=True \
@@ -195,7 +180,7 @@ python main.py -m -cn femnist \
     num_rounds=200 \
     dir_tag=femnist_anomaly_detection_modelreplace &&
 python main.py -m -cn femnist \
-    aggregator=unweighted_fedavg,coordinate_median,geometric_median,trimmed_mean,krum,foolsgold,robustlr,norm_clipping,weakdp,fltrust,flare,bulyan \
+    aggregator=ad_multi_krum,unweighted_fedavg,alignins,deepsight,flame,rflbat,multi_metrics,feddlad \
     atk_config=femnist_multishot \
     atk_config.data_poison_method=distributed \
     atk_config.scale_poison=True \

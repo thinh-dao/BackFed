@@ -10,7 +10,7 @@ import torch
 import hdbscan
 
 from typing import List, Tuple, Dict
-from logging import INFO
+from logging import INFO, WARNING
 from backfed.servers.robust_aggregation.weakdp_server import NormClippingServer
 from .anomaly_detection_server import AnomalyDetectionServer
 from backfed.utils import log, get_last_layer_name
@@ -87,18 +87,15 @@ class DeepSightServer(AnomalyDetectionServer):
         cosine_clusters = hdbscan.HDBSCAN(metric='precomputed').fit_predict(cosine_distances)
         cosine_cluster_dists = self._dists_from_clust(cosine_clusters, len(local_model_updates))
 
-
         # Cluster NEUPs
         neup_clusters = hdbscan.HDBSCAN().fit_predict(NEUPs)
         neup_cluster_dists = self._dists_from_clust(neup_clusters, len(local_model_updates))
-
 
         # Process DDif clusters
         ddif_cluster_dists = []
         for i in range(self.num_seeds):
             ddif_clusters = hdbscan.HDBSCAN().fit_predict(DDifs[i])
             ddif_cluster_dists.append(self._dists_from_clust(ddif_clusters, len(local_model_updates)))
-
 
         # Merge distances and perform final clustering
         merged_ddif_cluster_dists = np.average(ddif_cluster_dists, axis=0)
@@ -163,6 +160,11 @@ class DeepSightServer(AnomalyDetectionServer):
         true_malicious_clients = self.get_clients_info(self.current_round)["malicious_clients"]
         self.evaluate_detection(benign_clients, malicious_clients, true_malicious_clients, len(client_updates))
 
+        # If no benign clients were found, skip update
+        if len(benign_clients) == 0:
+            log(WARNING, "DeepSight: no benign clients identified, skipping model update.")
+            return False
+        
         # Aggregate clipped differences from benign clients
         clip_norm = torch.median(torch.tensor(euclidean_distances))
 
@@ -188,9 +190,9 @@ class DeepSightServer(AnomalyDetectionServer):
         updates = [update for client_id, _, update in client_updates if client_id in benign_clients]
         weight_accumulator = self.weight_accumulator(updates, weights)
 
-        # Update global model and add noise
-        for name, param in self.global_model.named_parameters():
-            if name.endswith('num_batches_tracked'):
+        # Update global model with learning rate
+        for name, param in self.global_model.state_dict().items():
+            if any(pattern in name for pattern in self.ignore_weights):
                 continue
             param.data.add_(weight_accumulator[name] * self.eta)
         return True

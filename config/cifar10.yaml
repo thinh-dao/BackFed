@@ -80,6 +80,17 @@ aggregator_config:
     _target_: backfed.servers.BulyanServer
     oracle: False # If true, we assume the number of malicious clients is known
     num_malicious_clients: 2 # Number of malicious clients to tolerate
+  
+  ad_multi_krum:
+    _target_: backfed.servers.ADMultiKrumServer # Multi-krum initialized as AnomalyDetectionServer
+    eta: 0.5
+  
+  alignins:
+    _target_: backfed.servers.AlignInsServer
+    eta: 0.5
+    num_inspections: 5  # Number of inspection clients
+    inspection_step_size: 0.1  # Step size for inspection updates
+    alignment_threshold: 0.5  # Threshold for alignment score
 
   snowball:
     _target_: backfed.servers.SnowballServer
