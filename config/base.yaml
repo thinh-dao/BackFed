@@ -195,7 +195,7 @@ aggregator_config:
 
   multi_metrics:
     _target_: backfed.servers.MultiMetricsServer
-    selection_ratio: 0.3  # Fraction of clients to select as benign
+    selection_ratio: 0.5  # Fraction of clients to select as benign
     eta: 0.5
 
   flame:
@@ -281,6 +281,6 @@ hydra:
     dir: ${eval:"'./outputs/${exp_name}_${now:%b.%d_%H.%M.%S}' if '${dir_tag}' == '' else './outputs/${dir_tag}/${exp_name}_${now:%b.%d_%H.%M.%S}'"}
   sweep:
     dir: ${eval:"'./outputs/${exp_name}_${now:%b.%d_%H.%M.%S}' if '${dir_tag}' == '' else './outputs/${dir_tag}/${exp_name}_${now:%b.%d_%H.%M.%S}'"}
-    subdir: ${hydra.job.num}
+    subdir: ${hydra.job.num}_${aggregator}_${atk_config.model_poison_method}_${atk_config.data_poison_method}
     # dir: ./multirun/${dir_tag}/${now:%Y-%m-%d-%H-%M-%S}/${hydra.job.override_dirname}
     # subdir: ${hydra.job.num}

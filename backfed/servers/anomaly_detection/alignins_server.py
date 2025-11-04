@@ -65,7 +65,7 @@ class AlignInsServer(AnomalyDetectionServer):
         cos = torch.nn.CosineSimilarity(dim=0, eps=1e-6)
         for i in range(len(inter_model_updates)):
             # compute top-k indices based on configured sparsity (use instance attribute)
-            _, init_indices = torch.topk(torch.abs(inter_model_updates[i]), int(len(inter_model_updates[i]) * self.args.sparsity))
+            _, init_indices = torch.topk(torch.abs(inter_model_updates[i]), int(len(inter_model_updates[i]) * self.sparsity))
 
             mpsa_list.append((torch.sum(torch.sign(inter_model_updates[i][init_indices]) == major_sign[init_indices]) / torch.numel(inter_model_updates[i][init_indices])).item())
     
@@ -139,7 +139,7 @@ class AlignInsServer(AnomalyDetectionServer):
         clip_norm = torch.median(torch.tensor(euclidean_distances))
 
         # Create mapping from client_id to euclidean distance for correct indexing
-        client_distance_map = {client_id: euclidean_distances[idx] for idx, (client_id, _, _) in enumerate(client_updates)}
+        client_distance_map = {client_id: euclidean_distances[idx] for idx, client_id in enumerate(benign_clients)}
 
         # Clip benign updates
         for client_id, _, update in client_updates:

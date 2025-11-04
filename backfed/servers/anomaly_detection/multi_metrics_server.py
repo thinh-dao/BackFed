@@ -67,10 +67,12 @@ class MultiMetricsServer(AnomalyDetectionServer):
         client_ids = []
         vectorize_nets = []
 
+        global_params_np = self.global_parameters_vector.detach().cpu().numpy()
         for cid, num, state in client_updates:
             client_ids.append(cid)
             num_dps.append(num)
-            vectorize_nets.append(self.parameters_dict_to_vector(state).detach().cpu().numpy())
+            client_params_np = self.parameters_dict_to_vector(state).detach().cpu().numpy()
+            vectorize_nets.append(client_params_np + global_params_np)
 
         cos_dis = [0.0] * len(vectorize_nets)
         length_dis = [0.0] * len(vectorize_nets)

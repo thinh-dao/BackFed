@@ -122,11 +122,17 @@ class WeakDPServer(NormClippingServer):
         updates = [model_update for _, _, model_update in client_updates]
         weight_accumulator = self.weight_accumulator(updates, weights)
 
-        # Add noise to trainable params
+        # Update global model with learning rate
         for name, param in self.global_model.state_dict().items():
-            if name in self.trainable_names and name not in self.ignore_weights:
+            if any(pattern in name for pattern in self.ignore_weights):
+                continue
+
+            # Add noise to trainable params
+            if name in self.trainable_names:
                 noise = torch.normal(0, self.std_dev, param.shape, device=param.device)
                 param.data.add_((weight_accumulator[name]+noise) * self.eta)
+            else:
+                param.data.add_(weight_accumulator[name] * self.eta)
         return True
 
     def __repr__(self) -> str:
