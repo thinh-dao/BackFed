@@ -159,7 +159,8 @@ class BaseServer:
             dataset_indices_ref = ray.put(self.client_data_indices)
             secret_dataset_indices_ref = ray.put(self.secret_dataset_indices)
 
-            self.trainer : FLTrainer = FLTrainer(server=self,
+            self.trainer : FLTrainer = FLTrainer(server_config=self.config,
+                server=self,
                 mode=self.config.training_mode,
                 clientapp_init_args=dict(
                     client_config=client_config_ref,
@@ -171,7 +172,8 @@ class BaseServer:
             )
 
         else:
-            self.trainer : FLTrainer = FLTrainer(server=self,
+            self.trainer : FLTrainer = FLTrainer(server_config=self.config,
+                server=self,
                 mode=self.config.training_mode,
                 clientapp_init_args=dict(
                     client_config=self.config.client_config,
@@ -716,6 +718,7 @@ class BaseServer:
 
 class FLTrainer:
     def __init__(self,
+        server_config: Dict,
         server: BaseServer,
         clientapp_init_args: dict,
         mode: str,
@@ -724,22 +727,25 @@ class FLTrainer:
         FLTrainer coordinates training and evaluation between the server and clients.
 
         Args:
+            server_config: Configuration dictionary for the server
             server: BaseServer instance
             clientapp_init_args: Dictionary containing initialization arguments for ClientApp
             mode: Training mode (sequential or parallel)
         """
+        self.config = server_config
         self.server = server
         self.mode = mode
+        self.check_for_nan = True # Whether to check for NaN/Inf values in client updates
 
         if self.mode == "sequential":
             self.worker : ClientApp = ClientApp(**clientapp_init_args)
         elif self.mode == "parallel":
             ray_client = ray.remote(ClientApp).options(
-                num_cpus=self.server.config.num_cpus,
-                num_gpus=self.server.config.num_gpus
+                num_cpus=self.config.num_cpus,
+                num_gpus=self.config.num_gpus
             )
 
-            client_ressource = dict(num_cpus=self.server.config.num_cpus, num_gpus=self.server.config.num_gpus)
+            client_ressource = dict(num_cpus=self.config.num_cpus, num_gpus=self.config.num_gpus)
             self.num_workers = pool_size_from_resources(client_ressource)
             self.workers : List[ActorHandle] = [
                 ray_client.remote(**clientapp_init_args) for _ in range(self.num_workers)
@@ -767,15 +773,18 @@ class FLTrainer:
         """
         client_packages = {}
         num_failures = 0
+        train_times = []
 
         for client_cls in clients_mapping.keys():
             init_args, train_package = self.server.train_package(client_cls)
             for client_id in clients_mapping[client_cls]:
-                client_package = self.worker.train(client_cls=client_cls,
+                train_time, client_package = self.worker.train(client_cls=client_cls,
                     client_id=client_id,
                     init_args=init_args,
-                    train_package=train_package
+                    train_package=train_package,
+                    timeout=self.config.client_timeout
                 )
+                train_times.append((train_time, client_id))
 
                 # Check if the client failed
                 if isinstance(client_package, dict) and client_package.get("status") == "failure":
@@ -784,26 +793,36 @@ class FLTrainer:
                     error_tb = client_package.get('traceback', 'No traceback available')
                     log(ERROR, f"Client [{client_id}] failed during training:\n{error_msg}\n{error_tb}")
                     continue
+                
+                if self.check_for_nan:
+                    # Check for NaN/Inf values in model updates
+                    _, model_updates, _ = client_package
+                    has_nan = False
+                    nan_param_name = None
+                    for name, param in model_updates.items():
+                        if torch.isnan(param).any() or torch.isinf(param).any():
+                            has_nan = True
+                            nan_param_name = name
+                            break
 
-                # Check for NaN/Inf values in model updates
-                num_examples, model_updates, metrics = client_package
-                has_nan = False
-                nan_param_name = None
-                for name, param in model_updates.items():
-                    if torch.isnan(param).any() or torch.isinf(param).any():
-                        has_nan = True
-                        nan_param_name = name
-                        break
-
-                if has_nan:
-                    log(WARNING, f"Client [{client_id}] has NaN/Inf values in parameter '{nan_param_name}'. Skipping this client from aggregation.")
-                    continue
+                    if has_nan:
+                        log(WARNING, f"Client [{client_id}] has NaN/Inf values in parameter '{nan_param_name}'. Skipping this client from aggregation.")
+                        continue
 
                 # If not failed and no NaN, add the client package to the client_packages
                 client_packages[client_id] = client_package
 
         if num_failures > 0:
             log(WARNING, f"Number of failures: {num_failures}")
+
+        if self.config.selection_threshold is not None:
+            num_select = int(self.config.selection_threshold * self.config.num_clients_per_round)
+            train_times.sort(key=lambda x: x[0]) # Sort by training time
+            selected_client_ids = set([client_id for _, client_id in train_times[:num_select]])
+            client_packages = {client_id: package for client_id, package in client_packages.items() if client_id in selected_client_ids}
+            avg_time = sum([t for t, _ in train_times if _ in selected_client_ids]) / len(client_packages)
+            log(INFO, f"Selected {len(client_packages)} clients based on selection_threshold {self.config.selection_threshold}. Average training time: {avg_time:.2f} seconds.")
+            log(INFO, f"Selected client IDs: {selected_client_ids}")
 
         return client_packages
 
@@ -829,6 +848,7 @@ class FLTrainer:
         idle_workers = deque(range(self.num_workers))
         futures = []
         job_map = {}
+        train_times = []
         client_packages = {}
         num_failures = 0
         i = 0
@@ -841,7 +861,8 @@ class FLTrainer:
                     client_cls=client_cls,
                     client_id=client_id,
                     init_args=init_args,
-                    train_package=train_package
+                    train_package=train_package,
+                    timeout=self.config.client_timeout
                 )
                 job_map[future] = (client_id, worker_id)
                 futures.append(future)
@@ -852,8 +873,9 @@ class FLTrainer:
                 all_finished, futures = ray.wait(futures)
                 for finished in all_finished:
                     client_id, worker_id = job_map[finished]
-                    client_package = ray.get(finished)
+                    train_time, client_package = ray.get(finished)
                     idle_workers.append(worker_id)
+                    train_times.append((train_time, client_id))
 
                     # Check if the client failed
                     if isinstance(client_package, dict) and client_package.get("status") == "failure":
@@ -862,26 +884,37 @@ class FLTrainer:
                         error_tb = client_package.get('traceback', 'No traceback available')
                         log(ERROR, f"Client [{client_id}] failed during training:\n{error_msg}\n{error_tb}")
                         continue
+                    
+                    if self.check_for_nan:
+                        # Check for NaN/Inf values in model updates
+                        num_examples, model_updates, metrics = client_package
+                        has_nan = False
+                        nan_param_name = None
+                        for name, param in model_updates.items():
+                            if torch.isnan(param).any() or torch.isinf(param).any():
+                                has_nan = True
+                                nan_param_name = name
+                                break
 
-                    # Check for NaN/Inf values in model updates
-                    num_examples, model_updates, metrics = client_package
-                    has_nan = False
-                    nan_param_name = None
-                    for name, param in model_updates.items():
-                        if torch.isnan(param).any() or torch.isinf(param).any():
-                            has_nan = True
-                            nan_param_name = name
-                            break
-
-                    if has_nan:
-                        log(WARNING, f"Client [{client_id}] has NaN/Inf values in parameter '{nan_param_name}'. Skipping this client from aggregation.")
-                        continue
+                        if has_nan:
+                            log(WARNING, f"Client [{client_id}] has NaN/Inf values in parameter '{nan_param_name}'. Skipping this client from aggregation.")
+                            continue
 
                     # If not failed and no NaN, add the client package to the client_packages
                     client_packages[client_id] = client_package
 
         if num_failures > 0:
             log(WARNING, f"Number of failures: {num_failures}")
+
+
+        if self.config.selection_threshold is not None:
+            num_select = int(self.config.selection_threshold * self.config.num_clients_per_round)
+            train_times.sort(key=lambda x: x[0]) # Sort by training time
+            selected_client_ids = set([client_id for _, client_id in train_times[:num_select]])
+            client_packages = {client_id: package for client_id, package in client_packages.items() if client_id in selected_client_ids}
+            avg_time = sum([t for t, _ in train_times if _ in selected_client_ids]) / len(client_packages)
+            log(INFO, f"Selected {len(client_packages)} clients based on selection_threshold {self.config.selection_threshold}. Average training time: {avg_time:.2f} seconds.")
+            log(INFO, f"Selected client IDs: {selected_client_ids}")
 
         return client_packages
 
@@ -899,7 +932,7 @@ class FLTrainer:
         for client_cls in clients_mapping.keys():
             test_package = self.server.test_package(client_cls)
             for client_id in clients_mapping[client_cls]:
-                client_package = self.worker.evaluate(test_package=test_package)
+                eval_time, client_package = self.worker.evaluate(test_package=test_package, timeout=self.config.client_timeout)
 
                 # Check if the client failed
                 if isinstance(client_package, dict) and client_package.get("status") == "failure":
@@ -945,7 +978,7 @@ class FLTrainer:
             while i < len(all_clients) and len(idle_workers) > 0:
                 worker_id = idle_workers.popleft()
                 client_id, test_package = all_clients[i]
-                future = self.workers[worker_id].evaluate.remote(test_package=test_package)
+                future = self.workers[worker_id].evaluate.remote(test_package=test_package, timeout=self.config.client_timeout)
                 job_map[future] = (client_id, worker_id)
                 futures.append(future)
                 i += 1
@@ -955,7 +988,7 @@ class FLTrainer:
                 all_finished, futures = ray.wait(futures)
                 for finished in all_finished:
                     client_id, worker_id = job_map[finished]
-                    client_package = ray.get(finished)
+                    eval_time, client_package = ray.get(finished)
                     idle_workers.append(worker_id)
 
                     # Check if the client failed

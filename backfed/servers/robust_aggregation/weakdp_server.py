@@ -84,7 +84,7 @@ class WeakDPServer(NormClippingServer):
     """
     Server that implements differential privacy with fixed clipping and Gaussian noise.
     """
-    def __init__(self, server_config, server_type="weakdp", strategy="unweighted_fedavg",
+    def __init__(self, server_config, server_type="weakdp", strategy="weakdp",
                  std_dev=0.025, clipping_norm=5.0, eta=0.1):
 
         """
@@ -110,7 +110,7 @@ class WeakDPServer(NormClippingServer):
     def aggregate_client_updates(self, client_updates: List[Tuple[client_id, num_examples, ModelUpdate]]) -> ModelUpdate:
         """Aggregate client updates with DP guarantees by adding Gaussian noise to trainable parameters."""
         if len(client_updates) == 0:
-            log(WARNING, "NormClipping: No client updates found")
+            log(WARNING, "WeakDP: No client updates found")
             return False
 
         # Clip client updates    

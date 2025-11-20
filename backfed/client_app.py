@@ -54,11 +54,7 @@ class ClientApp:
         self.secret_dataset_indices = secret_dataset_indices
         self.client_config = client_config
         self.client = None  # Will be set to BaseClient instance
-
-        if self.client_config.timeout is not None:
-            self.pool = ThreadPoolExecutor(max_workers=1) # Only one worker for timeout
-        else:
-            self.pool = None
+        self.pool = None # ThreadPoolExecutor for timeout handling
 
     def _load_client(self, client_cls, client_id: int, **init_args):
         """
@@ -91,7 +87,7 @@ class ClientApp:
             **init_args
         )
 
-    def train(self, client_cls, client_id: int, init_args: Dict[str, Any], train_package: Dict[str, Any]) -> Tuple[int, ModelUpdate, Metrics]:
+    def train(self, client_cls, client_id: int, init_args: Dict[str, Any], train_package: Dict[str, Any], timeout: Optional[float] = None) -> Tuple[int, ModelUpdate, Metrics]:
         try:
             # Clear memory before loading a new client
             if self.client is not None:
@@ -104,8 +100,11 @@ class ClientApp:
             self.client = self._load_client(client_cls, client_id, **init_args)
 
             train_time_start = time.time()
-            timeout = self.client.client_config.timeout
+
             if timeout is not None:
+                if self.pool is None:
+                    self.pool = ThreadPoolExecutor(max_workers=1)
+
                 if self.pool is None:
                     raise ValueError("Pool is not initialized")
 
@@ -115,7 +114,7 @@ class ClientApp:
                 results = self.client.train(train_package)
         except Exception as e:
             error_tb = traceback.format_exc()
-            return {
+            return 0.0, {
                 "status": "failure",
                 "error": str(e),
                 "traceback": error_tb
@@ -143,17 +142,17 @@ class ClientApp:
             f"VRAM: {gpu_mem_allocated:.2f}GB | Peak VRAM: {peak_mem_allocated:.2f}GB"
         )
 
-        return results
+        return train_time, results
 
-    def evaluate(self, test_package: Dict[str, Any]) -> Tuple[int, Metrics]:
+    def evaluate(self, test_package: Dict[str, Any], timeout: Optional[float] = None) -> Tuple[int, Metrics]:
         try:
             assert self.client is not None, "Only initialized client (after training) can be evaluated"
 
             eval_time_start = time.time()
-            timeout = self.client.client_config.timeout
+
             if timeout is not None:
                 if self.pool is None:
-                    raise ValueError("Pool is not initialized")
+                    self.pool = ThreadPoolExecutor(max_workers=1)
 
                 future = self.pool.submit(self.client.evaluate, test_package)
                 results = future.result(timeout=timeout)
@@ -171,14 +170,7 @@ class ClientApp:
         eval_time = eval_time_end - eval_time_start
         log(INFO, f"Client [{self.client.client_id}] ({self.client.client_type}) - Evaluation time: {eval_time:.2f} seconds")
 
-        return results
-
-    def execute(self, client_cls, client_id: int, init_args: Dict[str, Any], exec_package: Dict[str, Any]) -> Any:
-        """
-        Execute the client with preloaded model.
-        """
-        self.client = self._load_client(client_cls, client_id, **init_args)
-        return self.client.execute(exec_package)
+        return eval_time, results
 
     def _cleanup_client(self):
         """

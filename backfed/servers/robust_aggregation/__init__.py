@@ -14,6 +14,7 @@ from .krum_server import KrumServer, MultiKrumServer
 from .trimmed_mean_server import TrimmedMeanServer
 from .robustlr_server import RobustLRServer
 from .weakdp_server import WeakDPServer, NormClippingServer
+from .crfl_server import CRFLServer
 
 __all__ = [
     "BulyanServer",
@@ -23,5 +24,5 @@ __all__ = [
     "GeometricMedianServer", "CoordinateMedianServer",
     "TrimmedMeanServer",
     "RobustLRServer",
-    "WeakDPServer", "NormClippingServer",
+    "WeakDPServer", "NormClippingServer", "CRFLServer",
 ]

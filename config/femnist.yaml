@@ -53,6 +53,26 @@ aggregator_config:
     _target_: backfed.servers.BulyanServer
     num_malicious_clients: 6 # Number of malicious clients to tolerate
 
+  norm_clipping:
+    _target_: backfed.servers.NormClippingServer
+    clipping_norm: 0.25  # Clipping norm value
+    eta: 0.5
+  
+  weakdp:
+    _target_: backfed.servers.WeakDPServer
+    std_dev: 0.025  # Standard deviation for Gaussian noise
+    clipping_norm: 2.0  # Clipping norm value
+    eta: 0.5
+
+  crfl:
+    _target_: backfed.servers.CRFLServer
+    strategy: unweighted_fedavg
+    std_dev: 0.025  # Standard deviation for Gaussian noise
+    clipping_norm: 2.0  # Clipping norm value
+    eta: 0.5
+    test_sigma: 0.025
+    N_m: 100
+
   snowball:
     _target_: backfed.servers.SnowballServer
     ct: 10  # Cluster threshold

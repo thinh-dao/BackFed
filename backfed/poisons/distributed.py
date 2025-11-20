@@ -1,6 +1,8 @@
 
 import torch
+import os
 
+from torchvision.utils import save_image
 from typing import List, Tuple
 from omegaconf import DictConfig
 from backfed.poisons.base import Poison
@@ -9,32 +11,27 @@ from backfed.const import IMG_SIZE
 # MNIST: 4 shares, each pattern of size 4
 MNIST_PATTERN = [
     [(1, i) for i in range(1, 5)],
-    [(2, i) for i in range(1, 5)],
     [(3, i) for i in range(1, 5)],
-    [(4, i) for i in range(1, 5)],
+    [(5, i) for i in range(1, 5)],
+    [(7, i) for i in range(1, 5)],
 ]
 
 # CIFAR: 5 shares, each pattern of size 5
 CIFAR_PATTERN = [
     [(1, i) for i in range(1, 6)],
-    [(2, i) for i in range(1, 6)],
     [(3, i) for i in range(1, 6)],
-    [(4, i) for i in range(1, 6)],
     [(5, i) for i in range(1, 6)],
+    [(7, i) for i in range(1, 6)],
+    [(9, i) for i in range(1, 6)],
 ]
 
-# TinyImageNet: 10 shares, each pattern of size 10
+# TinyImageNet: 5 shares, each pattern of size 2x10
 TINYIMAGENET_PATTERN = [
-    [(1, i) for i in range(1, 11)],
-    [(2, i) for i in range(1, 11)],
-    [(3, i) for i in range(1, 11)],
-    [(4, i) for i in range(1, 11)],
-    [(5, i) for i in range(1, 11)],
-    [(6, i) for i in range(1, 11)],
-    [(7, i) for i in range(1, 11)],
-    [(8, i) for i in range(1, 11)],
-    [(9, i) for i in range(1, 11)],
-    [(10, i) for i in range(1, 11)],
+    [(i, j) for j in range(1, 11) for i in range(1, 3)],
+    [(i, j) for j in range(1, 11) for i in range(4, 6)],
+    [(i, j) for j in range(1, 11) for i in range(7, 9)],
+    [(i, j) for j in range(1, 11) for i in range(10, 12)],
+    [(i, j) for j in range(1, 11) for i in range(13, 15)]
 ]
 
 # Default trigger patterns per dataset (referencing base patterns)
@@ -55,7 +52,9 @@ class Distributed(Poison):
     def __init__(self, 
             params: DictConfig,  
             client_id: int = -1,
-            trigger_patterns: List[List[Tuple[int, int]]] = None  # Custom patterns for each share
+            trigger_patterns: List[List[Tuple[int, int]]] = None,  # Custom patterns for each share
+            save_poisoned_images: bool = False,  # Flag to save images
+            save_dir: str = "backfed/poisons/saved/distributed"  # Directory to save images
         ):
         super().__init__(params, client_id)
         
@@ -78,6 +77,13 @@ class Distributed(Poison):
         
         # Pre-create trigger masks
         self.init_trigger_masks()
+        
+        # Image saving settings
+        self.save_poisoned_images = save_poisoned_images
+        self.save_dir = save_dir
+        self.saved_image_count = 0  # Track how many images saved
+        if self.save_poisoned_images:
+            os.makedirs(self.save_dir, exist_ok=True)
     
     def init_client_trigger_map(self):
         """Map each malicious client to their trigger pattern (share)."""
@@ -132,6 +138,10 @@ class Distributed(Poison):
                 torch.ones_like(poison_inputs) * trigger_pixel,
                 poison_inputs
             )
+            
+            # Save poisoned images if enabled (limit to first few images to avoid too many files)
+            if self.save_poisoned_images and self.saved_image_count < 10:
+                self._save_images(poison_inputs, f"client_{self.client_id}_pattern")
         else:
             self.server_mask = self.server_mask.to(inputs.device)
             
@@ -141,8 +151,24 @@ class Distributed(Poison):
                 torch.ones_like(poison_inputs) * trigger_pixel,
                 poison_inputs
             )
+            
+            # Save poisoned images if enabled (server-side: global trigger)
+            if self.save_poisoned_images and self.saved_image_count < 10:
+                self._save_images(poison_inputs, "server_global_pattern")
         
         return poison_inputs
+    
+    def _save_images(self, images, prefix):
+        """Save a batch of poisoned images to disk."""
+        batch_size = min(images.size(0), 10 - self.saved_image_count)  # Limit total saved images
+        
+        for i in range(batch_size):
+            img_path = os.path.join(self.save_dir, f"{prefix}_img{self.saved_image_count:04d}.png")
+            save_image(images[i], img_path, normalize=False)
+            self.saved_image_count += 1
+            
+            if self.saved_image_count >= 10:
+                break
         
 class Centralized(Distributed):
     """Each client has the same trigger pattern - the aggregated trigger pattern of all shares."""

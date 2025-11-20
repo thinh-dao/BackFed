@@ -37,6 +37,10 @@ num_clients_per_round: 10
 federated_evaluation: False # Whether to perform federated evaluation (evaluate global model on client's validation set)
 federated_val_split: 0.0 # Validation split for each client's dataset (should be > 0 if federated evaluation is True)
 
+# *Timeout mechanism
+client_timeout: Null # Timeout for each client training & evaluation (in seconds)
+selection_threshold: Null # selection_threshold of clients that complete training earliest will be selected
+
 # *Dataset distribution configuration
 dataset: ??? # CIFAR10, CIFAR100, TinyImageNet, MNIST
 datapath: data
@@ -62,7 +66,6 @@ client_config:
   local_epochs: 2
   batch_size: 64
   mixed_precision: True   # Use mixed precision and grad scaling during training
-  timeout: Null # Timeout for each client training (in seconds)
   optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
   lr: 0.1 
   weight_decay: 5e-4
@@ -163,8 +166,8 @@ aggregator_config:
 
   ad_multi_krum:
     _target_: backfed.servers.ADMultiKrumServer # Multi-krum initialized as AnomalyDetectionServer
-    eta: 0.5
     selection_ratio: 0.5 
+    eta: 0.5
 
   bulyan:
     _target_: backfed.servers.BulyanServer
@@ -177,6 +180,15 @@ aggregator_config:
     std_dev: 0.025
     clipping_norm: 5
     eta: 0.5
+
+  crfl:
+    _target_: backfed.servers.CRFLServer
+    strategy: unweighted_fedavg
+    std_dev: 0.025
+    clipping_norm: 5
+    eta: 0.5
+    test_sigma: 0.01
+    N_m: 100
 
   deepsight:
     _target_: backfed.servers.DeepSightServer

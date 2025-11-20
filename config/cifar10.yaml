@@ -63,8 +63,28 @@ client_config:
 aggregator_config:  
   robustlr:
     _target_: backfed.servers.RobustLRServer
-    robustLR_threshold: 8
+    robustLR_threshold: 4
     eta: 0.5
+
+  norm_clipping:
+    _target_: backfed.servers.NormClippingServer
+    clipping_norm: 1.0
+    eta: 0.5
+
+  weakdp:
+    _target_: backfed.servers.WeakDPServer
+    std_dev: 0.025
+    clipping_norm: 3.0
+    eta: 0.5
+
+  crfl:
+    _target_: backfed.servers.CRFLServer
+    strategy: unweighted_fedavg
+    std_dev: 0.025
+    clipping_norm: 3.0
+    eta: 0.5
+    test_sigma: 0.025
+    N_m: 100
   
   krum:
     _target_: backfed.servers.KrumServer
@@ -87,10 +107,10 @@ aggregator_config:
   
   alignins:
     _target_: backfed.servers.AlignInsServer
+    sparsity: 0.3
+    lambda_s: 1.0
+    lambda_c: 1.0
     eta: 0.5
-    num_inspections: 5  # Number of inspection clients
-    inspection_step_size: 0.1  # Step size for inspection updates
-    alignment_threshold: 0.5  # Threshold for alignment score
 
   snowball:
     _target_: backfed.servers.SnowballServer

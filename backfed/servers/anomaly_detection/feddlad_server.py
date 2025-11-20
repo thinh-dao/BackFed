@@ -132,6 +132,10 @@ class FedDLADServer(AnomalyDetectionServer):
         
         # Step 4: Secondary filtering to pardon additional clients
         pardoned_ids, score_dict = self._secondary_filter(reference_ids, reference_update, updates)
+        if len(pardoned_ids) == 0:
+            return reference_update, reference_ids, []
+        
+        log(INFO, f"FedDLAD: pardoned clients={pardoned_ids} with scores={ {cid: score_dict[cid] for cid in pardoned_ids} }")
         
         # Step 5: Mix reference and pardoned updates
         pardoned_update = self._weighted_pardoned_average(pardoned_ids, updates, score_dict)

@@ -7,7 +7,7 @@ defaults:
 
 # *Aggregator
 aggregator: unweighted_fedavg
-checkpoint: 2000
+checkpoint: checkpoints/TINYIMAGENET_unweighted_fedavg_0.5/vgg11_round_2000_dir_0.5.pth
 
 # *Specify if the attack is enabled
 no_attack: False
@@ -61,27 +61,65 @@ client_config:
 ########################################################
 # *Aggregator configuration (overrides base.yaml)
 aggregator_config:
-  weighted_fedavg:
-    _target_: backfed.servers.WeightedFedAvgServer
-    eta: 1
-
-  unweighted_fedavg:
-    _target_: backfed.servers.UnweightedFedAvgServer
-    eta: 0.5
-
   robustlr:
     _target_: backfed.servers.RobustLRServer
-    robustLR_threshold: 8
+    robustLR_threshold: 4
+    eta: 0.5
+
+  norm_clipping:
+    _target_: backfed.servers.NormClippingServer
+    clipping_norm: 10.0
+    eta: 0.5
+
+  weakdp:
+    _target_: backfed.servers.WeakDPServer
+    std_dev: 0.01
+    clipping_norm: 15.0
+    eta: 0.5
+
+  crfl:
+    _target_: backfed.servers.CRFLServer
+    strategy: unweighted_fedavg
+    std_dev: 0.01
+    clipping_norm: 15.0
+    test_sigma: 0.01
+    N_m: 100
+    eta: 0.5
+  
+  krum:
+    _target_: backfed.servers.KrumServer
+    eta: 0.5
+    
+  multi_krum:
+    _target_: backfed.servers.MultiKrumServer
+    oracle: False # If true, we assume the number of malicious clients is known
+    num_malicious_clients: 4 
+    eta: 0.5
+
+  bulyan:
+    _target_: backfed.servers.BulyanServer
+    oracle: False # If true, we assume the number of malicious clients is known
+    num_malicious_clients: 4 # Number of malicious clients to tolerate
+  
+  ad_multi_krum:
+    _target_: backfed.servers.ADMultiKrumServer # Multi-krum initialized as AnomalyDetectionServer
+    eta: 0.5
+  
+  alignins:
+    _target_: backfed.servers.AlignInsServer
+    sparsity: 0.3
+    lambda_s: 1.0
+    lambda_c: 1.0
     eta: 0.5
 
   snowball:
     _target_: backfed.servers.SnowballServer
-    ct: 10  # Cluster threshold
-    vae_initial_epochs: 270  # Initial VAE training epochs
-    vae_tuning_epochs: 30  # VAE tuning epochs
+    ct: 2  # Cluster threshold
+    vae_initial_epochs: 450  # Initial VAE training epochs (450)
+    vae_tuning_epochs: 50  # VAE tuning epochs (50)
     vae_latent_dim: 64  # Latent dimension
     vae_hidden_dim: 256  # Hidden dimension
     vae_threshold: 0.5  # Threshold for benign set size
-    vae_step: 0.05  # Step size for iterative expansion
-    warmup_rounds: 100  # Warmup rounds for TinyImageNet
+    vae_step: 0.1  # Step size for iterative expansion (1 client per step)
+    warmup_rounds: 0  # Warmup rounds for CIFAR-10 (reference uses 100 but we evaluate on pretrained model)
     eta: 0.5

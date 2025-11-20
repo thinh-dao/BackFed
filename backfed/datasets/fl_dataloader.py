@@ -304,7 +304,8 @@ class FL_DataLoader:
             sampled_probabilities = np.random.dirichlet(
                 np.array(no_participants * [self.config.alpha]))
             per_client_size = [round(sampled_probabilities[cid] * class_size) for cid in range(no_participants)]
-
+            random.shuffle(cids)
+            
             for idx, cid in enumerate(cids):
                 no_imgs = per_client_size[idx] if idx != no_participants - 1 else len(class_indices[class_idx])
                 sampled_list = class_indices[class_idx][:no_imgs]
@@ -407,15 +408,39 @@ class FL_DataLoader:
 
         return per_participant_list
 
-    def visualize_dataset_distribution(self, malicious_clients=None, save_path=None):
+    def visualize_dataset_distribution(self, malicious_clients=None, save_path=None, num_visualized_clients=50):
         log(INFO, f"Visualizing dataset distribution to {save_path}")
         class_counts, indices = FL_DataLoader.get_class_distribution(self.trainset, self.client_data_indices)
         num_classes = len(class_counts)
         num_clients = len(list(class_counts.values())[0])
         df = pd.DataFrame(class_counts, index=indices)
 
+        if num_clients > num_visualized_clients:
+            # Always include malicious clients in visualization
+            if malicious_clients:
+                malicious_set = set(malicious_clients)
+                num_malicious = len(malicious_set)
+                num_benign_to_sample = num_visualized_clients - num_malicious
+                
+                if num_benign_to_sample < 0:
+                    log(INFO, f"Number of malicious clients ({num_malicious}) exceeds visualization limit ({num_visualized_clients}). Visualizing all malicious clients only.")
+                    sampled_indices = list(malicious_set)
+                else:
+                    # Sample benign clients
+                    benign_clients = [cid for cid in range(num_clients) if cid not in malicious_set]
+                    sampled_benign = sorted(random.sample(benign_clients, min(num_benign_to_sample, len(benign_clients))))
+                    sampled_indices = sorted(list(malicious_set) + sampled_benign)
+                    log(INFO, f"Number of clients ({num_clients}) exceeds visualization limit ({num_visualized_clients}). Sampling {len(sampled_benign)} benign clients + {num_malicious} malicious clients for visualization.")
+            else:
+                log(INFO, f"Number of clients ({num_clients}) exceeds visualization limit ({num_visualized_clients}). Sampling {num_visualized_clients} clients for visualization.")
+                sampled_indices = sorted(random.sample(list(range(num_clients)), num_visualized_clients))
+            
+            df = df.loc[sampled_indices]
+            num_clients = len(sampled_indices)
+
         fig_width = num_clients  # Width scales with the number of clients
-        fig_height = num_classes  # Height scales with the number of classes
+        # fig_height = num_classes  # Height scales with the number of classes
+        fig_height = 10
 
         if fig_width > fig_height:
             fig_height = fig_height * 24 / fig_width + 8
@@ -426,14 +451,18 @@ class FL_DataLoader:
             fig_height = 24
             scaling_factor = fig_height / (num_classes ** 0.8)
 
-        ax = df.plot(kind='bar', stacked=True, figsize=(fig_width, fig_height))
+        ax = df.plot(kind='bar', stacked=True, figsize=(fig_width, fig_height), legend=False)
 
         # Customize the plot with dynamic text sizes
-        plt.title('Per Partition Labels Distribution', fontsize=min(24*scaling_factor, 24))
-        plt.xlabel('Client ID', fontsize=min(20 * scaling_factor, 20))
-        plt.ylabel('Number of samples', fontsize=min(20 * scaling_factor, 20))
-        plt.xticks(fontsize=min(16 * scaling_factor, 16))
-        plt.yticks(fontsize=min(16 * scaling_factor, 16))
+        # plt.title('Per Partition Labels Distribution', fontsize=min(24*scaling_factor, 24))
+        # plt.xlabel('Client ID', fontsize=min(20 * scaling_factor, 20))
+        # plt.xticks(fontsize=min(16 * scaling_factor, 16))
+        # plt.yticks(fontsize=min(16 * scaling_factor, 16))
+
+        plt.title('Client Data Distribution', fontsize=28)
+        plt.ylabel('Number of samples', fontsize=24)
+        plt.xticks(fontsize=16)
+        plt.yticks(fontsize=16)
 
         # Change the color of malicious clients
         if malicious_clients:
@@ -442,12 +471,13 @@ class FL_DataLoader:
                 if int(tick) in malicious_clients or str(tick) in malicious_clients:
                     tick_label.set_color('red')
 
-        # Add legend outside the plot on the right with dynamic font size
-        plt.legend(title='Labels', bbox_to_anchor=(1, 1), loc='upper left', borderaxespad=0.,
-                  fontsize=min(16 * scaling_factor, 16), title_fontsize=min(20 * scaling_factor, 20))
+        # # Add legend outside the plot on the right with dynamic font size
+        # plt.legend(title='Labels', bbox_to_anchor=(1, 1), loc='upper left', borderaxespad=0.,
+        #           fontsize=min(16 * scaling_factor, 16), title_fontsize=min(20 * scaling_factor, 20))
 
         # Show the plot with tight layout to make room for the legend
-        plt.tight_layout(rect=[0, 0, 0.85, 1])  # Adjust right side to make room for legend
+        # plt.tight_layout(rect=[0, 0, 0.85, 1])  # Adjust right side to make room for legend
+        plt.tight_layout()
 
         if save_path:
             path = os.path.join(save_path, f"data_distribution.pdf")
