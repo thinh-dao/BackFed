@@ -260,3 +260,26 @@ python main.py -m -cn tiny \
     cuda_visible_devices=\"2,1,4,3\" \
     num_rounds=200 \
     dir_tag=tiny_anomaly_detection_modelreplace
+
+
+
+
+python main.py -m -cn tiny \
+    aggregator=feddlad \
+    atk_config=tiny_multishot \
+    atk_config.data_poison_method=distributed \
+    atk_config.scale_poison=True \
+    atk_config.scale_factor=10 \
+    cuda_visible_devices=\"4,3,2,1,0\" \
+    num_rounds=200 \
+    dir_tag=tiny_anomaly_detection_modelreplace
+
+python main.py -m -cn tiny \
+    aggregator=indicator \
+    atk_config=tiny_multishot \
+    atk_config.data_poison_method=distributed \
+    atk_config.scale_poison=True \
+    atk_config.scale_factor=10 \
+    cuda_visible_devices=\"0,1,2,3,4\" \
+    num_rounds=200 \
+    dir_tag=tiny_anomaly_detection_modelreplace

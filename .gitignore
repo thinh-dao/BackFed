@@ -77,3 +77,7 @@ csv_results/
 data/ARDIS
 *.png
 *.jpg
+plot_poison_ratios.py
+invert_femnist_data.py
+analyze_runtime_selection.py
+analyze_malicious_selections.py
