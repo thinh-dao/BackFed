@@ -20,7 +20,7 @@ BackFed is a comprehensive benchmark framework to efficiently and reliably evalu
 ## Features
 
 - **Modular Architecture**: Each attack and defense belonges to a separate file, allowing for an easy extension with new attacks, defenses, models, and datasets.
-- **Parallel Execution**: Supports both **sequential** and Ray-based **parallel** client training with *training timeouts* and *selection threshold* (select k% updates with earliest submission) straggler handling.
+- **Parallel Execution**: Supports both **sequential** and Ray-based **parallel** client training with *training timeouts* and *selection threshold* (select k% updates with earliest submission).
 - **Comprehensive Attack & Defense Library**: Standardized implementations of diverse attacks and defenses for reliable benchmarking.
 - **Flexible Configuration**: Hydra-based configuration system for easy and extensible experiment setups.
 - **Real-time Logging**: Built-in real-time logging (WandB/CSV) and resource tracking (memory/time).
