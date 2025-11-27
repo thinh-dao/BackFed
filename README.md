@@ -12,7 +12,7 @@ BackFed is a comprehensive benchmark framework to efficiently and reliably evalu
 📄 **Paper**: [BackFed: An Efficient & Standardized Benchmark Suite for Backdoor Attacks in Federated Learning](https://arxiv.org/abs/2507.04903)
 
 ## Updates
-+ [25/11/2025]: A new 
++ [25/11/2025]: A new version of the paper has been released to Arxiv. Check it out for insights into the strengths and limitations of existing backdoor attacks and defenses!
 + [05/09/2025]: Fix bugs for Flare and FLTrust defenses. 
 + [06/09/2025]: Add LocalDP client-side defense.
 + [07/09/2025]: Add Anticipate Malicious client.
@@ -330,5 +330,6 @@ Check the `experiments/` directory for example scripts:
 Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
+
 
 This project is licensed under the MIT License - see the LICENSE file for details.
