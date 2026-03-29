@@ -3,7 +3,7 @@
 defaults:
   - _self_
   # - atk_config: ??? # Define attack config in child config file
-  - override hydra/job_logging: rich  # Use our custom rich logging
+  - override hydra/job_logging: rich # Use our custom rich logging
 
 # *Aggregator
 aggregator: unweighted_fedavg
@@ -65,13 +65,13 @@ client_config:
   dataset: ${dataset}
   local_epochs: 2
   batch_size: 64
-  mixed_precision: True   # Use mixed precision and grad scaling during training
+  mixed_precision: True # Use mixed precision and grad scaling during training
   optimizer: sgd # Choose from the key in optimizer section below. Will be overridden to store DictConfig in client_optimizer_config
-  lr: 0.1 
+  lr: 0.1
   weight_decay: 5e-4
   momentum: 0.9
   val_split: ${federated_val_split} # split of the training data to be used for validation
-  seed: ${seed}  # Reproducibility
+  seed: ${seed} # Reproducibility
   deterministic: ${deterministic}
   training_mode: ${training_mode}
 
@@ -166,7 +166,7 @@ aggregator_config:
 
   ad_multi_krum:
     _target_: backfed.servers.ADMultiKrumServer # Multi-krum initialized as AnomalyDetectionServer
-    selection_ratio: 0.5 
+    selection_ratio: 0.5
     eta: 0.5
 
   bulyan:
@@ -207,7 +207,7 @@ aggregator_config:
 
   multi_metrics:
     _target_: backfed.servers.MultiMetricsServer
-    selection_ratio: 0.5  # Fraction of clients to select as benign
+    selection_ratio: 0.5 # Fraction of clients to select as benign
     eta: 0.5
 
   flame:
@@ -224,7 +224,7 @@ aggregator_config:
 
   fldetector:
     _target_: backfed.servers.FLDetectorServer
-    window_size: 10  # Size of sliding window for detection
+    window_size: 10 # Size of sliding window for detection
     eta: 0.5
 
   fltrust:
@@ -257,14 +257,14 @@ aggregator_config:
 
   snowball:
     _target_: backfed.servers.SnowballServer
-    ct: 5  # Selection ratio of benign clients in each round
-    vae_initial_epochs: 270  # Initial VAE training epochs (E^VI in paper)
-    vae_tuning_epochs: 30  # VAE tuning epochs (E^VT in paper)
-    vae_latent_dim: 64  # Latent dimension (S^L in paper)
-    vae_hidden_dim: 256  # Hidden dimension (S^H in paper)
-    vae_threshold: 0.5  # Threshold for benign set size (M in paper)
-    vae_step: 0.05  # Step size for iterative expansion (M^E in paper)
-    warmup_rounds: 100  # Rounds before using VAE (dataset-specific)
+    ct: 5 # Selection ratio of benign clients in each round
+    vae_initial_epochs: 270 # Initial VAE training epochs (E^VI in paper)
+    vae_tuning_epochs: 30 # VAE tuning epochs (E^VT in paper)
+    vae_latent_dim: 64 # Latent dimension (S^L in paper)
+    vae_hidden_dim: 256 # Hidden dimension (S^H in paper)
+    vae_threshold: 0.5 # Threshold for benign set size (M in paper)
+    vae_step: 0.05 # Step size for iterative expansion (M^E in paper)
+    warmup_rounds: 100 # Rounds before using VAE (dataset-specific)
     eta: 0.5
 
 ########################################################
@@ -288,7 +288,7 @@ client_optimizer_config:
 # *Hydra configuration
 hydra:
   job:
-    chdir: False  # Prevent Hydra from changing working directory
+    chdir: False # Prevent Hydra from changing working directory
   run:
     dir: ${eval:"'./outputs/${exp_name}_${now:%b.%d_%H.%M.%S}' if '${dir_tag}' == '' else './outputs/${dir_tag}/${exp_name}_${now:%b.%d_%H.%M.%S}'"}
   sweep:

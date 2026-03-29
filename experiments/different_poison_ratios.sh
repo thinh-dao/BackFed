@@ -34,7 +34,7 @@ python main.py -m -cn cifar10 \
 python main.py -m -cn cifar10 \
     aggregator=indicator \
     atk_config=cifar10_multishot \
-    atk_config.data_poison_method=pattern,cerberus \
+    atk_config.data_poison_method=pattern,cerberus,distributed,edge_case \
     atk_config.poison_start_round=2000 \
     atk_config.poison_end_round=2200 \
     atk_config.poison_ratio=0.25,0.75,1.0 \
